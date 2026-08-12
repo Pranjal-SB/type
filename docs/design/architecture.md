@@ -1,0 +1,457 @@
+# TYPE — Terminal-Yoked Programming Environment
+
+**Status:** design approved, pre-implementation
+**Date:** 2026-08-10
+**Binary:** `typ` · **Crate:** `typ-editor` · **Repo:** `type`
+
+---
+
+## 1. Goal
+
+A full IDE that runs in the terminal. Capability comparable to VS Code and Zed, delivered
+through a terminal UI: non-modal, mouse and keyboard as equal peers, panel-rich,
+extensible.
+
+The bet is that a terminal IDE can carry the full feature surface of a GUI IDE while
+starting faster and weighing less, because the renderer is already running and there is no
+browser engine underneath.
+
+### What "done" looks like
+
+A developer opens `typ` in a project and never needs VS Code for that project. Code
+intelligence, debugging, git, terminal, search, and extensions are all present. It starts
+in under a tenth of a second and never stutters while scrolling a large file.
+
+---
+
+## 2. Why build this
+
+- GUI IDEs are slow to start and heavy to run.
+- Agentic and coding work already lives in the terminal; leaving it to edit is friction.
+- Existing terminal editors each miss the mark in a different way:
+  - **vim / nano** — no file tree, no run/debug surface, no IDE affordances without deep configuration.
+  - **Helix** — ~85% there, but modal (Kakoune-style), mouse support is an afterthought, no integrated
+    terminal, git is gutter-only, and the plugin system (Steel, PR #8675) has been open ~2 years.
+  - **Fresh** — non-modal but sprawling (366k LOC src) and GPL-2.0, so nothing is reusable.
+  - **TermIDE** — excellent panel architecture, but no plugin system and no debugger.
+  - **ttt** — leanest and well-built, but regex highlighting rather than tree-sitter, and Go.
+
+**The gap: non-modal, full mouse parity, panel-rich, plugin-first.** No project occupies that square.
+
+### Feasibility
+
+TermIDE went `0.1.0` (2025-11-25) to `0.29.7` (2026-08-01) — 98 releases, 145k lines of Rust,
+44 crates, 20+ panel types, LSP, git, PTY terminal, tree-sitter across 21 languages — in
+**eight months, essentially one author.**
+
+For scale, full parity on the features that matter lands in the same range three independent
+ways: a bottom-up estimate, TermIDE's actual 145k, and Helix's ~150k. This is a tractability
+check, not a target — see §8.
+
+That is not the 1.3M lines Zed carries. Zed's mass is a GPU renderer, a CRDT collab stack,
+remote-dev servers, notebooks, a webview extension host, a marketplace, and a 100k-line
+agent crate. None of that is frontier *editing* capability, and all of it is out of scope here.
+
+### The leverage: it is protocols, not features
+
+VS Code does not implement "go to definition." It implements an **LSP client** and receives
+goto-def, hover, completion, rename, references, code actions, diagnostics, formatting,
+signature help, symbols, inlay hints, semantic tokens, code lens, and call/type hierarchy —
+for every language, permanently. **DAP** does the same for breakpoints, stepping, call
+stacks, watches, and the debug REPL.
+
+So "all the frontier IDE features" is mostly **three clients**: LSP, DAP, tree-sitter. Write
+them once and write them well; that is roughly 40k of the 150k and it buys the large
+majority of what people mean by "IDE."
+
+---
+
+## 3. Non-goals
+
+Explicitly out of scope, permanently unless revisited:
+
+- Collaborative editing / CRDT infrastructure
+- Notebook (Jupyter) support
+- Webview-style extensions rendering arbitrary HTML
+- An extension marketplace
+- A GPU renderer — the terminal is the renderer
+- Remote development servers — SSH into the box and run `typ`; this is free in a terminal
+  and is a structural advantage over GUI IDEs, not a gap
+
+---
+
+## 4. Product principles
+
+The stated ideal is **clean, responsive, and mature, without giving up features.** Each is
+made testable so it can be verified rather than asserted.
+
+### Responsive — budgets, not vibes
+
+| Metric | Budget |
+|---|---|
+| Cold start to interactive, mid-size repo | < 100 ms |
+| Keystroke to painted glyph (p99) | < 16 ms |
+| Scroll of a 100k-line file | no dropped frames at terminal refresh |
+| Any blocking operation on the render thread | zero |
+
+LSP, git, file watching, and syntax parsing all run on worker threads and deliver results as
+events. The render thread only renders.
+
+### Clean
+
+- No chrome without a job. Every border, gutter, and status segment justifies its cells.
+- One visual system applied uniformly: focus, borders, selection, and status look the same
+  in every panel.
+- Every panel obeys the same affordances — focus, move, close, resize — so learning one
+  panel teaches all of them.
+
+### Mature
+
+- **Mouse and keyboard are peers.** Neither is bolted on. Click to position the cursor, drag
+  to select, click status chips, click the tree, scroll anywhere — and every one of those has
+  a keyboard equivalent.
+- **Every action is reachable three ways**: keybinding, command palette, mouse.
+- Nothing is modal-only and nothing is mouse-only.
+- Non-modal by default. Familiar to anyone arriving from VS Code.
+
+### Without giving up features
+
+Guaranteed by the protocol leverage in §2, not by grinding out features one at a time.
+
+---
+
+## 5. Architecture
+
+### Stack
+
+| Concern | Choice |
+|---|---|
+| Language | Rust |
+| TUI | ratatui 0.30 + crossterm 0.29 |
+| Text buffer | `ropey` |
+| Syntax | `tree-sitter`, grammars **dynamically loaded** |
+| LSP | `lsp-types` 0.97 + custom async client |
+| Terminal panel | `portable-pty` + `vte` |
+| Git | `gitoxide` |
+| Fuzzy matching | `nucleo` |
+| Project search | shell out to `ripgrep` |
+
+Grammars load dynamically rather than static-linking. TermIDE carries a six-line comment
+about tree-sitter ABI-14 versus ABI-15 colliding the exported `tree_sitter_php` C symbol at
+link time and silently disabling PHP highlighting. Dynamic loading sidesteps that class of
+failure entirely.
+
+**Unicode width must be handled from day one.** Both Rust projects surveyed hit this; TermIDE
+carries a forked `unicode-width` via `[patch.crates-io]`. Column drift on CJK and emoji is
+not an edge case in an editor, it is a daily correctness bug. Budget for it explicitly.
+
+### Crates — 14
+
+TermIDE's 44 crates is over-split for one author. Fresh's 10 crates hiding 366k lines is
+under-split. The middle:
+
+```
+typ-core/            Panel trait, events, commands, keychord, terminal capabilities
+typ-buffer/          ropey wrapper, undo, multi-cursor, selections
+typ-syntax/          tree-sitter: highlight, folds, indents, injections
+typ-lsp/             LSP client — async, multi-server, per-language
+typ-git/             status, diff, blame, hunks
+typ-registry/        filetype -> handler mapping
+typ-ui/              shared ratatui widgets, theme, render helpers
+typ-config/          config, keybindings, theme loading
+typ-panel-editor/
+typ-panel-tree/
+typ-panel-terminal/
+typ-panel-git/
+typ-app/             event loop, layout, session, palette, fuzzy find
+typ/                 thin binary
+```
+
+Hard cap: **800 lines per file.** Fresh and TermIDE both broke this badly and it shows —
+`plugin_dispatch.rs` at 6.7k lines, `panel-editor` at 22k, `modal` at 15k. Files that size
+stop being contributable, including by their own author.
+
+### The Panel contract
+
+Adapted from TermIDE's `Panel` trait, which is the best single artifact in any of the three
+projects surveyed.
+
+- ~30 methods, **all but five defaulted**. A new panel implements `name`, `title`, `render`,
+  `handle_key`, `as_any`. Everything else is opt-in.
+- Panels return `Vec<PanelEvent>` rather than mutating application state — decoupled and
+  independently testable.
+- `RenderContext` is a narrow struct (theme colors, focus flag, dimensions), **not**
+  `&AppState`. A panel cannot reach into the world.
+- `status_segments()` lets the focused panel contribute clickable status-bar chips; clicks
+  route back by id via `handle_status_action`.
+- `to_session()` makes session persistence a per-panel concern rather than a central one.
+
+### Event model — the one deliberate fix
+
+TermIDE's `PanelEvent` grew to **61 variants** because every viewer added its own
+(`ViewMermaid`, `SwapActiveToHex`, `ViewDatabase`, …). That enum became a chokepoint: every
+new panel type edits core.
+
+TYPE keeps roughly **12 universal variants** — `NeedsRedraw`, `Quit`, `Focus`,
+`OpenFile { path, line, col }`, `RunCommand`, `CloseSelf`, `Notify`, and similar — and routes
+everything else through one:
+
+```rust
+OpenWith { handler: HandlerId, path: PathBuf }
+```
+
+resolved by `typ-registry` against an extension/mime table.
+
+This is load-bearing in three directions at once:
+
+1. **It is the filetype association** (§6).
+2. **Adding a panel type never edits core** — register a handler instead.
+3. **It is the seam the plugin host plugs into** in v1.1 — a plugin registers a handler
+   through the same path a built-in panel does.
+
+---
+
+## 6. Becoming the default editor
+
+Three distinct mechanisms, all in v1. They matter in roughly inverse order to how obvious
+they are.
+
+### `$EDITOR` — the one that actually matters most
+
+For terminal tooling, the dominant "default editor" mechanism is not the OS filetype table,
+it is `$EDITOR` / `$VISUAL` and `git config core.editor`. That is what opens for
+`git commit`, `crontab -e`, `kubectl edit`, `gh pr create`, and every CLI that shells out.
+
+Zero lines of feature code, but it imposes real constraints on the binary:
+
+- `typ <file>` opens exactly that file, blocks until closed, and exits cleanly.
+- Honest exit codes — a non-zero exit must abort the calling operation.
+- No daemon detach in this mode, and no session restore stomping a commit buffer.
+
+Treat these as invariants from M1, not as an afterthought. They are cheap to hold and
+expensive to retrofit.
+
+### In-editor: extension → panel
+
+`typ-registry` maps extension/mime to a handler. Text falls through to the editor panel;
+images, binaries, databases, and markdown route to their own viewers as those panels land.
+Handlers are registered, never hardcoded, so this is also the plugin extension point.
+
+### OS-level: double-click a file → it opens in TYPE
+
+| OS | Mechanism | Shim needed? |
+|---|---|---|
+| Linux | `.desktop` with `MimeType=` **and `Terminal=true`** | **No** — the DE spawns the terminal |
+| Windows | `HKCU\Software\Classes\<ext>` + `shell\open\command` | Yes |
+| macOS | `.app` bundle with `CFBundleDocumentTypes` | Yes |
+
+`Terminal=true` is a freedesktop-spec flag telling the desktop environment to run the
+application inside a terminal emulator of its own choosing. It works across GNOME, KDE, and
+XFCE, and it removes the entire terminal-spawning problem on Linux. Verified in Fresh's
+shipped `fresh.desktop`.
+
+### This is a genuine differentiator
+
+Verified against the field, not assumed:
+
+| | Windows Explorer | Linux | macOS |
+|---|---|---|---|
+| Neovim | none — feature request open since 2017 | partial, via distro packages | none |
+| Helix | none | none | none |
+| TermIDE | none | none | none |
+| ttt | none | none | none |
+| Fresh | none — no Windows code in-tree | **yes**, proper `.desktop` + 22 MIME types | `CFBundleDocumentTypes`, but on the **GUI** crate only |
+
+**No TUI editor ships Windows Explorer association.** Neovim's issue has been open roughly
+nine years and the ecosystem routes around it with hand-written `.reg` gists. Fresh — the
+most feature-maximalist project surveyed — wrote no Windows association code at all, and on
+macOS pointed the handler at its GUI mode rather than its terminal mode.
+
+That last detail is the trap appearing in the wild: even a project that wanted this punted
+rather than solve terminal-spawning on macOS. The difficulty is exactly why the square is
+empty, which is what makes it worth occupying.
+
+**Opt-in, never automatic.** Association is installed by an explicit `typ --install-associations`
+command, never as a side effect of installing. Silently taking `.txt` from Notepad or `.md`
+from whatever currently owns it is how software gets uninstalled.
+
+**The wrinkle:** a GUI double-click has no terminal to run in, so one must be spawned. TYPE
+ships a launcher shim that reads a configured terminal emulator (`wt.exe`, `$TERMINAL`,
+`x-terminal-emulator`) and execs `typ` inside it, plus per-OS install scripts. Windows and
+macOS only — Linux is covered by `Terminal=true`.
+
+**The shim is the risk, not the registration.** Registering a handler is trivial; the fragile
+part is the terminal that gets spawned — its dimensions, font, whether it closes on exit,
+whether it inherits the right shell and working directory. A double-click is a single shot at
+a first impression, and an 80×24 window with a fallback font squanders it. Polish budget goes
+here, not into the registry writes.
+
+**Who this is for.** The target is not the vim user — they are already served, and they enter
+via `typ .` and `$EDITOR` regardless. The target is the person currently on VS Code who wants
+speed and a clean interface without giving up capability. For them, double-clicking a file is
+a normal, daily entry path, and an editor that cannot be set as the default is not a real
+replacement. That is why this ships in v1 rather than later.
+
+**Single-instance routing** ships alongside it, because without it double-clicking five files
+spawns five editors. A named pipe on Windows, a unix socket elsewhere: if an instance already
+owns that workspace, hand it the path; otherwise cold start. VS Code and Zed both do exactly
+this, and it is unpleasant to retrofit.
+
+---
+
+## 7. Render and input model
+
+This section is what makes "responsive and mature" real rather than aspirational.
+
+- **Synchronized output (CSI 2026)** wraps every frame, eliminating tearing on partial
+  repaints. Borrowed from pi-tui, which is what gives pi and oh-my-pi their visual polish.
+- **Damage-driven redraw.** Repaint on dirty state, never on a timer tick. ratatui's
+  double-buffer diff then emits only changed cells.
+- **Input coalescing.** Batch scroll deltas into a single `handle_scroll`; drop stale resize
+  events. Prevents the scroll-lag that makes TUIs feel cheap.
+- **Terminal capability detection** at startup: truecolor, the **kitty keyboard protocol**,
+  image protocols (Kitty/iTerm2/Ghostty), synchronized output. Graceful degradation for each.
+
+The kitty keyboard protocol matters more than it looks. Without it, a terminal cannot
+distinguish `Ctrl+I` from `Tab`, or `Ctrl+M` from `Enter`, and key-release events are
+unavailable. Full modifier fidelity is a prerequisite for VS Code-comparable keybindings.
+
+---
+
+## 8. v1 scope
+
+**The bar: the point at which the author stops using their current editor.**
+
+### In
+
+- Editor panel — tree-sitter highlighting, multi-cursor, selections, undo, search/replace
+- LSP — completion, hover, goto-definition, references, rename, diagnostics, code actions,
+  formatting, document symbols, inlay hints
+- File tree panel
+- Integrated terminal panel (PTY)
+- Git — gutter, status, diff, blame, stage hunks
+- Splits, tabs, layout, session restore
+- Command palette, fuzzy file finder, project-wide search
+- Filetype registry, `$EDITOR` invariants, OS-level association, single-instance routing
+- Config, theming, keybindings
+
+**On line counts.** Sizes quoted anywhere in this document are scale signals, not budgets or
+targets. They exist to answer "is this tractable for one person" — the answer is yes — and
+nothing is scoped in or out because of a line count. The only structural rule that stays is
+the per-file cap in §5, which is about keeping code readable, not about keeping it small.
+
+### Out (post-v1)
+
+- Plugin host (JSON-RPC over stdio) — v1.1
+- DAP / debugger — v1.2
+- Minimap, sticky scroll, breadcrumbs — polish pass
+- Additional viewer panels (image, hex, database, markdown preview, mermaid)
+
+### The plugin host, when it lands
+
+Extensions are **subprocesses speaking JSON-RPC over stdio** — the same shape as LSP, reusing
+transport that already exists.
+
+- No embedded runtime, so no sandbox to get wrong; the OS process boundary does that work.
+- No `oxc`/`rquickjs` dependency weight and no effect on startup time.
+- Extensions in any language, so oh-my-pi or pi integrate as-is rather than being rewritten
+  in Lua — which matters, because async HTTP and JSON in Lua is miserable and that is exactly
+  what an agent extension needs.
+- Four verbs are enough to host an agent harness: **spawn a panel, read/write buffers, run a
+  process and stream its output, subscribe to editor events.**
+
+Trade-off: an IPC round-trip per call, so nothing on the keystroke hot path (custom
+highlighters, input transforms) can be an extension. Those are core concerns regardless.
+
+An embedded Lua runtime gets added later **only if** real demand for hot-path extensions
+appears. Not both up front.
+
+---
+
+## 9. Milestones
+
+**M0 — Feel spike (throwaway, ~1 week).**
+The riskiest unknown is not "can an editor be written," it is "will the terminal feel good
+enough." Answer before any real architecture exists. Open one file, highlight it, scroll it,
+click in it, save it. Then delete it.
+
+Must answer:
+- Does click-to-position via crossterm mouse feel native or laggy?
+- Does synchronized output actually eliminate flicker on this terminal?
+- Can tree-sitter incrementally re-highlight a 50k-line file at scroll speed?
+- Do CJK and emoji hold their columns in the viewport?
+
+If it does not feel better than nvim after a week, nothing downstream matters.
+
+**M1 — Walking skeleton.** Event loop, `Panel` trait, `typ-core`, one editor panel, one file
+tree panel. A vertical slice through the real architecture. The `$EDITOR` invariants from §6
+hold from here on — `typ <file>` opens, blocks, exits clean, reports honest exit codes.
+
+**M2 — Editing is real.** `typ-buffer` complete: multi-cursor, selections, undo, search and
+replace. `typ-syntax` highlighting. Self-hosting begins — TYPE edits TYPE.
+
+**M3 — Code intelligence.** `typ-lsp`. Completion, diagnostics, goto-definition, rename,
+code actions. This is the milestone where it becomes an IDE.
+
+**M4 — Workspace.** Splits, tabs, sessions, command palette, fuzzy finder, project search,
+filetype registry.
+
+**M5 — Terminal and git.** PTY panel, git gutter/status/diff/blame.
+
+**M6 — Association and polish.** OS-level filetype association behind
+`typ --install-associations`, launcher shim (with the terminal-spawn polish that §6 flags as
+the real risk), single-instance routing. Performance budgets from §4 verified and enforced
+in CI.
+
+**v1 ships.** Then: plugin host (v1.1), DAP (v1.2).
+
+Self-hosting from M2 onward is the forcing function. Every bug gets found by the author
+using it daily, and the project stays alive because it is useful before it is finished.
+
+---
+
+## 10. Open questions
+
+- **Layout model.** TermIDE uses an accordion with smart stacking; VS Code uses fixed
+  sidebar plus editor group splits; Zed uses tiled panes. Decide at M4, ideally against
+  mockups rather than in prose.
+- **Config format.** TOML (TermIDE) or JSONC (Fresh, VS Code-compatible). JSONC eases
+  migration for people arriving from VS Code; TOML is more idiomatic in Rust.
+- **Keybinding defaults.** VS Code-compatible out of the box is the non-modal thesis, but a
+  vim mode will be requested early. Ship the keymap layer with enough indirection that a vim
+  mode is a config, not a fork.
+- **Minimum supported terminal.** Which capabilities degrade gracefully versus which are
+  hard requirements.
+
+---
+
+## 11. Prior art, measured
+
+Measured from source, not from READMEs.
+
+| | Fresh | TermIDE | ttt |
+|---|---|---|---|
+| Language | Rust | Rust | Go |
+| License | GPL-2.0 | MIT | MIT |
+| TUI layer | crossterm + own renderer | **ratatui 0.30** | tcell v3 + own diff renderer |
+| Buffer | custom | `ropey` | custom |
+| Highlighting | tree-sitter 0.26 + syntect | tree-sitter 0.24, static-linked | chroma (regex) |
+| Plugins | QuickJS + oxc TS transpile | none | gopher-lua, sandboxed |
+| LSP | lsp-types 0.97 | lsp-types 0.97 | hand-rolled |
+| PTY | — | portable-pty + vte | go-pty + vt10x |
+| **src LOC** | **366k** (+284k tests) | **145k** | **80k** |
+
+Taken from each:
+
+- **TermIDE** — the `Panel` trait, `RenderContext` narrowing, status segments with click
+  routing, `to_session`, panel-per-crate, and the `unicode-width` patch approach.
+- **ttt** — its 87-line diff renderer, as the standing reminder of how little this actually
+  needs to be. Plus the "plugins can create panels" surface.
+- **Fresh** — typed plugin API generation: emit type stubs from the Rust API so extension
+  authors get real autocomplete.
+- **pi / oh-my-pi** — CSI 2026 synchronized output, image protocol detection, and the
+  render-strategy split.
+
+Deliberately not taken: Fresh's scope sprawl (webui, server, client, GPU window all in one
+tree) and its `opt-level = "z"` release profile, which optimizes for binary size while
+claiming speed.
