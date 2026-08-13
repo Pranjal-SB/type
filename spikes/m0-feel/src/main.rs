@@ -8,13 +8,14 @@ use crossterm::event::{
     MouseButton, MouseEventKind,
 };
 use m0_feel::click::click_to_position;
+use m0_feel::highlight::Highlighter;
 use m0_feel::metrics::FrameTimer;
 use m0_feel::viewport::Viewport;
 use m0_feel::width::grapheme_to_display_col;
 use ratatui::DefaultTerminal;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Style};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ropey::Rope;
 
@@ -29,30 +30,76 @@ fn sync(seq: &[u8]) {
     let _ = out.flush();
 }
 
+fn style_for(kind: &str) -> Style {
+    let c = match kind {
+        "keyword" => Color::Magenta,
+        "string" => Color::Green,
+        "number" => Color::Yellow,
+        "comment" => Color::DarkGray,
+        "identifier" => Color::Cyan,
+        _ => Color::Reset,
+    };
+    Style::default().fg(c)
+}
+
+fn styled_line(text: &str, spans: &[(std::ops::Range<usize>, &'static str)]) -> Line<'static> {
+    let mut out: Vec<Span<'static>> = Vec::new();
+    let mut pos = 0usize;
+    for (range, kind) in spans {
+        if range.start > pos {
+            out.push(Span::raw(text[pos..range.start].to_string()));
+        }
+        out.push(Span::styled(text[range.clone()].to_string(), style_for(kind)));
+        pos = range.end;
+    }
+    if pos < text.len() {
+        out.push(Span::raw(text[pos..].to_string()));
+    }
+    Line::from(out)
+}
+
 fn main() -> Result<()> {
     let path = std::env::args().nth(1).context("usage: m0-feel <file>")?;
     let text = std::fs::read_to_string(&path).with_context(|| format!("reading {path}"))?;
     let rope = Rope::from_str(&text);
 
+    // Highlighting is Rust-only in the spike; other extensions render plain.
+    let mut highlighter = None;
+    let mut parse_ms = 0u128;
+    if path.ends_with(".rs") {
+        let mut h = Highlighter::new_rust()?;
+        let t0 = Instant::now();
+        h.parse(&text);
+        parse_ms = t0.elapsed().as_millis();
+        highlighter = Some(h);
+    }
+
     let mut terminal = ratatui::init();
     stdout().execute(EnableMouseCapture)?;
 
-    let result = run(&mut terminal, &rope);
+    let result = run(&mut terminal, &rope, &text, highlighter.as_ref());
 
     stdout().execute(DisableMouseCapture)?;
     ratatui::restore();
 
     let timer = result?;
+    println!("initial parse: {parse_ms}ms");
     println!("frame timing: {}", timer.report());
     Ok(())
 }
 
-fn run(terminal: &mut DefaultTerminal, rope: &Rope) -> Result<FrameTimer> {
+fn run(
+    terminal: &mut DefaultTerminal,
+    rope: &Rope,
+    text: &str,
+    highlighter: Option<&Highlighter>,
+) -> Result<FrameTimer> {
     let total = rope.len_lines();
     let mut vp = Viewport { top_line: 0, height: 0 };
     let mut cursor: (usize, usize) = (0, 0);
     let mut timer = FrameTimer::new();
     let mut sync_output = true;
+    let mut highlight_on = highlighter.is_some();
 
     loop {
         let frame_start = Instant::now();
@@ -65,16 +112,26 @@ fn run(terminal: &mut DefaultTerminal, rope: &Rope) -> Result<FrameTimer> {
                 Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(frame.area());
 
             vp.height = area.height as usize;
+            let range = vp.visible_range(total);
             let lines: Vec<Line> = rope
-                .lines_at(vp.visible_range(total).start)
+                .lines_at(range.start)
                 .take(vp.height)
-                .map(|l| Line::raw(l.to_string().trim_end_matches('\n').to_string()))
+                .enumerate()
+                .map(|(i, l)| {
+                    let s = l.to_string();
+                    let s = s.trim_end_matches('\n');
+                    match highlighter.filter(|_| highlight_on) {
+                        Some(h) => styled_line(s, &h.spans_for_line(text, range.start + i)),
+                        None => Line::raw(s.to_string()),
+                    }
+                })
                 .collect();
             frame.render_widget(Paragraph::new(lines), area);
 
             let status = format!(
-                " sync:{}  line {}/{}  cursor {}:{}  [s] sync  [q] quit ",
+                " sync:{}  hl:{}  line {}/{}  cursor {}:{}  [s] sync  [h] highlight  [q] quit ",
                 if sync_output { "on " } else { "off" },
+                if highlight_on { "on " } else { "off" },
                 vp.top_line + 1,
                 total,
                 cursor.0 + 1,
@@ -114,6 +171,7 @@ fn run(terminal: &mut DefaultTerminal, rope: &Rope) -> Result<FrameTimer> {
                     KeyCode::PageDown => vp.scroll(vp.height as i32, total),
                     KeyCode::PageUp => vp.scroll(-(vp.height as i32), total),
                     KeyCode::Char('s') => sync_output = !sync_output,
+                    KeyCode::Char('h') => highlight_on = highlighter.is_some() && !highlight_on,
                     _ => {}
                 }
             }
