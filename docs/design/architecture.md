@@ -141,6 +141,26 @@ about tree-sitter ABI-14 versus ABI-15 colliding the exported `tree_sitter_php` 
 link time and silently disabling PHP highlighting. Dynamic loading sidesteps that class of
 failure entirely.
 
+**Syntax queries are viewport-scoped, never per-line.** Measured at M0: asking a tree-sitter
+tree for one line's spans costs O(lines above it), twice over — once resolving the line's
+byte offset, once descending from the root past every top-level item to prune it. Done per
+visible line per frame on a 50k-line file that is a **p99 of 1144ms** against a 16ms budget,
+while `p50` stays at 1.1ms because the cost scales with scroll depth rather than viewport
+size. `typ-syntax` therefore exposes a range query, and the fix is traversal, not caching:
+line offsets come from the rope, and the walk seeks in with
+`TreeCursor::goto_first_child_for_byte` rather than starting at the root. 18.7ms → 0.4ms per
+viewport, flat with depth. `Node::descendant_for_byte_range` looks like the answer and is
+not — a multi-line viewport's smallest containing node is the root.
+
+**Tree-sitter parses at ~2 MB/s and that is not improvable.** Linear in file size,
+independent of tree shape, so 50k lines of Rust costs ~750ms of wall clock. Every editor
+surveyed hides it rather than reducing it: vim never builds a whole-file model at all
+(approximate, and visibly wrong after a fast scroll), Neovim slices one parse across
+event-loop iterations via the parse timeout because Lua gives it no threads. TYPE has
+threads, so the parse runs on a worker and the tree arrives as an event — the §4 "no blocking
+work on the render thread" rule is load-bearing here, not decorative. The file opens and
+scrolls immediately, unhighlighted, and recolors when the tree lands.
+
 **Unicode width must be handled from day one.** Column drift on CJK and emoji is not an edge
 case in an editor, it is a daily correctness bug, and it is what mouse-click-to-cursor
 depends on.
@@ -318,7 +338,13 @@ This section is what makes "responsive and mature" real rather than aspirational
 - **Synchronized output (CSI 2026)** wraps every frame, eliminating tearing on partial
   repaints. Borrowed from pi-tui, which is what gives pi and oh-my-pi their visual polish.
 - **Damage-driven redraw.** Repaint on dirty state, never on a timer tick. ratatui's
-  double-buffer diff then emits only changed cells.
+  double-buffer diff then emits only changed cells. This is a measurement concern as well as
+  a performance one: at M0 every mouse-move was repainting and being recorded as a frame,
+  which quietly flattered both `p50` and `p99` until the dirty flag landed.
+- **The event loop blocks on one channel**, with worker threads and a crossterm-pumping
+  thread feeding it. Blocking directly on terminal input instead means an off-thread result
+  — a finished parse, an LSP response — does not appear until the user's next keypress;
+  polling instead of blocking fixes that but burns a wakeup per tick forever.
 - **Input coalescing.** Batch scroll deltas into a single `handle_scroll`; drop stale resize
   events. Prevents the scroll-lag that makes TUIs feel cheap.
 - **Terminal capability detection** at startup: truecolor, the **kitty keyboard protocol**,

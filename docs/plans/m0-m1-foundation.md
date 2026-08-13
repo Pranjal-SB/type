@@ -87,7 +87,7 @@ decision, and `src/width.rs` (promoted into `typ-buffer` at M1). Do not build ar
 - Produces: a binary that enters the alternate screen with mouse capture on, redraws on
   events, and restores the terminal on `q` or `Ctrl+C`
 
-- [ ] **Step 1: Create the spike crate manifest**
+- [x] **Step 1: Create the spike crate manifest**
 
 `spikes/m0-feel/Cargo.toml`:
 
@@ -125,7 +125,7 @@ wide.txt
 `opt-level = 3` and `debug = 1`, not `opt-level = "z"`. Measurements must reflect a
 speed-optimized build, and symbols are kept so profiling works.
 
-- [ ] **Step 2: Write main.rs with terminal lifecycle and mouse capture**
+- [x] **Step 2: Write main.rs with terminal lifecycle and mouse capture**
 
 `spikes/m0-feel/src/main.rs`:
 
@@ -183,7 +183,7 @@ fn run(terminal: &mut DefaultTerminal) -> Result<()> {
 }
 ```
 
-- [ ] **Step 3: Verify it builds and runs**
+- [x] **Step 3: Verify it builds and runs**
 
 Run: `cargo run --release --manifest-path spikes/m0-feel/Cargo.toml`
 
@@ -194,7 +194,7 @@ state** — the prompt behaves normally, typing echoes, no stray escape sequence
 If the terminal is left broken after exit, stop and fix teardown before continuing.
 Everything downstream depends on this being correct.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add spikes/m0-feel
@@ -222,7 +222,7 @@ which made a fork look likely here. It is not needed — their patch predates up
   - `width::grapheme_to_display_col(line: &str, grapheme_idx: usize, tab_width: usize) -> usize`
   - `width::display_to_grapheme_col(line: &str, display_col: usize, tab_width: usize) -> usize`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `spikes/m0-feel/tests/width.rs`:
 
@@ -279,13 +279,13 @@ fn clicking_past_end_of_line_clamps_to_line_length() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test width`
 
 Expected: FAIL — the crate has no library target and `m0_feel::width` does not exist.
 
-- [ ] **Step 3: Add a library target and implement width.rs**
+- [x] **Step 3: Add a library target and implement width.rs**
 
 Add to `spikes/m0-feel/Cargo.toml` after `[package]`:
 
@@ -380,7 +380,7 @@ pub fn display_to_grapheme_col(line: &str, display_col: usize, tab_width: usize)
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test width`
 
@@ -389,7 +389,7 @@ Expected: PASS, 9 tests.
 Actual: 9 passed, 0 failed, on `unicode-width` 0.2.2. No `[patch.crates-io]` override needed
 for M1. `width.rs` promotes into `typ-buffer` unchanged at Task 11.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add spikes/m0-feel
@@ -411,7 +411,7 @@ git commit -m "feat(spike): grapheme to display column mapping with unicode test
   - `Viewport::scroll(&mut self, delta: i32, total_lines: usize)`
   - `Viewport::visible_range(&self, total_lines: usize) -> std::ops::Range<usize>`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `spikes/m0-feel/tests/viewport.rs`:
 
@@ -459,13 +459,13 @@ fn scroll_does_not_underflow_when_file_is_shorter_than_viewport() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test viewport`
 
 Expected: FAIL — `m0_feel::viewport` does not exist.
 
-- [ ] **Step 3: Implement viewport.rs**
+- [x] **Step 3: Implement viewport.rs**
 
 `spikes/m0-feel/src/viewport.rs`:
 
@@ -500,13 +500,13 @@ impl Viewport {
 
 Add `pub mod viewport;` to `spikes/m0-feel/src/lib.rs`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test viewport`
 
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Render a real file in main.rs**
+- [x] **Step 5: Render a real file in main.rs**
 
 Replace `spikes/m0-feel/src/main.rs`:
 
@@ -583,7 +583,7 @@ fn run(terminal: &mut DefaultTerminal, rope: &Rope) -> Result<()> {
 }
 ```
 
-- [ ] **Step 6: Generate a large test file and scroll it**
+- [x] **Step 6: Generate a large test file and scroll it**
 
 ```bash
 cargo build --release --manifest-path spikes/m0-feel/Cargo.toml
@@ -601,7 +601,7 @@ Run: `./target/release/m0-feel.exe spikes/m0-feel/big.rs`
 Expected: renders, arrow keys and wheel scroll it, `q` exits cleanly. Hold `Down` and scroll
 aggressively — note subjectively whether it feels smooth. Measurement comes in Task 5.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add spikes/m0-feel
@@ -624,7 +624,7 @@ pointer, including inside wide characters and past line ends.
 - Produces: `click::click_to_position(&Rope, Viewport, u16, u16, usize) -> (usize, usize)`
   returning `(line, grapheme_col)`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `spikes/m0-feel/tests/click.rs`:
 
@@ -672,13 +672,13 @@ fn click_below_last_line_clamps_to_last_line() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test click`
 
 Expected: FAIL — `m0_feel::click` does not exist.
 
-- [ ] **Step 3: Implement click.rs**
+- [x] **Step 3: Implement click.rs**
 
 `spikes/m0-feel/src/click.rs`:
 
@@ -713,13 +713,13 @@ pub fn click_to_position(
 
 Add `pub mod click;` to `spikes/m0-feel/src/lib.rs`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test click`
 
 Expected: PASS, 5 tests.
 
-- [ ] **Step 5: Wire click into the spike and render a cursor**
+- [x] **Step 5: Wire click into the spike and render a cursor**
 
 In `spikes/m0-feel/src/main.rs`, add `use m0_feel::click::click_to_position;` and a
 `cursor: (usize, usize)` initialized to `(0, 0)`.
@@ -747,7 +747,7 @@ if cursor.0 >= vp.top_line && cursor.0 < vp.top_line + vp.height {
 }
 ```
 
-- [ ] **Step 6: Verify click feel by hand**
+- [x] **Step 6: Verify click feel by hand**
 
 Run: `./target/release/m0-feel.exe spikes/m0-feel/big.rs`
 
@@ -763,7 +763,7 @@ Run: `./target/release/m0-feel.exe spikes/m0-feel/wide.txt`
 Expected: the cursor lands exactly under the pointer on every line, including the CJK, emoji,
 and tab lines. **Any visible drift is a blocking finding** — record it and resolve before M1.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add spikes/m0-feel
@@ -785,7 +785,7 @@ git commit -m "feat(spike): click-to-position cursor with wide-char correctness"
   - `FrameTimer::record(&mut self, d: std::time::Duration)`
   - `FrameTimer::report(&self) -> String` — count, mean, p50, p99, max in microseconds
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `spikes/m0-feel/tests/metrics.rs`:
 
@@ -812,13 +812,13 @@ fn empty_timer_reports_without_panicking() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test metrics`
 
 Expected: FAIL — `m0_feel::metrics` does not exist.
 
-- [ ] **Step 3: Implement metrics.rs**
+- [x] **Step 3: Implement metrics.rs**
 
 `spikes/m0-feel/src/metrics.rs`:
 
@@ -866,13 +866,13 @@ impl FrameTimer {
 
 Add `pub mod metrics;` to `spikes/m0-feel/src/lib.rs`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test metrics`
 
 Expected: PASS, 2 tests.
 
-- [ ] **Step 5: Instrument the draw loop and add a sync-output toggle**
+- [x] **Step 5: Instrument the draw loop and add a sync-output toggle**
 
 In `spikes/m0-feel/src/main.rs`, change `run`'s signature to `-> Result<FrameTimer>` and
 return `Ok(timer)` at the quit branch. Before the loop:
@@ -913,7 +913,7 @@ And in `main`, after `ratatui::restore()`:
 println!("frame timing: {}", timer.report());
 ```
 
-- [ ] **Step 6: Measure**
+- [x] **Step 6: Measure**
 
 Run: `./target/release/m0-feel.exe spikes/m0-feel/big.rs`
 
@@ -923,7 +923,7 @@ sync output toggled off (`s`).
 Expected: p99 well under 16000us. Compare visual tearing between modes and record which
 terminal was used — this is a **Windows Terminal** measurement and other emulators may differ.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add spikes/m0-feel
@@ -945,7 +945,7 @@ git commit -m "feat(spike): frame timing metrics and synchronized output toggle"
   - `Highlighter::parse(&mut self, text: &str)`
   - `Highlighter::spans_for_line(&self, text: &str, line: usize) -> Vec<(Range<usize>, &'static str)>`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `spikes/m0-feel/tests/highlight.rs`:
 
@@ -970,13 +970,13 @@ fn parsing_a_large_buffer_completes() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test highlight`
 
 Expected: FAIL — `m0_feel::highlight` does not exist.
 
-- [ ] **Step 3: Implement highlight.rs**
+- [x] **Step 3: Implement highlight.rs**
 
 `spikes/m0-feel/src/highlight.rs`:
 
@@ -1072,7 +1072,7 @@ fn classify(kind: &str) -> Option<&'static str> {
 
 Add `pub mod highlight;` to `spikes/m0-feel/src/lib.rs`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test highlight`
 
@@ -1082,7 +1082,7 @@ If `tree_sitter_rust::LANGUAGE` does not resolve, older grammar crates expose `l
 instead. Check `cargo doc -p tree-sitter-rust --open` and use whichever the pinned 0.24
 exposes. Record which in `FINDINGS.md`.
 
-- [ ] **Step 5: Colorize the rendered lines**
+- [x] **Step 5: Colorize the rendered lines**
 
 In `spikes/m0-feel/src/main.rs`:
 
@@ -1131,11 +1131,127 @@ Expected: p99 still under 16000us with highlighting on. If not, note whether the
 `parse` (should be near zero when text is unchanged) or in `spans_for_line` — the latter walks
 the tree per line per frame and is the obvious thing M1 caches.
 
-- [ ] **Step 7: Commit**
+**Result: first measurement failed the budget badly — `p99=1144011us`, `max=1144830us`
+against a `p50` of `1108us`.** Highlighting was subjectively unusable; turning it off with
+`h` restored normal scrolling. The prediction above was half right and its proposed fix was
+wrong, which matters for M1, so both are recorded.
+
+Right: the cost was in `spans_for_line`, not `parse`. Wrong: **caching is not the fix.**
+There were two independent O(lines-above-the-viewport) costs, and the bimodal timing —
+fast `p50`, catastrophic `p99` — is their signature, since both scale with scroll depth
+rather than with viewport size:
+
+1. `spans_for_line` recomputed the line's byte offset with
+   `text.split_inclusive('\n').take(line).map(str::len).sum()`, rescanning the file from
+   byte 0 **per visible line, per frame**. At line 40,000 that is a 1.7 MB scan × ~40 lines.
+   The rope already knows this: `rope.line_to_byte(line)`.
+2. `collect_leaves` descended from `root_node()`. Pruning by byte range still has to *visit*
+   every sibling to prune it, and a 50k-line file's root has 50k top-level items. Measured
+   at 18.7ms for a single 40-line viewport — and that was paid 40 times per frame.
+
+`Node::descendant_for_byte_range` looks like the fix and is not: a 40-line viewport spans 40
+sibling `function_item`s, so the smallest node containing it *is* the root. Measured at
+2.8us and it changed nothing. What works is seeking at the sibling level —
+`TreeCursor::goto_first_child_for_byte(start)`, then walking siblings forward until past
+`end`. **18.7ms → 0.4ms, and flat with scroll depth.**
+
+Combined with hoisting the walk out of the per-line loop — one walk per viewport instead of
+one per line, spans then split across lines as they are consumed — this is a pure traversal
+fix. No cache, no invalidation logic.
+
+**Carry into M1:** `typ-syntax` asks the tree for a *viewport* (`spans_in_range`), never for
+a line. A per-line cache would have papered over an O(offset) traversal and inherited a
+cache-invalidation problem on every edit for no reason. Guarded by
+`tests/highlight.rs::viewport_spans_deep_in_a_large_buffer_stay_cheap`, which asserts a
+40-line viewport at line 39,000 of a 40k-line file costs under one 16ms frame.
+
+- [x] **Step 7: Commit**
 
 ```bash
 git add spikes/m0-feel
 git commit -m "feat(spike): tree-sitter highlighting on the visible viewport"
+```
+
+---
+
+### Task 6a: Move the initial parse off the render thread — *added, not in the original plan*
+
+Task 6 measured the initial parse at **723–761ms for 50k lines** and the plan treated that as
+a number to record. It is also a number to act on: the whole of it lands before the first
+frame, so the editor is visibly frozen for three quarters of a second on open — against a §4
+budget of **cold start to interactive < 100ms.**
+
+**First: is it fixable by parsing faster?** No. Measured across sizes and shapes:
+
+| Input | Lines | Size | Parse | Throughput |
+|---|---|---|---|---|
+| flat ×6,250 | 6,250 | 225 KB | 120.4ms | 1.9 MB/s |
+| flat ×12,500 | 12,500 | 451 KB | 241.2ms | 1.9 MB/s |
+| flat ×25,000 | 25,000 | 903 KB | 441.6ms | 2.1 MB/s |
+| flat ×50,000 | 50,000 | 1806 KB | 798.5ms | 2.3 MB/s |
+| `big.rs` | 50,000 | 2273 KB | 923.3ms | 2.5 MB/s |
+| nested (mods/impls/matches) | 45,000 | 1469 KB | 765.7ms | 2.0 MB/s |
+
+Linear, and flat at ~2 MB/s regardless of tree shape. `big.rs`'s 50k flat top-level items are
+not a pathological input — a generated file with realistic nesting parses at the same rate.
+There is no constant factor to win, so the cost has to be *hidden* rather than reduced.
+
+**How the field handles it — three different answers, and none of them is "parse faster":**
+
+- **Vim never builds a whole-file model.** Regex rules over visible lines only, with
+  `syntax sync minlines` guessing the syntax state at the top of the screen and `synmaxcol`
+  abandoning long lines. Fast because it is approximate; the cost is highlighting that is
+  visibly wrong after a fast scroll until forced to redraw.
+- **Neovim pays the same tree-sitter cost and slices it.** Their treesitter tracking issue
+  (#22426) lists "initial parse blocks the event loop" as a named bug, fixed in #22420 by
+  using tree-sitter's parse timeout to spread one parse across event-loop iterations. They do
+  that because Lua/libuv gives them no threads.
+- **Helix** parses on load and carries the same cost.
+
+**TYPE has threads, so it takes the direct version** — which §4 already mandates ("syntax
+parsing runs on worker threads and delivers results as events"). This task is that constraint
+proven on real numbers rather than asserted.
+
+- [x] **Step 1: Parse on a worker, deliver the tree as a message**
+
+`Arc<str>` for the source so the worker owns a share of it; `mpsc::channel` carrying
+`(Highlighter, Duration)` back. Both `Parser` and `Tree` are `Send`, so the whole
+`Highlighter` moves across cleanly and no lock is needed.
+
+- [x] **Step 2: Poll the event loop instead of blocking on it**
+
+`event::read()` blocks until input, so a parse finishing during an idle moment would not
+appear until the user's next keypress. Replaced with `event::poll(16ms)` plus a dirty flag,
+redrawing only on state change.
+
+The dirty flag also fixes a **measurement** bug: every mouse-move event was previously
+triggering a redraw *and* recording a frame, padding the histogram with cheap no-op frames
+and flattering both `p50` and `p99`. Frame counts before and after this change are not
+comparable.
+
+- [x] **Step 3: Report time-to-first-frame**
+
+The binary now prints `initial parse: Nms (off-thread)` and `first frame at: Nms after
+start`, and the status bar shows `hl:wait` → `hl:on` so the handoff is visible rather than
+inferred.
+
+- [x] **Step 4: Measure — folded into Task 7**
+
+**Known ceiling.** The 16ms poll wakes 60×/sec while idle doing nothing, which is acceptable
+for a 30-second spike and not for an editor. **M1 blocks on a single event channel** with a
+thread pumping crossterm events into it, so a finished parse wakes the loop directly and idle
+costs nothing. Marked `ponytail:` at the call site.
+
+**Second known ceiling.** Scrolling into not-yet-parsed territory shows plain text and then
+recolors all at once when the tree lands. Fine at 0.7s. If a file ever takes ~10s, the answer
+is vim's — approximate highlighting immediately, exact once parsed. Recorded so that
+"off-thread" is not mistaken for something that scales without limit.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add spikes/m0-feel
+git commit -m "perf(spike): parse off-thread so the first frame does not wait"
 ```
 
 ---
@@ -1149,7 +1265,7 @@ git commit -m "feat(spike): tree-sitter highlighting on the visible viewport"
 - Consumes: measurements from Tasks 4, 5, 6
 - Produces: the M0 decision that gates M1
 
-- [ ] **Step 1: Write FINDINGS.md**
+- [x] **Step 1: Write FINDINGS.md**
 
 Fill in every measured value. Do not write "good" or "fine" — write numbers.
 
@@ -1178,19 +1294,32 @@ Fill in every measured value. Do not write "good" or "fine" — write numbers.
 
 ## 3. Frame timing
 
-| Scenario | n | mean | p50 | p99 | max |
-|---|---|---|---|---|---|
-| Scroll, no highlight, sync on | | | | | |
-| Scroll, no highlight, sync off | | | | | |
-| Scroll, highlight on, sync on | | | | | |
+Runs must be of comparable length — a 90-frame run and a 1100-frame run do not compare, and
+`p99` on 90 samples is just the 90th sample. Numbers below are post-fix; see §4.
+
+| Scenario | n | mean | p50 | p99 | max | max_at_frame |
+|---|---|---|---|---|---|---|
+| Scroll, highlight on, sync on | | | | | | |
+| Scroll, no highlight, sync on | | | | | | |
+| Scroll, no highlight, sync off | | | | | | |
 
 Budget: p99 < 16000us. Met: <yes / no>
 
+Was the worst frame the startup paint (`max_at_frame` 0 or 1) or a real stall: <which>
+
 ## 4. Tree-sitter under scroll
 
-- Initial parse of 50k lines: <N>ms
+- Initial parse of 50k lines: <N>ms, off-thread
+- Time from process start to first painted frame: <N>ms
+- Parse throughput: ~2 MB/s, linear in file size and independent of tree shape
 - Cost concentrated in: <parse / spans_for_line / rendering>
-- Needs per-line caching in M1: <yes / no>
+- Needs per-line caching in M1: **no** — it needed viewport-scoped traversal instead.
+  Two O(lines-above-viewport) costs, both fixed by construction rather than by cache:
+  `rope.line_to_byte()` for the line offset, and `TreeCursor::goto_first_child_for_byte()`
+  to seek to the first top-level item instead of descending from the root. Measured
+  18.7ms → 0.4ms per viewport, flat with scroll depth. See Task 6 Step 6.
+- Highlighting p99 before the traversal fix: 1144011us (recorded because "tree-sitter is
+  too slow to scroll" would have been the wrong conclusion to draw from it)
 
 ## 5. Unicode width
 
@@ -1201,7 +1330,16 @@ Budget: p99 < 16000us. Met: <yes / no>
 ## 6. API surprises
 
 - `tree_sitter_rust` language accessor used: <LANGUAGE / language()>
+- `Node::descendant_for_byte_range` does not help viewport queries — a multi-line viewport's
+  smallest containing node is the root. `TreeCursor::goto_first_child_for_byte` is the one
+  that works.
 - Other deviations from the plan:
+  - `h` runtime toggle for highlighting, so the on/off comparison is one process and one
+    scroll pattern rather than two runs.
+  - Initial parse timed and printed — the FINDINGS template asked for the number and nothing
+    was measuring it.
+  - Parse moved off-thread (Task 6a), which forced `event::poll` + a dirty flag in place of
+    blocking `event::read()`.
 
 ---
 
