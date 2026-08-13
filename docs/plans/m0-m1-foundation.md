@@ -1364,7 +1364,7 @@ git add spikes/m0-feel/FINDINGS.md
 git commit -m "docs(spike): record m0 feel measurements and go/no-go verdict"
 ```
 
-- [ ] **Step 3: Stop and review**
+- [x] **Step 3: Stop and review**
 
 **Hard gate.** Do not begin M1 until `FINDINGS.md` is read and GO is confirmed.
 
@@ -1372,6 +1372,12 @@ M1 does not start while any of these is true:
 - Click-to-position drifts on wide characters
 - p99 frame time exceeds 16000us while scrolling with highlighting on
 - The terminal is left broken on exit under any condition
+
+**GO confirmed 2026-08-13.** None of the three blockers hold: click-to-position is exact on
+CJK, emoji and tabs; p99 with highlighting on is 3657us against a 16000us budget; the terminal
+restores on both `q` and `Ctrl+C`. One non-blocking defect is carried into M1 rather than
+fixed here — mouse capture leaks on panic, see FINDINGS §6. M0 code is now frozen; the spike
+is deleted once `src/width.rs` is promoted at Task 11.
 
 ---
 
