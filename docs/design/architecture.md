@@ -141,9 +141,17 @@ about tree-sitter ABI-14 versus ABI-15 colliding the exported `tree_sitter_php` 
 link time and silently disabling PHP highlighting. Dynamic loading sidesteps that class of
 failure entirely.
 
-**Unicode width must be handled from day one.** Both Rust projects surveyed hit this; TermIDE
-carries a forked `unicode-width` via `[patch.crates-io]`. Column drift on CJK and emoji is
-not an edge case in an editor, it is a daily correctness bug. Budget for it explicitly.
+**Unicode width must be handled from day one.** Column drift on CJK and emoji is not an edge
+case in an editor, it is a daily correctness bug, and it is what mouse-click-to-cursor
+depends on.
+
+TermIDE carries a forked `unicode-width` via `[patch.crates-io]`, which suggested TYPE would
+need one too. Measured instead: stock `unicode-width` 0.2 passes all nine width cases,
+including emoji and combining marks. **No fork needed.** Their patch predates fixes upstream.
+
+The general rule this establishes: prior art is evidence, not authority. Where a surveyed
+project's choice is load-bearing here, it is because it was tested or because the failure it
+avoids was observed — never because they did it.
 
 ### Crates — 14
 
@@ -173,18 +181,22 @@ stop being contributable, including by their own author.
 
 ### The Panel contract
 
-Adapted from TermIDE's `Panel` trait, which is the best single artifact in any of the three
-projects surveyed.
+TermIDE's `Panel` trait is the best single artifact in any of the three projects surveyed.
+TYPE takes its *shape* — return events, never touch state — but not its size.
 
-- ~30 methods, **all but five defaulted**. A new panel implements `name`, `title`, `render`,
-  `handle_key`, `as_any`. Everything else is opt-in.
+- **Starts at five methods**: `name`, `title`, `render`, `handle_key`, `as_any`. Nothing else
+  until a second panel needs it. TermIDE's ~30 methods are the endpoint of years of real
+  panels; adopting that surface up front would be guessing at generality we have not earned.
+  The trait grows when a concrete panel forces it, and each addition is defaulted so existing
+  panels do not break.
 - Panels return `Vec<PanelEvent>` rather than mutating application state — decoupled and
   independently testable.
 - `RenderContext` is a narrow struct (theme colors, focus flag, dimensions), **not**
   `&AppState`. A panel cannot reach into the world.
-- `status_segments()` lets the focused panel contribute clickable status-bar chips; clicks
-  route back by id via `handle_status_action`.
-- `to_session()` makes session persistence a per-panel concern rather than a central one.
+Two of TermIDE's methods are worth adopting when their milestone arrives, not before:
+`status_segments()` (focused panel contributes clickable status-bar chips, clicks route back
+by id via `handle_status_action`) at M4 with the status bar, and `to_session()` (session
+persistence as a per-panel concern rather than a central one) at M4 with sessions.
 
 ### Event model — the one deliberate fix
 
@@ -443,8 +455,9 @@ Measured from source, not from READMEs.
 
 Taken from each:
 
-- **TermIDE** — the `Panel` trait, `RenderContext` narrowing, status segments with click
-  routing, `to_session`, panel-per-crate, and the `unicode-width` patch approach.
+- **TermIDE** — the `Panel` trait's shape (not its size), `RenderContext` narrowing,
+  panel-per-crate, and later, status segments with click routing and `to_session`. Its
+  `unicode-width` patch was evaluated and rejected: stock 0.2 passes every case we tested.
 - **ttt** — its 87-line diff renderer, as the standing reminder of how little this actually
   needs to be. Plus the "plugins can create panels" surface.
 - **Fresh** — typed plugin API generation: emit type stubs from the Rust API so extension

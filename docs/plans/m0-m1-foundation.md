@@ -205,10 +205,12 @@ git commit -m "feat(spike): m0 scaffold with mouse capture and clean teardown"
 
 ### Task 2: Grapheme ↔ display-column mapping, with tests
 
-The highest-risk pure function in the project. Both Rust projects surveyed hit unicode width
-problems; TermIDE ships a forked `unicode-width` via `[patch.crates-io]`. Column drift on CJK
-and emoji is a daily correctness bug in an editor, not an edge case. It is also what
-mouse-click-to-cursor depends on, so it gets tested first and properly.
+The highest-risk pure function in the project. Column drift on CJK and emoji is a daily
+correctness bug in an editor, not an edge case, and mouse-click-to-cursor depends on it. So
+it gets tested first and properly.
+
+**Result: 9/9 pass on stock `unicode-width` 0.2.** TermIDE ships a `[patch.crates-io]` fork,
+which made a fork look likely here. It is not needed — their patch predates upstream fixes.
 
 **Files:**
 - Create: `spikes/m0-feel/src/width.rs`, `spikes/m0-feel/tests/width.rs`
@@ -384,9 +386,8 @@ Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test width`
 
 Expected: PASS, 9 tests.
 
-If `combining_marks_do_not_add_width` or `emoji_is_two_columns_wide` fails, that is the
-`unicode-width` behavior gap TermIDE forked around. Record the exact failure in `FINDINGS.md` —
-it decides whether M1 needs a `[patch.crates-io]` override.
+Actual: 9 passed, 0 failed, on `unicode-width` 0.2.2. No `[patch.crates-io]` override needed
+for M1. `width.rs` promotes into `typ-buffer` unchanged at Task 11.
 
 - [ ] **Step 5: Commit**
 
