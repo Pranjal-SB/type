@@ -1357,7 +1357,7 @@ Discard:
 - everything else in this spike
 ```
 
-- [ ] **Step 2: Commit the findings**
+- [x] **Step 2: Commit the findings**
 
 ```bash
 git add spikes/m0-feel/FINDINGS.md
