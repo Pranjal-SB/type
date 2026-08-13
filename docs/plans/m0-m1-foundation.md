@@ -1673,7 +1673,7 @@ Two deviations from this task as written:
    `PanelEvent` breaks the build here and forces the decision to be deliberate. That is the
    behaviour the test's name and comment already claimed.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Cargo.toml .gitignore .gitattributes crates/typ-core
@@ -1698,7 +1698,7 @@ git commit -m "feat(core): workspace scaffold with panel event vocabulary and ke
     terminal_height }`
   - `typ_core::Panel` — five required methods, everything else defaulted
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-core/tests/panel.rs`:
 
@@ -1756,13 +1756,13 @@ fn panels_are_dispatchable_as_trait_objects() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-core --test panel`
 
 Expected: FAIL — `Panel`, `RenderContext`, `ThemeColors` are not defined.
 
-- [ ] **Step 3: Implement panel.rs**
+- [x] **Step 3: Implement panel.rs**
 
 `crates/typ-core/src/panel.rs`:
 
@@ -1871,13 +1871,22 @@ pub trait Panel: Any {
 
 Uncomment the `pub use panel::{Panel, RenderContext, ThemeColors};` line in `lib.rs`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-core`
 
 Expected: PASS, 8 tests across both files.
 
-- [ ] **Step 5: Commit**
+**Result: 8 passed** (5 event, 3 panel), clippy clean under `-D warnings`. No deviations
+from the task as written.
+
+One constraint this task locks in, worth knowing before Task 12 writes a real panel:
+`trait Panel: Any` implies `'static`, so no panel may borrow — a panel that wants to read a
+buffer owns it or shares it behind `Rc`/`Arc`. That is the price of downcasting through
+`as_any`, and it is the right trade here, but it is a real constraint rather than an
+accident.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-core
