@@ -4,6 +4,14 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 
+[lib]
+name = "m0_feel"
+path = "src/lib.rs"
+
+[[bin]]
+name = "m0-feel"
+path = "src/main.rs"
+
 [dependencies]
 ratatui = "0.30.2"
 crossterm = "0.29"
