@@ -1121,7 +1121,7 @@ fn styled_line(text: &str, spans: &[(std::ops::Range<usize>, &'static str)]) -> 
 
 Parse once after loading the file, then call `styled_line` per visible line in the draw closure.
 
-- [ ] **Step 6: Measure highlighting under scroll**
+- [x] **Step 6: Measure highlighting under scroll**
 
 Run: `./target/release/m0-feel.exe spikes/m0-feel/big.rs`
 
@@ -1247,7 +1247,7 @@ recolors all at once when the tree lands. Fine at 0.7s. If a file ever takes ~10
 is vim's — approximate highlighting immediately, exact once parsed. Recorded so that
 "off-thread" is not mistaken for something that scales without limit.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add spikes/m0-feel
@@ -1403,7 +1403,7 @@ constraints.
   - `typ_core::KeyChord { pub raw: crossterm::event::KeyEvent, pub canonical: String }`
   - `KeyChord::from_event(KeyEvent) -> KeyChord`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-core/tests/event.rs`:
 
@@ -1456,13 +1456,13 @@ fn panel_event_stays_small() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-core`
 
 Expected: FAIL — no workspace or crate exists yet.
 
-- [ ] **Step 3: Create the workspace**
+- [x] **Step 3: Create the workspace**
 
 Root `Cargo.toml`:
 
@@ -1527,7 +1527,7 @@ crossterm.workspace = true
 ratatui.workspace = true
 ```
 
-- [ ] **Step 4: Implement event.rs, key.rs, lib.rs**
+- [x] **Step 4: Implement event.rs, key.rs, lib.rs**
 
 `crates/typ-core/src/event.rs`:
 
@@ -1650,11 +1650,28 @@ pub use panel::{Panel, RenderContext, ThemeColors};
 `panel` is filled in at Task 9. To keep this task compiling, create an empty
 `crates/typ-core/src/panel.rs` and comment out the `pub use panel::...` line until then.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-core`
 
 Expected: PASS, 5 tests.
+
+**Result: 5 passed.** `cargo clippy -p typ-core --all-targets -- -D warnings` is also clean.
+
+Two deviations from this task as written:
+
+1. **`exclude` needs a literal path.** The workspace section above did not mention
+   `spikes/m0-feel`, and without excluding it cargo refuses to build the spike at all — a
+   manifest under the workspace root must be a member or explicitly excluded. `exclude` does
+   not glob the way `members` does, so `exclude = ["spikes/*"]` silently fails to match and
+   `exclude = ["spikes/m0-feel"]` is required. Verified both workspaces build independently
+   afterwards: 5 tests in `typ-core`, 25 in the spike.
+
+2. **`panel_event_stays_small` needed teeth.** As specified the test built an 8-element array
+   and asserted its length was 8, which is true by construction and stays true after a 9th
+   variant is added. An exhaustive `match` with no wildcard arm was added, so growing
+   `PanelEvent` breaks the build here and forces the decision to be deliberate. That is the
+   behaviour the test's name and comment already claimed.
 
 - [ ] **Step 6: Commit**
 

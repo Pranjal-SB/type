@@ -1,0 +1,34 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# The M0 spike is its own workspace and is deleted after Task 11. Without this
+# cargo refuses to build it at all, since a manifest inside the workspace root
+# must be either a member or explicitly excluded. `exclude` takes literal paths
+# only — unlike `members`, it does not glob.
+exclude = ["spikes/m0-feel"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1.0"
+crossterm = "0.29"
+ratatui = "0.30.2"
+ropey = "1.6"
+unicode-segmentation = "1.11"
+unicode-width = "0.2"
+
+typ-core = { path = "crates/typ-core" }
+typ-buffer = { path = "crates/typ-buffer" }
+typ-registry = { path = "crates/typ-registry" }
+typ-panel-editor = { path = "crates/typ-panel-editor" }
+typ-panel-tree = { path = "crates/typ-panel-tree" }
+typ-app = { path = "crates/typ-app" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
