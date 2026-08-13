@@ -1,32 +1,46 @@
 use std::io::stdout;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossterm::ExecutableCommand;
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    MouseEventKind,
 };
+use m0_feel::viewport::Viewport;
 use ratatui::DefaultTerminal;
+use ratatui::text::Line;
+use ratatui::widgets::Paragraph;
+use ropey::Rope;
 
 fn main() -> Result<()> {
-    // ratatui::init() enables raw mode + alternate screen and installs a panic
-    // hook, but it does NOT enable mouse capture. That is on us.
+    let path = std::env::args().nth(1).context("usage: m0-feel <file>")?;
+    let text = std::fs::read_to_string(&path).with_context(|| format!("reading {path}"))?;
+    let rope = Rope::from_str(&text);
+
     let mut terminal = ratatui::init();
     stdout().execute(EnableMouseCapture)?;
 
-    let result = run(&mut terminal);
+    let result = run(&mut terminal, &rope);
 
     stdout().execute(DisableMouseCapture)?;
     ratatui::restore();
     result
 }
 
-fn run(terminal: &mut DefaultTerminal) -> Result<()> {
-    let mut last_event = String::from("(none)");
+fn run(terminal: &mut DefaultTerminal, rope: &Rope) -> Result<()> {
+    let total = rope.len_lines();
+    let mut vp = Viewport { top_line: 0, height: 0 };
 
     loop {
         terminal.draw(|frame| {
-            let text = format!("m0-feel spike\nlast event: {last_event}\nq to quit");
-            frame.render_widget(text.as_str(), frame.area());
+            let area = frame.area();
+            vp.height = area.height as usize;
+            let lines: Vec<Line> = rope
+                .lines_at(vp.visible_range(total).start)
+                .take(vp.height)
+                .map(|l| Line::raw(l.to_string().trim_end_matches('\n').to_string()))
+                .collect();
+            frame.render_widget(Paragraph::new(lines), area);
         })?;
 
         match event::read()? {
@@ -37,14 +51,19 @@ fn run(terminal: &mut DefaultTerminal) -> Result<()> {
                 if quit {
                     return Ok(());
                 }
-                last_event = format!("{:?} {:?}", key.code, key.modifiers);
+                match key.code {
+                    KeyCode::Down => vp.scroll(1, total),
+                    KeyCode::Up => vp.scroll(-1, total),
+                    KeyCode::PageDown => vp.scroll(vp.height as i32, total),
+                    KeyCode::PageUp => vp.scroll(-(vp.height as i32), total),
+                    _ => {}
+                }
             }
-            Event::Mouse(m) => {
-                last_event = format!("{:?} at ({}, {})", m.kind, m.column, m.row);
-            }
-            Event::Resize(w, h) => {
-                last_event = format!("resize {w}x{h}");
-            }
+            Event::Mouse(m) => match m.kind {
+                MouseEventKind::ScrollDown => vp.scroll(3, total),
+                MouseEventKind::ScrollUp => vp.scroll(-3, total),
+                _ => {}
+            },
             _ => {}
         }
     }
