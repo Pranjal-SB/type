@@ -2396,7 +2396,7 @@ git commit -m "feat(registry): map file extensions to panel handlers"
 - Produces:
   - `typ_panel_editor::EditorPanel::{from_path, from_str, cursor, top_line}`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-panel-editor/tests/editor.rs`:
 
@@ -2499,13 +2499,13 @@ fn scrolling_moves_the_viewport_not_the_cursor() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-panel-editor`
 
 Expected: FAIL — the crate does not exist.
 
-- [ ] **Step 3: Implement the panel**
+- [x] **Step 3: Implement the panel**
 
 `crates/typ-panel-editor/Cargo.toml`:
 
@@ -2729,16 +2729,20 @@ impl Panel for EditorPanel {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-panel-editor`
 
 Expected: PASS, 9 tests.
 
+Actual: PASS, 9 tests. Clippy clean. One addition: `EditorPanel::from_str`
+carries the same `allow(clippy::should_implement_trait)` as `TextBuffer::from_str`,
+for the same reason.
+
 `scrolling_moves_the_viewport_not_the_cursor` runs without a render pass, so `height` is 0.
 The `self.height.max(1)` in `handle_scroll` is what makes that case work.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-panel-editor
