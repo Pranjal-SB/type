@@ -763,7 +763,7 @@ git commit -m "feat(core): keybindings as a data table with TOML overrides"
   - `typ_buffer::Selections` with `primary`, `iter`, `len`, `push`, `set_single`,
     `map_in_place`, `collapse_to_heads`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-buffer/tests/selection.rs`:
 
@@ -866,13 +866,13 @@ fn map_in_place_rewrites_every_selection_then_restores_the_invariants() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-buffer --test selection`
 
 Expected: FAIL — `unresolved imports typ_buffer::Selection, typ_buffer::Selections`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 `crates/typ-buffer/src/selection.rs`:
 
@@ -1055,13 +1055,29 @@ pub mod selection;
 pub use selection::{Selection, Selections};
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cargo test -p typ-buffer --test selection`
 
 Expected: PASS, 11 tests.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 13 tests — two added during execution, after one of the planned tests failed
+against the planned code:
+
+- `map_in_place_rewrites_every_selection_then_restores_the_invariants` failed with 2
+  selections instead of 1. `overlaps` used `a_end > b_start`, which is correct for ranges but
+  false for two carets at the *same* position: an empty range never strictly contains
+  anything, so duplicate cursors survived normalization and typing would have inserted twice
+  in one place. `overlaps` now also merges two empty selections at the same point.
+- Added `two_carets_at_the_same_position_are_one_cursor` and
+  `a_caret_inside_a_selection_is_absorbed_by_it` to pin that behaviour by name rather than
+  leaving it as a side effect the `map_in_place` test happens to cover.
+
+Also dropped the planned `is_empty`, which returned `list.is_empty()` and could only ever
+answer false. `#[allow(clippy::len_without_is_empty)]` with the reason stated is more honest
+than a method that is a constant.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-buffer/src/selection.rs crates/typ-buffer/src/lib.rs crates/typ-buffer/tests/selection.rs
