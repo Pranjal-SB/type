@@ -14,6 +14,10 @@ pub struct TextBuffer {
     path: Option<PathBuf>,
     dirty: bool,
     history: History,
+    /// Nesting depth of `begin_edit_group`. While non-zero, individual edits
+    /// stop taking their own snapshots, so a multi-caret edit is one undo step
+    /// rather than one per cursor.
+    group_depth: usize,
 }
 
 impl TextBuffer {
@@ -26,6 +30,7 @@ impl TextBuffer {
             path: None,
             dirty: false,
             history: History::default(),
+            group_depth: 0,
         }
     }
 
@@ -37,6 +42,7 @@ impl TextBuffer {
             path: Some(path.to_path_buf()),
             dirty: false,
             history: History::default(),
+            group_depth: 0,
         })
     }
 
@@ -79,7 +85,7 @@ impl TextBuffer {
     }
 
     pub fn insert_char(&mut self, pos: Position, ch: char) {
-        self.history.record(self.rope.clone());
+        self.record_snapshot();
         let offset = self.char_offset(pos);
         self.rope.insert_char(offset, ch);
         self.dirty = true;
@@ -99,7 +105,7 @@ impl TextBuffer {
                 .nth(pos.col - 1)
                 .map_or(1, |g| g.chars().count())
         };
-        self.history.record(self.rope.clone());
+        self.record_snapshot();
         self.rope.remove(offset - n..offset);
         self.dirty = true;
     }
@@ -117,7 +123,7 @@ impl TextBuffer {
             .graphemes(true)
             .nth(pos.col)
             .map_or(1, |g| g.chars().count());
-        self.history.record(self.rope.clone());
+        self.record_snapshot();
         self.rope.remove(offset..offset + n);
         self.dirty = true;
     }
@@ -140,16 +146,47 @@ impl TextBuffer {
     }
 
     /// Replace the text between two positions as a single undo step.
+    ///
+    /// An empty range inserts, so callers can express insertion, deletion and
+    /// replacement as one operation and not branch three ways.
     pub fn replace_range(&mut self, start: Position, end: Position, text: &str) {
         let from = self.char_offset(start);
         let to = self.char_offset(end);
-        if from >= to {
+        if from > to || (from == to && text.is_empty()) {
             return;
         }
-        self.history.record(self.rope.clone());
-        self.rope.remove(from..to);
-        self.rope.insert(from, text);
+        self.record_snapshot();
+        if to > from {
+            self.rope.remove(from..to);
+        }
+        if !text.is_empty() {
+            self.rope.insert(from, text);
+        }
         self.dirty = true;
+    }
+
+    /// Take an undo snapshot unless an edit group is open.
+    fn record_snapshot(&mut self) {
+        if self.group_depth == 0 {
+            self.history.record(self.rope.clone());
+        }
+    }
+
+    /// Begin a group of edits that undo together.
+    ///
+    /// One snapshot is taken up front and none during the group, so thirty
+    /// cursors typing one character is one undo step. Without this, undoing a
+    /// thirty-caret edit would take thirty presses and leave the buffer in
+    /// states the user never typed.
+    pub fn begin_edit_group(&mut self) {
+        if self.group_depth == 0 {
+            self.history.record(self.rope.clone());
+        }
+        self.group_depth += 1;
+    }
+
+    pub fn end_edit_group(&mut self) {
+        self.group_depth = self.group_depth.saturating_sub(1);
     }
 
     pub fn undo(&mut self) {

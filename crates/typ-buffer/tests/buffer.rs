@@ -170,3 +170,24 @@ fn a_save_that_cannot_be_written_leaves_the_original_untouched() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "original\n");
     assert!(b.is_dirty(), "a failed save must not clear the dirty flag");
 }
+
+#[test]
+fn an_edit_group_is_a_single_undo_step() {
+    let mut b = TextBuffer::from_str("abc\n");
+    b.begin_edit_group();
+    b.insert_char(Position { line: 0, col: 0 }, 'x');
+    b.insert_char(Position { line: 0, col: 1 }, 'y');
+    b.end_edit_group();
+    assert_eq!(b.line_text(0), "xyabc");
+    b.undo();
+    assert_eq!(b.line_text(0), "abc", "one undo takes back both edits");
+}
+
+#[test]
+fn edits_outside_a_group_are_separate_undo_steps() {
+    let mut b = TextBuffer::from_str("abc\n");
+    b.insert_char(Position { line: 0, col: 0 }, 'x');
+    b.insert_char(Position { line: 0, col: 1 }, 'y');
+    b.undo();
+    assert_eq!(b.line_text(0), "xabc");
+}

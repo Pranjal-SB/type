@@ -2280,7 +2280,7 @@ git commit -m "feat(editor): every motion as an action, applied to every selecti
 - Consumes: `typ_buffer::TextBuffer`, `typ_core::{Action, Direction}`
 - Produces: `Action::{InsertChar, InsertNewline, Delete, Undo, Redo}` handled in `perform`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-panel-editor/tests/edit.rs`:
 
@@ -2437,13 +2437,13 @@ fn undo_pulls_the_caret_back_inside_the_text() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-panel-editor --test edit`
 
 Expected: FAIL — `perform` returns nothing for edit actions, so the buffer never changes.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add to `impl EditorPanel` in `crates/typ-panel-editor/src/actions.rs`:
 
@@ -2602,7 +2602,7 @@ Deletion needs the line text, so it reads what it needs before mutating:
     }
 ```
 
-- [ ] **Step 4: Add edit grouping to the buffer**
+- [x] **Step 4: Add edit grouping to the buffer**
 
 `TextBuffer` currently snapshots on every mutation. Add grouping in
 `crates/typ-buffer/src/buffer.rs`:
@@ -2631,16 +2631,31 @@ every existing `self.history.record(...)` call with:
         }
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-buffer -p typ-panel-editor`
 
 Expected: PASS — 14 new edit tests, and the existing buffer suite unchanged.
 
+Actual: PASS, 15 edit tests plus 3 new buffer tests, 193 across the workspace. The planned
+design was wrong in a way its own test caught, and the fix changed the shape of this task:
+
+- The plan had each closure *perform* its edit and return the new caret, applying selections
+  last-to-first so buffer positions stayed valid. The text came out right and every caret
+  after the first landed in the wrong column — `multi_caret_edits_on_one_line_do_not_corrupt_each_other`
+  expected `[2, 5, 8]` and got `[2, 4, 6]`. Processing in reverse keeps the *buffer* positions
+  valid but leaves each returned caret ignorant of the edits applied to its left afterwards.
+- Rewritten so the closure **describes** an edit — `Edit { start, end, text }` — and this
+  function applies them in order, carrying an accumulated `Shift` (line delta, plus a column
+  delta scoped to the line the last edit ended on). That is the change-mapping every real
+  editor has, and doing it once here is what stops each action reimplementing it.
+- `TextBuffer::replace_range` now treats an empty range as an insert, so insertion, deletion
+  and replacement are one primitive and the mapping only has to understand one shape.
+
 If `multi_caret_edits_on_one_line_do_not_corrupt_each_other` fails with the insertions
 landing at the wrong columns, the loop is running forwards; it must be `.rev()`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/typ-panel-editor/src/actions.rs crates/typ-panel-editor/tests/edit.rs crates/typ-buffer/src/buffer.rs

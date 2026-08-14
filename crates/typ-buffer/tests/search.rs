@@ -100,3 +100,18 @@ fn replace_range_with_an_empty_replacement_deletes() {
     b.replace_range(pos(0, 1), pos(0, 4), "");
     assert_eq!(b.line_text(0), "aef");
 }
+
+#[test]
+fn replace_range_with_an_empty_range_inserts() {
+    let mut b = TextBuffer::from_str("ac\n");
+    b.replace_range(pos(0, 1), pos(0, 1), "b");
+    assert_eq!(b.line_text(0), "abc");
+}
+
+#[test]
+fn replace_range_with_an_empty_range_and_no_text_does_nothing() {
+    let mut b = TextBuffer::from_str("ab\n");
+    b.replace_range(pos(0, 1), pos(0, 1), "");
+    assert_eq!(b.line_text(0), "ab");
+    assert!(!b.is_dirty(), "a no-op must not dirty the buffer");
+}

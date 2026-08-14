@@ -8,7 +8,8 @@ use typ_buffer::{
     Position, Selection, display_to_grapheme_col, grapheme_to_display_col, next_word_boundary,
     previous_word_boundary,
 };
-use typ_core::{Action, Motion, PanelEvent};
+use typ_core::{Action, Direction, Motion, PanelEvent};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{EditorPanel, TAB_WIDTH};
 
@@ -155,6 +156,61 @@ impl EditorPanel {
         }
     }
 
+    /// Apply one described edit per selection, keeping every other selection
+    /// pointing at the text it was aimed at.
+    ///
+    /// The closure *describes* an edit as a range plus its replacement rather
+    /// than performing it. That is what makes multi-cursor correct: an edit
+    /// shifts every position after it, so the positions a later selection was
+    /// built from are stale the moment an earlier edit lands. Describing first
+    /// lets this function apply the edits in order and carry the accumulated
+    /// shift forward, which is the same job a text editor's change-mapping does
+    /// and is not something each action should reimplement.
+    fn edit_at_each_selection(
+        &mut self,
+        describe: impl Fn(Selection, &[String]) -> Edit,
+    ) -> Option<Vec<PanelEvent>> {
+        // Line text is read up front: the closure cannot borrow the buffer
+        // while the buffer is being mutated.
+        let lines: Vec<String> = (0..self.buffer.line_count())
+            .map(|i| self.buffer.line_text(i))
+            .collect();
+        let described: Vec<Edit> = self
+            .selections
+            .iter()
+            .map(|s| describe(*s, &lines))
+            .collect();
+
+        // One snapshot for the whole group, so a thirty-caret edit is one undo
+        // step rather than thirty.
+        self.buffer.begin_edit_group();
+
+        let mut shift = Shift::default();
+        let mut heads: Vec<Position> = Vec::with_capacity(described.len());
+        for edit in described {
+            let start = shift.apply(edit.start);
+            let end = shift.apply(edit.end);
+            self.buffer.replace_range(start, end, &edit.text);
+
+            let after = position_after(start, &edit.text);
+            shift.record(edit.end.line, end, after);
+            heads.push(after);
+        }
+
+        self.buffer.end_edit_group();
+
+        self.set_selections(heads.into_iter().map(Selection::caret).collect());
+        self.goal_col = None;
+        self.scroll_to_cursor();
+        Some(vec![PanelEvent::NeedsRedraw])
+    }
+
+    /// Pull every selection back inside the text after the buffer changed
+    /// underneath it — undo and redo can shrink what a selection covered.
+    fn clamp_selections(&mut self) {
+        self.clamp_cursor();
+    }
+
     /// The entry point every consumer uses. `None` means this panel does not
     /// handle the action, so the app should try it.
     pub fn perform(&mut self, action: Action) -> Option<Vec<PanelEvent>> {
@@ -193,8 +249,206 @@ impl EditorPanel {
                 self.scroll_to_cursor();
                 Some(vec![PanelEvent::NeedsRedraw])
             }
+            Action::InsertChar(c) => {
+                let text = c.to_string();
+                self.edit_at_each_selection(move |selection, _lines| {
+                    let (start, end) = selection.range();
+                    Edit {
+                        start,
+                        end,
+                        text: text.clone(),
+                    }
+                })
+            }
+
+            Action::InsertNewline => self.edit_at_each_selection(|selection, _lines| {
+                let (start, end) = selection.range();
+                Edit {
+                    start,
+                    end,
+                    text: "\n".to_string(),
+                }
+            }),
+
+            Action::Delete { direction, by_word } => {
+                self.edit_at_each_selection(move |selection, lines| {
+                    // A non-empty selection is the target, whichever key was
+                    // pressed.
+                    if !selection.is_empty() {
+                        let (start, end) = selection.range();
+                        return Edit::delete(start, end);
+                    }
+
+                    let head = selection.head;
+                    let line = lines.get(head.line).map(String::as_str).unwrap_or("");
+                    let line_len = line.graphemes(true).count();
+
+                    match direction {
+                        Direction::Backward => {
+                            if head.col > 0 {
+                                let target = if by_word {
+                                    previous_word_boundary(line, head.col)
+                                } else {
+                                    head.col - 1
+                                };
+                                Edit::delete(
+                                    Position {
+                                        line: head.line,
+                                        col: target,
+                                    },
+                                    head,
+                                )
+                            } else if head.line > 0 {
+                                // Join with the previous line: delete the
+                                // newline between them.
+                                let previous = head.line - 1;
+                                let col =
+                                    lines.get(previous).map_or(0, |l| l.graphemes(true).count());
+                                Edit::delete(
+                                    Position {
+                                        line: previous,
+                                        col,
+                                    },
+                                    head,
+                                )
+                            } else {
+                                Edit::nothing(head)
+                            }
+                        }
+                        Direction::Forward => {
+                            if head.col < line_len {
+                                let target = if by_word {
+                                    next_word_boundary(line, head.col)
+                                } else {
+                                    head.col + 1
+                                };
+                                Edit::delete(
+                                    head,
+                                    Position {
+                                        line: head.line,
+                                        col: target,
+                                    },
+                                )
+                            } else if head.line + 1 < lines.len() {
+                                // At the end of a line, pull the next one up.
+                                Edit::delete(
+                                    head,
+                                    Position {
+                                        line: head.line + 1,
+                                        col: 0,
+                                    },
+                                )
+                            } else {
+                                Edit::nothing(head)
+                            }
+                        }
+                    }
+                })
+            }
+
+            Action::Undo => {
+                self.buffer.undo();
+                self.clamp_selections();
+                self.scroll_to_cursor();
+                Some(vec![PanelEvent::NeedsRedraw])
+            }
+
+            Action::Redo => {
+                self.buffer.redo();
+                self.clamp_selections();
+                self.scroll_to_cursor();
+                Some(vec![PanelEvent::NeedsRedraw])
+            }
+
             // Not this panel's business. The app tries it next.
             _ => None,
         }
+    }
+}
+
+/// One edit, described rather than performed: replace `start..end` with `text`.
+///
+/// An empty range inserts and an empty text deletes, so every editing action
+/// reduces to this one shape and the position mapping only has to understand
+/// one thing.
+struct Edit {
+    start: Position,
+    end: Position,
+    text: String,
+}
+
+impl Edit {
+    fn delete(start: Position, end: Position) -> Self {
+        Self {
+            start,
+            end,
+            text: String::new(),
+        }
+    }
+
+    /// An edit that changes nothing, for a caret with nowhere to go — the
+    /// start of the buffer for backspace, the end for delete.
+    fn nothing(at: Position) -> Self {
+        Self {
+            start: at,
+            end: at,
+            text: String::new(),
+        }
+    }
+}
+
+/// Where a position ends up once `text` has been inserted at `start`.
+fn position_after(start: Position, text: &str) -> Position {
+    let mut line = start.line;
+    let mut col = start.col;
+    for grapheme in text.graphemes(true) {
+        if grapheme == "\n" || grapheme == "\r\n" {
+            line += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+    }
+    Position { line, col }
+}
+
+/// The accumulated effect of edits already applied, in original coordinates.
+///
+/// Column shifts apply only to positions on the line where the last edit
+/// ended; line shifts apply to everything after it. Tracking both is what lets
+/// several cursors edit the same line without the later ones landing in the
+/// wrong place.
+#[derive(Default)]
+struct Shift {
+    lines: isize,
+    cols: isize,
+    /// Original line index the column shift belongs to.
+    col_line: Option<usize>,
+}
+
+impl Shift {
+    fn apply(&self, pos: Position) -> Position {
+        let col = if self.col_line == Some(pos.line) {
+            (pos.col as isize + self.cols).max(0) as usize
+        } else {
+            pos.col
+        };
+        Position {
+            line: (pos.line as isize + self.lines).max(0) as usize,
+            col,
+        }
+    }
+
+    /// Record what an edit did: `original_end_line` is in original
+    /// coordinates, `applied_end` and `after` in current ones.
+    fn record(&mut self, original_end_line: usize, applied_end: Position, after: Position) {
+        let col_delta = after.col as isize - applied_end.col as isize;
+        if self.col_line == Some(original_end_line) {
+            self.cols += col_delta;
+        } else {
+            self.cols = col_delta;
+            self.col_line = Some(original_end_line);
+        }
+        self.lines += after.line as isize - applied_end.line as isize;
     }
 }
