@@ -3682,7 +3682,7 @@ the binary name.
 
 Actual: PASS, 3 tests.
 
-- [ ] **Step 5: Verify the walking skeleton by hand**
+- [x] **Step 5: Verify the walking skeleton by hand**
 
 ```bash
 cargo build --release
@@ -3707,8 +3707,14 @@ Then the `$EDITOR` contract:
 
 Expected: `typ: no-such-file.rs does not exist` on stderr, `exit=1`.
 
-Actual: exactly that, verified. The interactive checklist above it is still
-outstanding — it needs a human at a real terminal.
+Actual: exactly that, verified.
+
+The interactive checklist was run at a real terminal after M1.2 and passed: the two panels
+render, focus cycling is visible, the tree expands, click-to-position lands correctly
+including on wide characters, the wheel scrolls the panel under the pointer, editing and
+saving work, and the terminal is left working on exit. Note the order — it only passed
+*after* M1.1 and M1.2, because as specified M1 had no cursor, no focus indicator and no way
+into a directory, and could not have been evaluated by hand at all.
 
 - [x] **Step 6: Commit**
 
