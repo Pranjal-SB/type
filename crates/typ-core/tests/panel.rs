@@ -44,6 +44,12 @@ fn defaulted_methods_return_empty() {
 }
 
 #[test]
+fn a_panel_hides_the_cursor_unless_it_asks_for_one() {
+    let p = Minimal;
+    assert!(p.cursor_position(Rect::new(0, 0, 10, 10)).is_none());
+}
+
+#[test]
 fn panels_are_dispatchable_as_trait_objects() {
     let panels: Vec<Box<dyn Panel>> = vec![Box::new(Minimal)];
     assert_eq!(panels[0].name(), "minimal");

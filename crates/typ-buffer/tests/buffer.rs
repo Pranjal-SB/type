@@ -49,6 +49,34 @@ fn delete_before_wide_char_removes_whole_grapheme() {
 }
 
 #[test]
+fn delete_after_removes_the_grapheme_under_the_cursor() {
+    let mut b = TextBuffer::from_str("abc\n");
+    b.delete_after(Position { line: 0, col: 1 });
+    assert_eq!(b.line_text(0), "ac");
+}
+
+#[test]
+fn delete_after_at_end_of_line_joins_the_next_line() {
+    let mut b = TextBuffer::from_str("ab\ncd\n");
+    b.delete_after(Position { line: 0, col: 2 });
+    assert_eq!(b.line_text(0), "abcd");
+}
+
+#[test]
+fn delete_after_at_end_of_buffer_is_a_noop() {
+    let mut b = TextBuffer::from_str("ab");
+    b.delete_after(Position { line: 0, col: 2 });
+    assert_eq!(b.line_text(0), "ab");
+}
+
+#[test]
+fn delete_after_removes_a_whole_wide_grapheme() {
+    let mut b = TextBuffer::from_str("日本語\n");
+    b.delete_after(Position { line: 0, col: 0 });
+    assert_eq!(b.line_text(0), "本語");
+}
+
+#[test]
 fn undo_restores_the_previous_content() {
     let mut b = TextBuffer::from_str("a\n");
     b.insert_char(Position { line: 0, col: 1 }, 'b');

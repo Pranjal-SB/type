@@ -110,6 +110,24 @@ impl App {
         };
         self.editor
             .render(editor_area, frame.buffer_mut(), &editor_ctx);
+
+        // Only the focused panel gets a cursor, and it is the terminal's real
+        // one — set after drawing, so it lands on top of the frame. Panels with
+        // nothing to edit return None and the cursor stays hidden.
+        let focused_area = match self.focus {
+            Focus::Tree => tree_area,
+            Focus::Editor => editor_area,
+        };
+        if let Some((x, y)) = self.focused().cursor_position(focused_area) {
+            frame.set_cursor_position((x, y));
+        }
+    }
+
+    fn focused(&self) -> &dyn Panel {
+        match self.focus {
+            Focus::Tree => &self.tree,
+            Focus::Editor => &self.editor,
+        }
     }
 
     /// Areas for hit-testing mouse events, in the same order as `render`.

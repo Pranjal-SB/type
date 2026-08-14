@@ -2,12 +2,12 @@ use std::any::Any;
 use std::path::Path;
 
 use anyhow::Result;
-use crossterm::event::{KeyCode, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::Line;
-use ratatui::widgets::{Paragraph, Widget};
+use ratatui::widgets::{Block, Paragraph, Widget};
 use typ_buffer::{Position, TextBuffer, display_to_grapheme_col, grapheme_to_display_col};
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
 use unicode_segmentation::UnicodeSegmentation;
@@ -58,6 +58,16 @@ impl EditorPanel {
         self.buffer.save()
     }
 
+    /// Line contents without the trailing newline.
+    pub fn line_text(&self, line: usize) -> String {
+        self.buffer.line_text(line)
+    }
+
+    /// The text area inside the panel's border.
+    fn text_area(area: Rect) -> Rect {
+        Block::bordered().inner(area)
+    }
+
     fn line_grapheme_count(&self, line: usize) -> usize {
         self.buffer.line_text(line).graphemes(true).count()
     }
@@ -76,6 +86,23 @@ impl EditorPanel {
         } else if self.cursor.line >= self.top_line + self.height {
             self.top_line = self.cursor.line - self.height + 1;
         }
+    }
+
+    /// Rows a page motion covers. Before the first frame the height is unknown,
+    /// so fall back to a screenful rather than moving nowhere.
+    fn page(&self) -> usize {
+        self.height.max(1)
+    }
+
+    /// Pull the cursor back inside the text after the buffer changed underneath
+    /// it — undo and redo can shrink the content the cursor was sitting in.
+    fn clamp_cursor(&mut self) {
+        self.cursor.line = self.cursor.line.min(self.last_line());
+        self.cursor.col = self
+            .cursor
+            .col
+            .min(self.line_grapheme_count(self.cursor.line));
+        self.goal_col = None;
     }
 
     fn move_vertical(&mut self, delta: i32) {
@@ -116,18 +143,89 @@ impl Panel for EditorPanel {
     }
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, ctx: &RenderContext) {
-        self.height = area.height as usize;
+        let border = if ctx.is_focused {
+            ctx.theme.border_focused
+        } else {
+            ctx.theme.border
+        };
+        let block = Block::bordered()
+            .border_style(Style::default().fg(border))
+            .title(self.title());
+        let inner = block.inner(area);
+        block.render(area, buf);
+
+        self.height = inner.height as usize;
         let end = (self.top_line + self.height).min(self.buffer.line_count());
         let lines: Vec<Line> = (self.top_line..end)
             .map(|i| Line::raw(self.buffer.line_text(i)))
             .collect();
         Paragraph::new(lines)
             .style(Style::default().fg(ctx.theme.fg).bg(ctx.theme.bg))
-            .render(area, buf);
+            .render(inner, buf);
+    }
+
+    fn cursor_position(&self, panel_area: Rect) -> Option<(u16, u16)> {
+        let inner = Self::text_area(panel_area);
+        let row = self.cursor.line.checked_sub(self.top_line)?;
+        if row >= inner.height as usize {
+            return None;
+        }
+        let col = grapheme_to_display_col(
+            &self.buffer.line_text(self.cursor.line),
+            self.cursor.col,
+            TAB_WIDTH,
+        );
+        if col >= inner.width as usize {
+            return None;
+        }
+        Some((inner.x + col as u16, inner.y + row as u16))
     }
 
     fn handle_key(&mut self, chord: KeyChord) -> Vec<PanelEvent> {
+        // Chorded bindings are matched first: without this, Ctrl+Z arrives as
+        // KeyCode::Char('z') and gets typed into the buffer.
+        match chord.canonical.as_str() {
+            "ctrl+z" => {
+                self.buffer.undo();
+                self.clamp_cursor();
+                return vec![PanelEvent::NeedsRedraw];
+            }
+            "ctrl+y" => {
+                self.buffer.redo();
+                self.clamp_cursor();
+                return vec![PanelEvent::NeedsRedraw];
+            }
+            _ => {}
+        }
+        if chord
+            .raw
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        {
+            return Vec::new();
+        }
+
         match chord.raw.code {
+            KeyCode::Enter => {
+                self.buffer.insert_char(self.cursor, '\n');
+                self.cursor.line += 1;
+                self.cursor.col = 0;
+                self.goal_col = None;
+            }
+            KeyCode::Delete => {
+                self.buffer.delete_after(self.cursor);
+                self.goal_col = None;
+            }
+            KeyCode::Home => {
+                self.cursor.col = 0;
+                self.goal_col = None;
+            }
+            KeyCode::End => {
+                self.cursor.col = self.line_grapheme_count(self.cursor.line);
+                self.goal_col = None;
+            }
+            KeyCode::PageDown => self.move_vertical(self.page() as i32),
+            KeyCode::PageUp => self.move_vertical(-(self.page() as i32)),
             KeyCode::Char(c) => {
                 self.buffer.insert_char(self.cursor, c);
                 self.cursor.col += 1;
@@ -137,6 +235,12 @@ impl Panel for EditorPanel {
                 if self.cursor.col > 0 {
                     self.buffer.delete_before(self.cursor);
                     self.cursor.col -= 1;
+                } else if self.cursor.line > 0 {
+                    // Joining lines: the cursor lands where the two now meet.
+                    let joined_at = self.line_grapheme_count(self.cursor.line - 1);
+                    self.buffer.delete_before(self.cursor);
+                    self.cursor.line -= 1;
+                    self.cursor.col = joined_at;
                 }
                 self.goal_col = None;
             }
@@ -170,8 +274,9 @@ impl Panel for EditorPanel {
         if event.kind != MouseEventKind::Down(MouseButton::Left) {
             return Vec::new();
         }
-        let row = event.row.saturating_sub(panel_area.y) as usize;
-        let col = event.column.saturating_sub(panel_area.x) as usize;
+        let inner = Self::text_area(panel_area);
+        let row = event.row.saturating_sub(inner.y) as usize;
+        let col = event.column.saturating_sub(inner.x) as usize;
         let line = (self.top_line + row).min(self.last_line());
         self.cursor = Position {
             line,

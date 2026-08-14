@@ -114,6 +114,23 @@ events. The render thread only renders.
 - Nothing is modal-only and nothing is mouse-only.
 - Non-modal by default. Familiar to anyone arriving from VS Code.
 
+**Modal editing is a setting, not a fork.** The core stays non-modal and always usable
+without it; a vim layer sits above the editor as a toggle (`editing.mode = "vim"`), the way
+Zed does it — a mode state machine that intercepts keys and translates them into the same
+actions the non-modal path already calls. That is the whole reason it can be optional: the
+layer owns modes, counts, operators and pending motions, and owns no editing primitives of
+its own.
+
+What modal editors actually have that non-modal ones lack is not modes, it is a **composable
+grammar** — operator × count × motion, so `d3w` is three orthogonal pieces rather than a
+memorised command. That grammar is the thing worth taking; modes are the price it charges,
+and a toggle is how someone declines to pay it.
+
+The obligation this creates on the core: every editing primitive must be reachable as a
+named action taking explicit arguments, never only as a key handler. A `handle_key` arm that
+mutates the buffer inline is unreachable from the vim layer, from the command palette, and
+from a plugin — three consumers, one rule.
+
 ### Without giving up features
 
 Guaranteed by the protocol leverage in §2, not by grinding out features one at a time.
@@ -205,7 +222,10 @@ TermIDE's `Panel` trait is the best single artifact in any of the three projects
 TYPE takes its *shape* — return events, never touch state — but not its size.
 
 - **Starts at five methods**: `name`, `title`, `render`, `handle_key`, `as_any`. Nothing else
-  until a second panel needs it. TermIDE's ~30 methods are the endpoint of years of real
+  until a second panel needs it. First growth came at M1.1: `cursor_position(panel_area)`,
+  defaulted to `None`. The app draws the terminal's real cursor from the focused panel rather
+  than styling a cell, so it blinks and reshapes like every other terminal program's; panels
+  with nothing to edit ignore the method entirely. TermIDE's ~30 methods are the endpoint of years of real
   panels; adopting that surface up front would be guessing at generality we have not earned.
   The trait grows when a concrete panel forces it, and each addition is defaulted so existing
   panels do not break.

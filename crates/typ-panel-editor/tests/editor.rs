@@ -63,10 +63,11 @@ fn every_key_press_requests_a_redraw() {
 fn clicking_places_the_cursor_at_that_position() {
     let mut p = EditorPanel::from_str("hello\nworld\n");
     let area = Rect::new(0, 0, 40, 10);
+    // One row and one column of that is border, so this lands on line 1, col 3.
     let ev = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
-        column: 3,
-        row: 1,
+        column: 4,
+        row: 2,
         modifiers: KeyModifiers::NONE,
     };
     p.handle_mouse(ev, area);
@@ -79,8 +80,8 @@ fn clicking_inside_a_wide_char_selects_that_char() {
     let area = Rect::new(0, 0, 40, 10);
     let ev = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
-        column: 1, // right half of the first CJK grapheme
-        row: 0,
+        column: 2, // right half of the first CJK grapheme, past the border
+        row: 1,
         modifiers: KeyModifiers::NONE,
     };
     p.handle_mouse(ev, area);

@@ -3866,3 +3866,56 @@ Stated so nobody goes looking: no syntax highlighting in the real editor panel (
 file association (M6), no plugin host, no debugger. Selections, multi-cursor, and search also
 land at M2 — M1 proves the architecture carries input, render, and events correctly across two
 panels, and nothing more.
+
+---
+
+## M1.1 — usability patch, added after running M1
+
+M1 passed every test it specified and was still not usable when driven by hand. Three things
+the plan never specified turned out to be load-bearing, found in the first real session:
+
+1. **The cursor was never drawn.** `EditorPanel::render` painted text and nothing else, and
+   no code anywhere called `set_cursor_position`. You could type into a file and not see
+   where you were. This is a plan omission, not a deviation — no task ever said to draw it.
+2. **Focus was invisible.** `RenderContext::is_focused` was computed by `App` and passed to
+   every panel, and no panel read it. `Tab` cycled focus with no visible effect.
+3. **Directories could not be opened.** By design — `activate()` returned `NeedsRedraw` for
+   a directory — but a tree that draws folders and refuses to open them reads as broken
+   rather than as scoped.
+
+Plus a keyboard set thin enough to block ordinary editing: `Enter` did not insert a newline,
+and there was no `Home`, `End`, `PageUp`, `PageDown`, `Delete`, or undo binding, despite
+`TextBuffer::undo`/`redo` existing since Task 10 and never being wired to a key.
+
+### What shipped
+
+| Area | Change |
+|---|---|
+| `typ-core` | `Panel::cursor_position(panel_area) -> Option<(u16, u16)>`, defaulted to `None` |
+| `typ-buffer` | `delete_after` — forward delete, joining the next line at end of line |
+| `typ-panel-editor` | `Enter`, `Home`, `End`, `PageUp`, `PageDown`, `Delete`, `Ctrl+Z`, `Ctrl+Y`; backspace at column 0 joins lines; bordered + titled with focus color; cursor position reported |
+| `typ-panel-tree` | Expandable directories to any depth, `Enter`/`Right`/`Left`, indentation and `v`/`>` markers, selection preserved across rebuilds; bordered + titled |
+| `typ-app` | Sets the terminal cursor from the focused panel after drawing the frame |
+
+Two decisions worth keeping:
+
+- **The real terminal cursor, not a styled cell.** ratatui applies `Frame::set_cursor_position`
+  after the buffer diff is flushed, so the cursor lands on top of the frame and behaves like
+  every other terminal program's — it blinks, and it honours the user's cursor shape.
+- **Chorded keys are matched before `KeyCode`.** Without that, `Ctrl+Z` arrives as
+  `KeyCode::Char('z')` and gets typed into the buffer. Any modifier the editor does not
+  claim now returns no events instead of inserting text.
+
+Borders cost one cell on each side, which moved every mouse coordinate. Both existing click
+tests were updated to the new geometry rather than the panels being left border-free — the
+focus indicator has a job, and hit-testing through `Block::inner` is the same call the
+renderer uses, so the two cannot drift apart.
+
+### Still open after M1.1
+
+- **`Ctrl+Q` discards unsaved changes silently.** `Panel::needs_close_confirmation` exists
+  and has since Task 9; nothing calls it, because there is no status bar or prompt surface to
+  ask the question in. This is the top data-loss risk in the codebase.
+- No selections, no mouse drag, no word-wise motions (`Ctrl+Left`/`Right`) — M2.
+- Tree does not watch the filesystem; external changes need a restart to appear.
+- No horizontal scrolling: a cursor past the right edge of the panel stops being drawn.

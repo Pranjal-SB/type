@@ -102,6 +102,24 @@ impl TextBuffer {
         self.dirty = true;
     }
 
+    /// Delete the grapheme at `pos` (forward delete).
+    ///
+    /// At the end of a line this removes the newline, joining the next line up.
+    pub fn delete_after(&mut self, pos: Position) {
+        let offset = self.char_offset(pos);
+        if offset >= self.rope.len_chars() {
+            return;
+        }
+        let text = self.line_text(pos.line);
+        let n = text
+            .graphemes(true)
+            .nth(pos.col)
+            .map_or(1, |g| g.chars().count());
+        self.history.record(self.rope.to_string());
+        self.rope.remove(offset..offset + n);
+        self.dirty = true;
+    }
+
     pub fn undo(&mut self) {
         if let Some(prev) = self.history.undo(self.rope.to_string()) {
             self.rope = Rope::from_str(&prev);

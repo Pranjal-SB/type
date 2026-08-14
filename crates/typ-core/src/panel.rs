@@ -83,6 +83,17 @@ pub trait Panel: Any {
         Vec::new()
     }
 
+    /// Where the terminal cursor belongs, in screen coordinates, when this
+    /// panel holds focus. `None` hides it.
+    ///
+    /// The app draws the real terminal cursor rather than a styled cell, so it
+    /// blinks and reshapes the way every other terminal program's does. A panel
+    /// with nothing to edit — a file tree, a viewer — leaves this defaulted.
+    fn cursor_position(&self, panel_area: Rect) -> Option<(u16, u16)> {
+        let _ = panel_area;
+        None
+    }
+
     /// Periodic hook for background work.
     fn tick(&mut self) -> Vec<PanelEvent> {
         Vec::new()
