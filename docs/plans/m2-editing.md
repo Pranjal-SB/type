@@ -442,13 +442,29 @@ git commit -m "feat(core): name every editing primitive as an Action"
   - `Keymap::merge_toml(&mut self, src: &str) -> anyhow::Result<()>`
   - `Keymap::bindings_for(&self, action: Action) -> Vec<&str>`
 
-- [ ] **Step 1: Add the TOML dependency**
+- [ ] **Step 1: Add the dependencies**
 
-Run: `cargo add toml --package typ-core`
+`typ-core` currently depends on only `crossterm` and `ratatui`. `merge_toml` needs both a TOML
+parser and `anyhow`, which the crate does not yet have:
 
-Then move the version cargo picked into `[workspace.dependencies]` in the root `Cargo.toml`
-and replace the entry in `crates/typ-core/Cargo.toml` with `toml.workspace = true`, matching
-how every other dependency in this workspace is declared.
+```bash
+cargo add toml --package typ-core
+```
+
+`anyhow` is already in `[workspace.dependencies]`, so add it by hand to
+`crates/typ-core/Cargo.toml` as `anyhow.workspace = true`. Then move the `toml` version cargo
+picked into `[workspace.dependencies]` in the root `Cargo.toml` and replace the crate entry
+with `toml.workspace = true`, matching how every other dependency here is declared.
+
+The result:
+
+```toml
+[dependencies]
+anyhow.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true
+toml.workspace = true
+```
 
 - [ ] **Step 2: Write the failing test**
 
@@ -4344,10 +4360,13 @@ than touching state. §7's input model: scroll coalescing and synchronized outpu
    `self.prompt = None`. Rewritten to decide an `Outcome` first and mutate afterwards.
 3. **`self.width` was used by horizontal scrolling and never declared.** Task 11 now adds the
    field and sets it in `render` beside `height`.
-4. **`become_replace_after_needle` was called but never defined**, and the two-stage replace
+4. **`typ-core` had no `anyhow` dependency** while Task 2's `merge_toml` returns
+   `anyhow::Result`. Found on a third pass that checked the plan against the actual crate
+   manifests rather than against itself.
+5. **`become_replace_after_needle` was called but never defined**, and the two-stage replace
    closed its prompt after the first answer (found on the first pass, fixed then).
-5. `gh pr create --body-file <(...)` was a placeholder — now names a real file.
-6. `set_selections_for_test` indexed `list[0]` without checking; it now asserts.
+6. `gh pr create --body-file <(...)` was a placeholder — now names a real file.
+7. `set_selections_for_test` indexed `list[0]` without checking; it now asserts.
 
 **Type consistency.** `Selection`/`Selections` match across Tasks 3 and 6–13. `perform` is the
 inherent method, `apply_action` the trait method that calls it — consistent from Task 7 on.
