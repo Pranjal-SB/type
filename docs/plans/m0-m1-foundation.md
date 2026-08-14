@@ -1909,7 +1909,7 @@ git commit -m "feat(core): add Panel trait with defaulted optional methods"
   - `typ_buffer::TextBuffer::{from_path, from_str, line_count, line_text, insert_char,
     delete_before, save, is_dirty, path, undo, redo}`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-buffer/tests/buffer.rs`:
 
@@ -1998,13 +1998,13 @@ fn save_writes_to_disk_and_clears_dirty() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-buffer`
 
 Expected: FAIL — the crate does not exist.
 
-- [ ] **Step 3: Create the crate**
+- [x] **Step 3: Create the crate**
 
 `crates/typ-buffer/Cargo.toml`:
 
@@ -2213,7 +2213,7 @@ pub use position::{
 };
 ```
 
-- [ ] **Step 4: Carry the width tests across**
+- [x] **Step 4: Carry the width tests across**
 
 Copy `spikes/m0-feel/tests/width.rs` to `crates/typ-buffer/tests/width.rs`, changing the
 import to:
@@ -2222,13 +2222,18 @@ import to:
 use typ_buffer::{display_to_grapheme_col, display_width, grapheme_to_display_col};
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-buffer`
 
 Expected: PASS — 10 buffer tests plus the 9 width tests carried over.
 
-- [ ] **Step 6: Commit**
+Actual: PASS — 10 + 9. One deviation: `TextBuffer::from_str` trips
+`clippy::should_implement_trait`, allowed at the method with a comment. The name
+matches `Rope::from_str` and construction is infallible, so the `FromStr` trait's
+`Result` shape would be wrong here.
+
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/typ-buffer
