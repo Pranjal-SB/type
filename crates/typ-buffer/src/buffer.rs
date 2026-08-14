@@ -117,7 +117,10 @@ impl TextBuffer {
     }
 
     pub fn save(&mut self) -> Result<()> {
-        let path = self.path.as_ref().context("buffer has no path to save to")?;
+        let path = self
+            .path
+            .as_ref()
+            .context("buffer has no path to save to")?;
         std::fs::write(path, self.rope.to_string())
             .with_context(|| format!("writing {}", path.display()))?;
         self.dirty = false;

@@ -38,14 +38,31 @@ immediately if you're arriving from a GUI editor, without giving up capability t
 
 ## Status
 
-**Pre-alpha — design phase.** No usable build yet.
-
-The architecture is settled and documented; implementation starts with a throwaway spike that
-measures whether the terminal can hit the responsiveness targets above before any real code
-gets written.
+**Pre-alpha.** Walking skeleton runs: file tree and editor panels, focus cycling, keyboard and
+mouse input as peers, scroll coalescing, save and undo. No syntax highlighting, no LSP, no
+splits or tabs yet — see the roadmap.
 
 - [Architecture and design rationale](docs/design/architecture.md)
 - [Current implementation plan](docs/plans/m0-m1-foundation.md)
+
+## Build
+
+```bash
+cargo build --release
+./target/release/typ .
+```
+
+## Keys
+
+| Key | Action |
+|---|---|
+| `Tab` | Cycle focus between tree and editor |
+| `Enter` | Open the selected file (tree) |
+| Arrows | Move selection or cursor |
+| `Ctrl+S` | Save |
+| `Ctrl+Q` | Quit |
+
+Mouse: click to select or position the cursor, wheel to scroll the panel under the pointer.
 
 ## Roadmap
 

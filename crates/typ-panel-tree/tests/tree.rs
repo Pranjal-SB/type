@@ -56,7 +56,11 @@ fn pressing_enter_on_a_file_emits_open_file() {
     let events = t.handle_key(chord(KeyCode::Enter));
     assert!(matches!(
         events.first(),
-        Some(PanelEvent::OpenFile { line: 0, col: 0, .. })
+        Some(PanelEvent::OpenFile {
+            line: 0,
+            col: 0,
+            ..
+        })
     ));
 }
 

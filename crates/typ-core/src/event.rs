@@ -32,11 +32,18 @@ pub enum PanelEvent {
     /// Move focus to another panel.
     Focus(PanelId),
     /// Open a path in whichever panel the registry says owns it.
-    OpenFile { path: PathBuf, line: usize, col: usize },
+    OpenFile {
+        path: PathBuf,
+        line: usize,
+        col: usize,
+    },
     /// Open a path with an explicitly chosen handler.
     OpenWith { handler: HandlerId, path: PathBuf },
     /// Run a shell command, optionally in a given directory.
-    RunCommand { command: String, cwd: Option<PathBuf> },
+    RunCommand {
+        command: String,
+        cwd: Option<PathBuf>,
+    },
     /// Surface a message to the user.
     Notify { level: NotifyLevel, message: String },
 }

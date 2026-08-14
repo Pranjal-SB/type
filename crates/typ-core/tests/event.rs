@@ -37,10 +37,23 @@ fn panel_event_stays_small() {
         PanelEvent::Quit,
         PanelEvent::CloseSelf,
         PanelEvent::Focus(PanelId(0)),
-        PanelEvent::OpenFile { path: "x".into(), line: 0, col: 0 },
-        PanelEvent::OpenWith { handler: HandlerId("editor"), path: "x".into() },
-        PanelEvent::RunCommand { command: "ls".into(), cwd: None },
-        PanelEvent::Notify { level: NotifyLevel::Info, message: "hi".into() },
+        PanelEvent::OpenFile {
+            path: "x".into(),
+            line: 0,
+            col: 0,
+        },
+        PanelEvent::OpenWith {
+            handler: HandlerId("editor"),
+            path: "x".into(),
+        },
+        PanelEvent::RunCommand {
+            command: "ls".into(),
+            cwd: None,
+        },
+        PanelEvent::Notify {
+            level: NotifyLevel::Info,
+            message: "hi".into(),
+        },
     ];
     assert_eq!(all.len(), 8);
 
