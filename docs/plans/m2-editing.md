@@ -1908,7 +1908,7 @@ git commit -m "feat(editor): hold selections rather than a bare cursor, and draw
 - Consumes: `typ_core::{Action, Motion}`, `typ_buffer::{next_word_boundary, previous_word_boundary}`
 - Produces: `EditorPanel::apply_action` covering every `Action::Move`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-panel-editor/tests/motion.rs`:
 
@@ -2057,14 +2057,14 @@ fn a_motion_requests_a_redraw() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-panel-editor --test motion`
 
 Expected: FAIL — `apply_action` is the defaulted trait method, so every assertion about
 movement fails while the redraw assertion fails on an empty vector.
 
-- [ ] **Step 3: Write the motion implementation**
+- [x] **Step 3: Write the motion implementation**
 
 `crates/typ-panel-editor/src/actions.rs`:
 
@@ -2234,7 +2234,7 @@ Note the borrow shape: selections are read into a `Vec` before being written bac
 `Vec` of at most a few dozen selections is the cheap way out; cloning the whole `Selections`
 each keystroke is not.
 
-- [ ] **Step 4: Wire it to the trait**
+- [x] **Step 4: Wire it to the trait**
 
 In `crates/typ-panel-editor/src/lib.rs`, add `pub mod actions;`, make `goal_col`,
 `selections`, `buffer`, `top_line`, `height`, `page`, `line_grapheme_count`, `last_line` and
@@ -2247,13 +2247,21 @@ In `crates/typ-panel-editor/src/lib.rs`, add `pub mod actions;`, make `goal_col`
     }
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `cargo test -p typ-panel-editor --test motion`
 
 Expected: PASS, 12 tests.
 
-- [ ] **Step 6: Commit**
+Actual: PASS, 14 tests. Two planned expectations were wrong about collapse behaviour and the
+implementation was right: pressing Right with a selection active collapses to the far edge
+**and stops there**, rather than collapsing and then also moving one further. The keypress is
+spent dismissing the selection; advancing as well would skip a character, and no GUI editor
+does that. Same for Left at the near edge. Two tests added — one pinning that a horizontal
+motion clears the goal column, one that an action the editor does not handle returns `None`
+rather than an empty vector.
+
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/typ-panel-editor/src crates/typ-panel-editor/tests/motion.rs

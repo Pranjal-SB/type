@@ -14,6 +14,7 @@ use typ_buffer::{
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
 use unicode_segmentation::UnicodeSegmentation;
 
+pub mod actions;
 pub mod render;
 
 pub(crate) const TAB_WIDTH: usize = 4;
@@ -206,6 +207,10 @@ impl Panel for EditorPanel {
         Paragraph::new(lines)
             .style(Style::default().fg(ctx.theme.fg).bg(ctx.theme.bg))
             .render(inner, buf);
+    }
+
+    fn apply_action(&mut self, action: typ_core::Action) -> Option<Vec<PanelEvent>> {
+        self.perform(action)
     }
 
     fn cursor_position(&self, panel_area: Rect) -> Option<(u16, u16)> {
