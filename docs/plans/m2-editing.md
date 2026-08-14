@@ -2674,7 +2674,7 @@ git commit -m "feat(editor): edits apply at every selection as one undo step"
 - Consumes: `typ_core::{Action, Direction}`, `typ_buffer::word_at`
 - Produces: `Action::{SelectAll, SelectLine, CollapseSelections, AddCursor}` handled
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-panel-editor/tests/multicursor.rs`:
 
@@ -2790,13 +2790,13 @@ fn a_motion_that_merges_two_cursors_leaves_one() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-panel-editor --test multicursor`
 
 Expected: FAIL — these actions fall through `perform`'s catch-all and do nothing.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add these arms to `perform` in `crates/typ-panel-editor/src/actions.rs`:
 
@@ -2854,13 +2854,19 @@ Add these arms to `perform` in `crates/typ-panel-editor/src/actions.rs`:
             }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cargo test -p typ-panel-editor --test multicursor`
 
 Expected: PASS, 11 tests.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 12 tests, 205 across the workspace. No deviations — the planned code compiled
+and behaved as written, which is the first task in this milestone that has. One test added,
+`select_all_then_typing_replaces_the_document`, because select-all followed by a keystroke is
+the destructive path most worth pinning and the planned tests only covered the two halves
+separately.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-panel-editor/src/actions.rs crates/typ-panel-editor/tests/multicursor.rs

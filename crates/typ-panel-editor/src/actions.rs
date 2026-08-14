@@ -360,6 +360,65 @@ impl EditorPanel {
                 Some(vec![PanelEvent::NeedsRedraw])
             }
 
+            Action::SelectAll => {
+                let last = self.last_line();
+                self.selections.set_single(Selection {
+                    anchor: Position { line: 0, col: 0 },
+                    head: Position {
+                        line: last,
+                        col: self.line_grapheme_count(last),
+                    },
+                });
+                self.goal_col = None;
+                Some(vec![PanelEvent::NeedsRedraw])
+            }
+
+            Action::SelectLine => {
+                let line = self.cursor().line;
+                // Without the newline: selecting it would make the next
+                // keystroke eat the line break, which is not what "select this
+                // line" means to anyone.
+                self.selections.set_single(Selection {
+                    anchor: Position { line, col: 0 },
+                    head: Position {
+                        line,
+                        col: self.line_grapheme_count(line),
+                    },
+                });
+                self.goal_col = None;
+                Some(vec![PanelEvent::NeedsRedraw])
+            }
+
+            Action::CollapseSelections => {
+                self.selections.collapse_to_heads();
+                self.goal_col = None;
+                self.scroll_to_cursor();
+                Some(vec![PanelEvent::NeedsRedraw])
+            }
+
+            Action::AddCursor(direction) => {
+                let from = self.selections.primary().head;
+                let target_line = match direction {
+                    Direction::Backward => from.line.checked_sub(1),
+                    Direction::Forward => {
+                        let next = from.line + 1;
+                        (next <= self.last_line()).then_some(next)
+                    }
+                };
+                let Some(line) = target_line else {
+                    // At the edge of the document there is nowhere to add one.
+                    // Some(vec![]) rather than None: the action was handled and
+                    // simply had nothing to do, so the app must not retry it as
+                    // an app action.
+                    return Some(Vec::new());
+                };
+                let col = from.col.min(self.line_grapheme_count(line));
+                self.selections
+                    .push(Selection::caret(Position { line, col }));
+                self.scroll_to_cursor();
+                Some(vec![PanelEvent::NeedsRedraw])
+            }
+
             // Not this panel's business. The app tries it next.
             _ => None,
         }
