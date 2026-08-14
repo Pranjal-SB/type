@@ -94,6 +94,22 @@ pub trait Panel: Any {
         None
     }
 
+    /// Perform a named action.
+    ///
+    /// This is the only way a binding, the command palette, or the vim layer
+    /// reaches a panel's behavior.
+    ///
+    /// `None` means "I do not handle this action" and lets the app try it.
+    /// `Some(vec![])` means "handled, nothing to report" — a real outcome, as
+    /// when adding a cursor at the edge of the document does nothing. Folding
+    /// those two answers into an empty vector reads fine today and becomes a
+    /// silent bug the first time an action needs both a panel implementation
+    /// and an app fallback.
+    fn apply_action(&mut self, action: crate::Action) -> Option<Vec<PanelEvent>> {
+        let _ = action;
+        None
+    }
+
     /// Periodic hook for background work.
     fn tick(&mut self) -> Vec<PanelEvent> {
         Vec::new()

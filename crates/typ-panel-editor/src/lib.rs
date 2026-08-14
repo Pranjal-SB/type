@@ -8,20 +8,26 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Paragraph, Widget};
-use typ_buffer::{Position, TextBuffer, display_to_grapheme_col, grapheme_to_display_col};
+use typ_buffer::{
+    Position, Selection, Selections, TextBuffer, display_to_grapheme_col, grapheme_to_display_col,
+};
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
 use unicode_segmentation::UnicodeSegmentation;
 
-const TAB_WIDTH: usize = 4;
+pub mod render;
+
+pub(crate) const TAB_WIDTH: usize = 4;
 
 pub struct EditorPanel {
-    buffer: TextBuffer,
-    cursor: Position,
-    top_line: usize,
+    pub(crate) buffer: TextBuffer,
+    /// Never a bare cursor: a caret is an empty selection, so every editing
+    /// path is written once and works for one cursor or thirty.
+    pub(crate) selections: Selections,
+    pub(crate) top_line: usize,
     /// Display column the cursor "wants", preserved across vertical movement
     /// so passing through short lines does not permanently lose the column.
-    goal_col: Option<usize>,
-    height: usize,
+    pub(crate) goal_col: Option<usize>,
+    pub(crate) height: usize,
 }
 
 impl EditorPanel {
@@ -39,15 +45,32 @@ impl EditorPanel {
     fn new(buffer: TextBuffer) -> Self {
         Self {
             buffer,
-            cursor: Position::default(),
+            selections: Selections::default(),
             top_line: 0,
             goal_col: None,
             height: 0,
         }
     }
 
+    pub fn selections(&self) -> &Selections {
+        &self.selections
+    }
+
+    /// The primary head — where the terminal cursor is drawn.
     pub fn cursor(&self) -> Position {
-        self.cursor
+        self.selections.primary().head
+    }
+
+    /// Set selections directly. Test-only: production code goes through
+    /// actions, so every path a user can take is one a test can take.
+    #[doc(hidden)]
+    pub fn set_selections_for_test(&mut self, list: Vec<Selection>) {
+        assert!(!list.is_empty(), "selections are never empty");
+        let mut selections = Selections::single(list[0]);
+        for selection in &list[1..] {
+            selections.push(*selection);
+        }
+        self.selections = selections;
     }
 
     pub fn top_line(&self) -> usize {
@@ -63,60 +86,78 @@ impl EditorPanel {
         self.buffer.line_text(line)
     }
 
+    /// Collapse to a single caret at `at`, clearing the goal column.
+    ///
+    /// Every place the old single-cursor code assigned to `self.cursor` now
+    /// goes through here, which is what keeps the selection set the only
+    /// source of truth. Task 7 replaces these callers with actions.
+    pub(crate) fn set_caret(&mut self, at: Position) {
+        self.selections.set_single(Selection::caret(at));
+        self.goal_col = None;
+    }
+
     /// The text area inside the panel's border.
     fn text_area(area: Rect) -> Rect {
         Block::bordered().inner(area)
     }
 
-    fn line_grapheme_count(&self, line: usize) -> usize {
+    pub(crate) fn line_grapheme_count(&self, line: usize) -> usize {
         self.buffer.line_text(line).graphemes(true).count()
     }
 
-    fn last_line(&self) -> usize {
+    pub(crate) fn last_line(&self) -> usize {
         self.buffer.line_count().saturating_sub(1)
     }
 
     /// Keep the cursor inside the viewport after any movement.
-    fn scroll_to_cursor(&mut self) {
+    pub(crate) fn scroll_to_cursor(&mut self) {
         if self.height == 0 {
             return;
         }
-        if self.cursor.line < self.top_line {
-            self.top_line = self.cursor.line;
-        } else if self.cursor.line >= self.top_line + self.height {
-            self.top_line = self.cursor.line - self.height + 1;
+        let cursor = self.cursor();
+        if cursor.line < self.top_line {
+            self.top_line = cursor.line;
+        } else if cursor.line >= self.top_line + self.height {
+            self.top_line = cursor.line - self.height + 1;
         }
     }
 
     /// Rows a page motion covers. Before the first frame the height is unknown,
     /// so fall back to a screenful rather than moving nowhere.
-    fn page(&self) -> usize {
+    pub(crate) fn page(&self) -> usize {
         self.height.max(1)
     }
 
     /// Pull the cursor back inside the text after the buffer changed underneath
     /// it — undo and redo can shrink the content the cursor was sitting in.
-    fn clamp_cursor(&mut self) {
-        self.cursor.line = self.cursor.line.min(self.last_line());
-        self.cursor.col = self
-            .cursor
-            .col
-            .min(self.line_grapheme_count(self.cursor.line));
+    pub(crate) fn clamp_cursor(&mut self) {
+        let last_line = self.last_line();
+        let line_len: Vec<usize> = (0..=last_line)
+            .map(|i| self.line_grapheme_count(i))
+            .collect();
+        let clamp = |p: Position| {
+            let line = p.line.min(last_line);
+            Position {
+                line,
+                col: p.col.min(line_len[line]),
+            }
+        };
+        self.selections.map_in_place(|s| Selection {
+            anchor: clamp(s.anchor),
+            head: clamp(s.head),
+        });
         self.goal_col = None;
     }
 
     fn move_vertical(&mut self, delta: i32) {
+        let cursor = self.cursor();
         let goal = self.goal_col.unwrap_or_else(|| {
-            grapheme_to_display_col(
-                &self.buffer.line_text(self.cursor.line),
-                self.cursor.col,
-                TAB_WIDTH,
-            )
+            grapheme_to_display_col(&self.buffer.line_text(cursor.line), cursor.col, TAB_WIDTH)
         });
-        let next =
-            (self.cursor.line as i64 + delta as i64).clamp(0, self.last_line() as i64) as usize;
-        self.cursor.line = next;
-        self.cursor.col = display_to_grapheme_col(&self.buffer.line_text(next), goal, TAB_WIDTH);
+        let next = (cursor.line as i64 + delta as i64).clamp(0, self.last_line() as i64) as usize;
+        let col = display_to_grapheme_col(&self.buffer.line_text(next), goal, TAB_WIDTH);
+        self.selections
+            .set_single(Selection::caret(Position { line: next, col }));
         self.goal_col = Some(goal);
         self.scroll_to_cursor();
     }
@@ -156,8 +197,11 @@ impl Panel for EditorPanel {
 
         self.height = inner.height as usize;
         let end = (self.top_line + self.height).min(self.buffer.line_count());
+        let selections: Vec<Selection> = self.selections.iter().copied().collect();
         let lines: Vec<Line> = (self.top_line..end)
-            .map(|i| Line::raw(self.buffer.line_text(i)))
+            .map(|i| {
+                crate::render::styled_line(&self.buffer.line_text(i), i, &selections, ctx.theme)
+            })
             .collect();
         Paragraph::new(lines)
             .style(Style::default().fg(ctx.theme.fg).bg(ctx.theme.bg))
@@ -166,15 +210,13 @@ impl Panel for EditorPanel {
 
     fn cursor_position(&self, panel_area: Rect) -> Option<(u16, u16)> {
         let inner = Self::text_area(panel_area);
-        let row = self.cursor.line.checked_sub(self.top_line)?;
+        let cursor = self.cursor();
+        let row = cursor.line.checked_sub(self.top_line)?;
         if row >= inner.height as usize {
             return None;
         }
-        let col = grapheme_to_display_col(
-            &self.buffer.line_text(self.cursor.line),
-            self.cursor.col,
-            TAB_WIDTH,
-        );
+        let col =
+            grapheme_to_display_col(&self.buffer.line_text(cursor.line), cursor.col, TAB_WIDTH);
         if col >= inner.width as usize {
             return None;
         }
@@ -207,60 +249,90 @@ impl Panel for EditorPanel {
 
         match chord.raw.code {
             KeyCode::Enter => {
-                self.buffer.insert_char(self.cursor, '\n');
-                self.cursor.line += 1;
-                self.cursor.col = 0;
-                self.goal_col = None;
+                let at = self.cursor();
+                self.buffer.insert_char(at, '\n');
+                self.set_caret(Position {
+                    line: at.line + 1,
+                    col: 0,
+                });
             }
             KeyCode::Delete => {
-                self.buffer.delete_after(self.cursor);
+                self.buffer.delete_after(self.cursor());
                 self.goal_col = None;
             }
             KeyCode::Home => {
-                self.cursor.col = 0;
-                self.goal_col = None;
+                let at = self.cursor();
+                self.set_caret(Position {
+                    line: at.line,
+                    col: 0,
+                });
             }
             KeyCode::End => {
-                self.cursor.col = self.line_grapheme_count(self.cursor.line);
-                self.goal_col = None;
+                let at = self.cursor();
+                let col = self.line_grapheme_count(at.line);
+                self.set_caret(Position { line: at.line, col });
             }
             KeyCode::PageDown => self.move_vertical(self.page() as i32),
             KeyCode::PageUp => self.move_vertical(-(self.page() as i32)),
             KeyCode::Char(c) => {
-                self.buffer.insert_char(self.cursor, c);
-                self.cursor.col += 1;
-                self.goal_col = None;
+                let at = self.cursor();
+                self.buffer.insert_char(at, c);
+                self.set_caret(Position {
+                    line: at.line,
+                    col: at.col + 1,
+                });
             }
             KeyCode::Backspace => {
-                if self.cursor.col > 0 {
-                    self.buffer.delete_before(self.cursor);
-                    self.cursor.col -= 1;
-                } else if self.cursor.line > 0 {
+                let at = self.cursor();
+                if at.col > 0 {
+                    self.buffer.delete_before(at);
+                    self.set_caret(Position {
+                        line: at.line,
+                        col: at.col - 1,
+                    });
+                } else if at.line > 0 {
                     // Joining lines: the cursor lands where the two now meet.
-                    let joined_at = self.line_grapheme_count(self.cursor.line - 1);
-                    self.buffer.delete_before(self.cursor);
-                    self.cursor.line -= 1;
-                    self.cursor.col = joined_at;
+                    let joined_at = self.line_grapheme_count(at.line - 1);
+                    self.buffer.delete_before(at);
+                    self.set_caret(Position {
+                        line: at.line - 1,
+                        col: joined_at,
+                    });
                 }
-                self.goal_col = None;
             }
             KeyCode::Left => {
-                if self.cursor.col > 0 {
-                    self.cursor.col -= 1;
-                } else if self.cursor.line > 0 {
-                    self.cursor.line -= 1;
-                    self.cursor.col = self.line_grapheme_count(self.cursor.line);
-                }
-                self.goal_col = None;
+                let at = self.cursor();
+                let next = if at.col > 0 {
+                    Position {
+                        line: at.line,
+                        col: at.col - 1,
+                    }
+                } else if at.line > 0 {
+                    Position {
+                        line: at.line - 1,
+                        col: self.line_grapheme_count(at.line - 1),
+                    }
+                } else {
+                    at
+                };
+                self.set_caret(next);
             }
             KeyCode::Right => {
-                if self.cursor.col < self.line_grapheme_count(self.cursor.line) {
-                    self.cursor.col += 1;
-                } else if self.cursor.line < self.last_line() {
-                    self.cursor.line += 1;
-                    self.cursor.col = 0;
-                }
-                self.goal_col = None;
+                let at = self.cursor();
+                let next = if at.col < self.line_grapheme_count(at.line) {
+                    Position {
+                        line: at.line,
+                        col: at.col + 1,
+                    }
+                } else if at.line < self.last_line() {
+                    Position {
+                        line: at.line + 1,
+                        col: 0,
+                    }
+                } else {
+                    at
+                };
+                self.set_caret(next);
             }
             KeyCode::Up => self.move_vertical(-1),
             KeyCode::Down => self.move_vertical(1),
@@ -278,11 +350,10 @@ impl Panel for EditorPanel {
         let row = event.row.saturating_sub(inner.y) as usize;
         let col = event.column.saturating_sub(inner.x) as usize;
         let line = (self.top_line + row).min(self.last_line());
-        self.cursor = Position {
+        self.set_caret(Position {
             line,
             col: display_to_grapheme_col(&self.buffer.line_text(line), col, TAB_WIDTH),
-        };
-        self.goal_col = None;
+        });
         vec![PanelEvent::NeedsRedraw]
     }
 

@@ -1611,7 +1611,7 @@ git commit -m "feat(buffer): literal search and single-step range replacement"
   - `EditorPanel::cursor(&self) -> Position` — now the primary head, unchanged signature
   - `typ_panel_editor::render::styled_line(...) -> ratatui::text::Line`
 
-- [ ] **Step 1: Add the trait method**
+- [x] **Step 1: Add the trait method**
 
 In `crates/typ-core/src/panel.rs`, add to `trait Panel`, beside the other defaulted methods:
 
@@ -1633,7 +1633,7 @@ In `crates/typ-core/src/panel.rs`, add to `trait Panel`, beside the other defaul
     }
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `crates/typ-panel-editor/tests/selection_render.rs`:
 
@@ -1743,13 +1743,13 @@ fn selection_highlighting_lands_on_the_right_columns_with_wide_characters() {
 }
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [x] **Step 3: Run the test to verify it fails**
 
 Run: `cargo test -p typ-panel-editor --test selection_render`
 
 Expected: FAIL — no method `selections`, no method `set_selections_for_test`.
 
-- [ ] **Step 4: Replace the cursor field with selections**
+- [x] **Step 4: Replace the cursor field with selections**
 
 In `crates/typ-panel-editor/src/lib.rs`, change the struct and add the accessors. The
 `cursor: Position` field goes away entirely — leaving it beside `Selections` would create two
@@ -1795,7 +1795,7 @@ Every existing use of `self.cursor` inside the file becomes
 `self.selections.set_single(Selection::caret(new_position))`. The existing `handle_key` arms
 stay working for now; Task 7 replaces them.
 
-- [ ] **Step 5: Write the selection-aware line renderer**
+- [x] **Step 5: Write the selection-aware line renderer**
 
 `crates/typ-panel-editor/src/render.rs`:
 
@@ -1851,7 +1851,7 @@ pub fn styled_line(
 }
 ```
 
-- [ ] **Step 6: Use it from `render`**
+- [x] **Step 6: Use it from `render`**
 
 In `crates/typ-panel-editor/src/lib.rs`, replace the `Line::raw(...)` construction inside
 `Panel::render` with:
@@ -1868,16 +1868,28 @@ In `crates/typ-panel-editor/src/lib.rs`, replace the `Line::raw(...)` constructi
 and add `pub mod render;` at the top of the file. Add `unicode-segmentation.workspace = true`
 to `crates/typ-panel-editor/Cargo.toml` if it is not already there.
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-panel-editor`
 
 Expected: PASS — 7 new selection-render tests plus the existing editor and keys suites.
 
+Actual: PASS, 7 new tests, 160 across the workspace. One assertion was wrong about ratatui
+rather than about our rendering: a wide grapheme occupies its own cell plus a continuation
+cell holding a space, and only the first carries the glyph and its style. The terminal paints
+the double-width character across both columns from that first cell and never draws the
+continuation, so asserting a selection background on the second cell asserts something no
+user can see. Probed the real buffer contents rather than guessing, then asserted what is
+actually there.
+
+The old `handle_key` arms were kept working by routing every former `self.cursor = ...`
+assignment through a new `set_caret` helper. Task 7 replaces those arms with actions; until
+then the selection set stays the single source of truth even on the legacy path.
+
 If the wide-character test fails by one column, the cause is spans being cut on `char`
 boundaries rather than graphemes; `styled_line` must iterate `graphemes(true)`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add crates/typ-core/src/panel.rs crates/typ-panel-editor/src crates/typ-panel-editor/tests crates/typ-panel-editor/Cargo.toml
