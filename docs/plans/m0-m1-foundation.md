@@ -2254,7 +2254,7 @@ git commit -m "feat(buffer): rope-backed text buffer with grapheme positions and
   - `Registry::register(&mut self, ext: &'static str, handler: HandlerId)`
   - `Registry::handler_for(&self, path: &Path) -> HandlerId` — falls back to `HandlerId("editor")`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-registry/tests/registry.rs`:
 
@@ -2297,13 +2297,13 @@ fn extension_matching_is_case_insensitive() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-registry`
 
 Expected: FAIL — the crate does not exist.
 
-- [ ] **Step 3: Implement the crate**
+- [x] **Step 3: Implement the crate**
 
 `crates/typ-registry/Cargo.toml`:
 
@@ -2369,13 +2369,15 @@ impl Default for Registry {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-registry`
 
 Expected: PASS, 5 tests.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 5 tests. Clippy clean. No deviations.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-registry
