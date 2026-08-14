@@ -444,7 +444,7 @@ git commit -m "feat(core): name every editing primitive as an Action"
   - `Keymap::merge_toml(&mut self, src: &str) -> anyhow::Result<()>`
   - `Keymap::bindings_for(&self, action: Action) -> Vec<&str>`
 
-- [ ] **Step 1: Add the dependencies**
+- [x] **Step 1: Add the dependencies**
 
 `typ-core` currently depends on only `crossterm` and `ratatui`. `merge_toml` needs both a TOML
 parser and `anyhow`, which the crate does not yet have:
@@ -468,7 +468,7 @@ ratatui.workspace = true
 toml.workspace = true
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `crates/typ-core/tests/keymap.rs`:
 
@@ -567,13 +567,13 @@ fn bindings_can_be_looked_up_backwards_for_help_text() {
 }
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [x] **Step 3: Run the test to verify it fails**
 
 Run: `cargo test -p typ-core --test keymap`
 
 Expected: FAIL — `unresolved import typ_core::Keymap`.
 
-- [ ] **Step 4: Write the implementation**
+- [x] **Step 4: Write the implementation**
 
 `crates/typ-core/src/keymap.rs`:
 
@@ -721,17 +721,26 @@ pub mod keymap;
 pub use keymap::Keymap;
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `cargo test -p typ-core --test keymap`
 
 Expected: PASS, 10 tests.
 
+Actual: PASS, 10 tests. Two notes from execution:
+
+- `cargo add toml` resolved **1.1.4**, not the 0.8 line. Using `cargo add` rather than a
+  guessed version in the manifest is why this was a non-event; `toml::from_str` into a
+  `BTreeMap<String, String>` works unchanged on 1.x.
+- `cargo add` writes its own `toml = "1.1.4"` line into the crate manifest, which collides
+  with the `toml.workspace = true` this step also asks for. Cargo reports it as
+  `error: duplicate key`. Delete the version line and keep the workspace one.
+
 If `shift+left` fails to look up, check `KeyChord::from_event` — crossterm reports
 `KeyModifiers::SHIFT` on arrow keys but folds shift into the character for letters, which is
 why the default table has no `shift+<letter>` entries.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/typ-core/src/keymap.rs crates/typ-core/src/lib.rs \
