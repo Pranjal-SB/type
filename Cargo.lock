@@ -1076,6 +1076,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "ropey"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93411e420bcd1a75ddd1dc3caf18c23155eda2c090631a85af21ba19e97093b5"
+dependencies = [
+ "smallvec",
+ "str_indices",
+]
+
+[[package]]
 name = "rustc_version"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1216,6 +1226,12 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "str_indices"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d08889ec5408683408db66ad89e0e1f93dff55c73a4ccc71c427d5b277ee47e6"
 
 [[package]]
 name = "strsim"
@@ -1415,11 +1431,71 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109"
 
 [[package]]
+name = "typ-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "ratatui",
+ "typ-core",
+ "typ-panel-editor",
+ "typ-panel-tree",
+ "typ-registry",
+]
+
+[[package]]
+name = "typ-buffer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ropey",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
 name = "typ-core"
 version = "0.1.0"
 dependencies = [
  "crossterm",
  "ratatui",
+]
+
+[[package]]
+name = "typ-editor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "typ-app",
+]
+
+[[package]]
+name = "typ-panel-editor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "ratatui",
+ "typ-buffer",
+ "typ-core",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "typ-panel-tree"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "ratatui",
+ "typ-core",
+]
+
+[[package]]
+name = "typ-registry"
+version = "0.1.0"
+dependencies = [
+ "typ-core",
 ]
 
 [[package]]
