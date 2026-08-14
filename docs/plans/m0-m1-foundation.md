@@ -3911,11 +3911,32 @@ tests were updated to the new geometry rather than the panels being left border-
 focus indicator has a job, and hit-testing through `Block::inner` is the same call the
 renderer uses, so the two cannot drift apart.
 
-### Still open after M1.1
+### M1.2 — status bar and the quit guard
 
-- **`Ctrl+Q` discards unsaved changes silently.** `Panel::needs_close_confirmation` exists
-  and has since Task 9; nothing calls it, because there is no status bar or prompt surface to
-  ask the question in. This is the top data-loss risk in the codebase.
+Written immediately after M1.1, because the data-loss risk it left open could not be closed
+without somewhere to ask a question.
+
+A one-row status bar now sits below both panels. It carries three things: the current message,
+the open file with its dirty marker, and the cursor position counted from 1. When idle it
+advertises `Tab focus · Enter open · Ctrl+S save · Ctrl+Q quit` — discoverability is a feature,
+and a binding nobody can find is a binding that does not exist. This was the actual complaint
+from the first hand-run: not that keys were missing, but that nothing told you any existed.
+
+`Ctrl+Q` on a dirty buffer now routes through `Panel::needs_close_confirmation` — unused since
+Task 9 — and refuses, printing `Unsaved changes. Close anyway?  Ctrl+Q again to discard,
+Ctrl+S to save.` A second `Ctrl+Q` goes through. **Every other key retires the message and the
+pending quit with it**, so the confirmation is answered by the very next keystroke or not at
+all; a `Ctrl+Q` from ten minutes ago must never silently arm the next one.
+
+`Ctrl+S` reports its outcome instead of swallowing it. A failed save that says nothing is the
+same bug as a silent quit, one step later.
+
+The status row is taken off the top of the frame by `layout::split_frame`, before the sidebar
+split, and `App::areas` routes through the same function — so a click on the status row hits
+neither panel rather than landing on whatever used to be under it.
+
+### Still open after M1.2
+
 - No selections, no mouse drag, no word-wise motions (`Ctrl+Left`/`Right`) — M2.
 - Tree does not watch the filesystem; external changes need a restart to appear.
 - No horizontal scrolling: a cursor past the right edge of the panel stops being drawn.

@@ -43,7 +43,8 @@ focus cycling with visible focus, mouse and keyboard as peers, scroll coalescing
 and save. No syntax highlighting, no LSP, no selections, no splits or tabs yet — see the
 roadmap.
 
-⚠️ `Ctrl+Q` currently discards unsaved changes without asking. Save first.
+A status bar carries messages, the open file, and the cursor position. Quitting with unsaved
+changes asks before discarding them.
 
 - [Architecture and design rationale](docs/design/architecture.md)
 - [Current implementation plan](docs/plans/m0-m1-foundation.md)
