@@ -3063,7 +3063,7 @@ git commit -m "feat(tree): file tree panel with selection and open events"
   - `typ_app::layout::split(area: Rect) -> (Rect, Rect)` — `(tree_area, editor_area)`
   - `typ_app::run::run(app: App) -> anyhow::Result<()>`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-app/tests/app.rs`:
 
@@ -3148,13 +3148,13 @@ fn layout_shrinks_the_sidebar_on_narrow_terminals() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-app`
 
 Expected: FAIL — the crate does not exist.
 
-- [ ] **Step 3: Create the crate and implement layout.rs**
+- [x] **Step 3: Create the crate and implement layout.rs**
 
 `crates/typ-app/Cargo.toml`:
 
@@ -3207,7 +3207,7 @@ pub fn split(area: Rect) -> (Rect, Rect) {
 }
 ```
 
-- [ ] **Step 4: Implement app.rs and lib.rs**
+- [x] **Step 4: Implement app.rs and lib.rs**
 
 `crates/typ-app/src/app.rs`:
 
@@ -3357,13 +3357,16 @@ pub mod run;
 pub use app::{App, Focus};
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-app`
 
 Expected: PASS, 7 tests.
 
-- [ ] **Step 6: Implement run.rs — the event loop**
+Actual: PASS, 7 tests. Same fixture change as Task 13 — one temp directory per
+test rather than a shared path, which races under cargo's test threads.
+
+- [x] **Step 6: Implement run.rs — the event loop**
 
 `crates/typ-app/src/run.rs`:
 
@@ -3487,13 +3490,16 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
 }
 ```
 
-- [ ] **Step 7: Verify the workspace builds**
+- [x] **Step 7: Verify the workspace builds**
 
 Run: `cargo build --workspace`
 
 Expected: builds with no errors.
 
-- [ ] **Step 8: Commit**
+Actual: `cargo build --workspace` and `cargo clippy --workspace --all-targets
+-- -D warnings` both clean.
+
+- [x] **Step 8: Commit**
 
 ```bash
 git add crates/typ-app
