@@ -1,0 +1,14 @@
+[package]
+name = "typ-editor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "TYPE — Terminal-Yoked Programming Environment"
+
+[[bin]]
+name = "typ"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+typ-app.workspace = true

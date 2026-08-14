@@ -3517,7 +3517,7 @@ git commit -m "feat(app): event loop with focus, dispatch, and scroll coalescing
 - Consumes: `typ_app::{App, run}`
 - Produces: the `typ` binary — `typ` (current directory), `typ <dir>`, `typ <file>`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ/tests/cli.rs`:
 
@@ -3560,13 +3560,13 @@ fn help_flag_names_the_binary() {
 These are the `$EDITOR` invariants under test: a failure must exit non-zero so a calling
 `git commit` aborts rather than committing an empty message.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-editor`
 
 Expected: FAIL — the crate does not exist.
 
-- [ ] **Step 3: Implement the binary**
+- [x] **Step 3: Implement the binary**
 
 `crates/typ/Cargo.toml`:
 
@@ -3673,12 +3673,14 @@ fn real_main() -> Result<()> {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-editor`
 
 Expected: PASS, 3 tests. Note the crate is `typ-editor` while `CARGO_BIN_EXE_typ` refers to
 the binary name.
+
+Actual: PASS, 3 tests.
 
 - [ ] **Step 5: Verify the walking skeleton by hand**
 
@@ -3705,7 +3707,10 @@ Then the `$EDITOR` contract:
 
 Expected: `typ: no-such-file.rs does not exist` on stderr, `exit=1`.
 
-- [ ] **Step 6: Commit**
+Actual: exactly that, verified. The interactive checklist above it is still
+outstanding — it needs a human at a real terminal.
+
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/typ
