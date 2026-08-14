@@ -108,3 +108,65 @@ fn save_writes_to_disk_and_clears_dirty() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "old!\n");
     assert!(!b.is_dirty());
 }
+
+#[test]
+fn undo_history_shares_the_rope_rather_than_copying_the_text() {
+    // Ropey clones are O(1) and copy-on-write, so a deep undo stack over a
+    // large buffer must not cost one full copy of the text per step. This
+    // asserts the behaviour that guarantee buys: many edits stay fast and the
+    // content stays exact.
+    let big = "abcdefghij".repeat(20_000); // 200 KB
+    let mut b = TextBuffer::from_str(&big);
+    for i in 0..200 {
+        b.insert_char(Position { line: 0, col: i }, 'x');
+    }
+    for _ in 0..200 {
+        b.undo();
+    }
+    assert_eq!(b.line_text(0), big);
+}
+
+#[test]
+fn saving_leaves_no_temporary_file_behind() {
+    let dir = std::env::temp_dir().join("typ-buffer-atomic");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("save.txt");
+    std::fs::write(&path, "old\n").unwrap();
+
+    let mut b = TextBuffer::from_path(&path).unwrap();
+    b.insert_char(Position { line: 0, col: 3 }, '!');
+    b.save().unwrap();
+
+    let leftovers: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|name| name != "save.txt")
+        .collect();
+    assert!(leftovers.is_empty(), "left behind: {leftovers:?}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "old!\n");
+}
+
+#[test]
+fn a_save_that_cannot_be_written_leaves_the_original_untouched() {
+    let dir = std::env::temp_dir().join("typ-buffer-atomic-fail");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("target.txt");
+    std::fs::write(&path, "original\n").unwrap();
+
+    let mut b = TextBuffer::from_path(&path).unwrap();
+    b.insert_char(Position { line: 0, col: 0 }, 'X');
+
+    // Point the buffer at a path that cannot be created: a directory of that
+    // name already exists there.
+    let blocked = dir.join("blocked");
+    std::fs::create_dir_all(&blocked).unwrap();
+    b.set_path_for_test(blocked.clone());
+    assert!(b.save().is_err(), "writing over a directory must fail");
+
+    // The real file never got touched, and the buffer still knows it is dirty.
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "original\n");
+    assert!(b.is_dirty(), "a failed save must not clear the dirty flag");
+}

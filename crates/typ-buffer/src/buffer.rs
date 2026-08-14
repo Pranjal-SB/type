@@ -77,7 +77,7 @@ impl TextBuffer {
     }
 
     pub fn insert_char(&mut self, pos: Position, ch: char) {
-        self.history.record(self.rope.to_string());
+        self.history.record(self.rope.clone());
         let offset = self.char_offset(pos);
         self.rope.insert_char(offset, ch);
         self.dirty = true;
@@ -97,7 +97,7 @@ impl TextBuffer {
                 .nth(pos.col - 1)
                 .map_or(1, |g| g.chars().count())
         };
-        self.history.record(self.rope.to_string());
+        self.history.record(self.rope.clone());
         self.rope.remove(offset - n..offset);
         self.dirty = true;
     }
@@ -115,33 +115,87 @@ impl TextBuffer {
             .graphemes(true)
             .nth(pos.col)
             .map_or(1, |g| g.chars().count());
-        self.history.record(self.rope.to_string());
+        self.history.record(self.rope.clone());
         self.rope.remove(offset..offset + n);
         self.dirty = true;
     }
 
     pub fn undo(&mut self) {
-        if let Some(prev) = self.history.undo(self.rope.to_string()) {
-            self.rope = Rope::from_str(&prev);
+        if let Some(prev) = self.history.undo(self.rope.clone()) {
+            self.rope = prev;
             self.dirty = true;
         }
     }
 
     pub fn redo(&mut self) {
-        if let Some(next) = self.history.redo(self.rope.to_string()) {
-            self.rope = Rope::from_str(&next);
+        if let Some(next) = self.history.redo(self.rope.clone()) {
+            self.rope = next;
             self.dirty = true;
         }
     }
 
+    /// Write the buffer to disk, atomically.
+    ///
+    /// The content goes to a sibling temporary file, is flushed to the device,
+    /// and is then renamed over the target. `rename` replaces the destination
+    /// in one step on both NTFS and POSIX, so an interrupted save leaves the
+    /// previous file intact rather than a truncated one. Writing in place would
+    /// mean a crash between truncate and write costs the user the whole file
+    /// rather than the last edit.
     pub fn save(&mut self) -> Result<()> {
         let path = self
             .path
             .as_ref()
-            .context("buffer has no path to save to")?;
-        std::fs::write(path, self.rope.to_string())
-            .with_context(|| format!("writing {}", path.display()))?;
+            .context("buffer has no path to save to")?
+            .clone();
+
+        // Same directory, so the rename never crosses a filesystem boundary —
+        // across devices it would silently become a copy, which is not atomic.
+        let temp = temp_path_beside(&path);
+        write_all_and_sync(&temp, &self.rope)
+            .with_context(|| format!("writing {}", temp.display()))?;
+
+        if let Err(e) = std::fs::rename(&temp, &path) {
+            // Leave nothing behind on failure; the original is untouched.
+            let _ = std::fs::remove_file(&temp);
+            return Err(e).with_context(|| format!("replacing {}", path.display()));
+        }
+
         self.dirty = false;
         Ok(())
     }
+
+    /// Point the buffer at another path. Test-only: production code opens a
+    /// new buffer rather than redirecting one.
+    #[doc(hidden)]
+    pub fn set_path_for_test(&mut self, path: PathBuf) {
+        self.path = Some(path);
+    }
+}
+
+/// A sibling of `path` that will not collide with a real file.
+fn temp_path_beside(path: &Path) -> PathBuf {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "buffer".to_string());
+    let parent = path.parent().unwrap_or(Path::new("."));
+    parent.join(format!(".{name}.typ-tmp"))
+}
+
+/// Write the rope out and flush it to the device before returning.
+///
+/// Without the flush, the rename can be durable while the contents are not —
+/// which produces an empty file after a power loss, the exact failure the
+/// atomic write exists to prevent.
+fn write_all_and_sync(path: &Path, rope: &Rope) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let mut file = std::fs::File::create(path)?;
+    for chunk in rope.chunks() {
+        file.write_all(chunk.as_bytes())?;
+    }
+    file.flush()?;
+    file.sync_all()?;
+    Ok(())
 }
