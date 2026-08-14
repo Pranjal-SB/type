@@ -2760,7 +2760,7 @@ git commit -m "feat(editor): editor panel with keyboard, mouse, and scroll handl
 - Consumes: `typ_core::{Panel, RenderContext, PanelEvent, KeyChord}`
 - Produces: `typ_panel_tree::TreePanel::{new, selected, entry_count, root}`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-panel-tree/tests/tree.rs`:
 
@@ -2833,13 +2833,13 @@ fn pressing_enter_on_a_directory_does_not_emit_open_file() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-panel-tree`
 
 Expected: FAIL — the crate does not exist.
 
-- [ ] **Step 3: Implement the panel**
+- [x] **Step 3: Implement the panel**
 
 `crates/typ-panel-tree/Cargo.toml`:
 
@@ -3030,13 +3030,18 @@ impl Panel for TreePanel {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-panel-tree`
 
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 6 tests. Clippy clean. One deviation from the spec above: the test
+`fixture()` takes a name and builds one directory per test. As written it was a
+single shared path that each test deleted and recreated, which races under
+cargo's test threads.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-panel-tree
