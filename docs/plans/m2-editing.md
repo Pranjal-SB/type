@@ -102,7 +102,7 @@ touching the editor core, by making every primitive an `Action` and every bindin
   - `typ_core::Action::name(&self) -> &'static str`
   - `typ_core::Motion`, `typ_core::Direction`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-core/tests/action.rs`:
 
@@ -181,13 +181,13 @@ fn directions_are_explicit_arguments_not_separate_actions() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-core --test action`
 
 Expected: FAIL — `unresolved imports typ_core::Action, typ_core::Direction, typ_core::Motion`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 `crates/typ-core/src/action.rs`:
 
@@ -413,13 +413,15 @@ pub mod action;
 pub use action::{Action, Direction, Motion};
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cargo test -p typ-core --test action`
 
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 6 tests. Clippy clean. No deviations — the plan's code compiled as written.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-core/src/action.rs crates/typ-core/src/lib.rs crates/typ-core/tests/action.rs
