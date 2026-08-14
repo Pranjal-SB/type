@@ -3729,7 +3729,7 @@ git commit -m "feat(cli): typ binary with workspace and single-file entry points
 - Consumes: the whole workspace
 - Produces: a green CI run gating future work
 
-- [ ] **Step 1: Write the CI workflow**
+- [x] **Step 1: Write the CI workflow**
 
 `.github/workflows/ci.yml`:
 
@@ -3767,7 +3767,7 @@ jobs:
 
 The spike is excluded automatically — it is a standalone crate, not a workspace member.
 
-- [ ] **Step 2: Run the same checks locally**
+- [x] **Step 2: Run the same checks locally**
 
 ```bash
 cargo fmt --all
@@ -3777,10 +3777,16 @@ cargo test --workspace
 
 Expected: formatting clean, no clippy warnings, all tests passing.
 
+Actual: all three clean. 57 tests across the workspace.
+
 Fix warnings rather than allowing them. The per-file cap and the render-thread constraint are
 not machine-checkable yet; clippy is the part that is, so keep it at zero.
 
-- [ ] **Step 3: Write the README**
+- [x] **Step 3: Write the README**
+
+The existing README already carried the why, the design goals, the roadmap and the
+non-goals. Rather than replace it with the shorter text below, the Status section was
+rewritten and Build and Keys sections were added.
 
 `README.md`:
 
@@ -3825,7 +3831,7 @@ See [`docs/design/architecture.md`](docs/design/architecture.md).
 MIT
 ````
 
-- [ ] **Step 4: Delete the spike**
+- [x] **Step 4: Delete the spike**
 
 M0's job is done. Its measurements live in `FINDINGS.md` (kept), and `width.rs` was promoted
 into `typ-buffer/src/position.rs` (kept). The rest is finished.
@@ -3837,7 +3843,13 @@ git rm -r spikes/m0-feel/src spikes/m0-feel/tests spikes/m0-feel/Cargo.toml
 Keep `spikes/m0-feel/FINDINGS.md` — it is the record of what was measured and why the design
 choices hold.
 
-- [ ] **Step 5: Commit**
+One fix landed here that the plan did not schedule: `run()` now installs a panic hook that
+disables mouse capture before delegating to ratatui's. FINDINGS §6 recorded this as the one
+M0 defect carried into M1 — ratatui's hook restores raw mode and the alternate screen but
+knows nothing about mouse capture, so a panic returned the user to a shell still emitting
+mouse escapes.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github README.md

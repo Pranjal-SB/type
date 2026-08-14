@@ -28,6 +28,16 @@ pub fn run(mut app: App) -> Result<()> {
     let mut terminal = ratatui::init();
     stdout().execute(EnableMouseCapture)?;
 
+    // ratatui's own panic hook leaves raw mode and the alternate screen, but it
+    // knows nothing about mouse capture — which this function turned on. Without
+    // this, a panic drops the user back to a shell that keeps emitting mouse
+    // escape sequences. FINDINGS §6.
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = stdout().execute(DisableMouseCapture);
+        previous(info);
+    }));
+
     let result = event_loop(&mut terminal, &mut app);
 
     stdout().execute(DisableMouseCapture)?;
