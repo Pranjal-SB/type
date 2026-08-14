@@ -1413,37 +1413,79 @@ impl SearchQuery {
 }
 
 /// Grapheme index pairs of every non-overlapping match in one line.
+///
+/// The scan runs on `&str` with `match_indices`, which is SIMD-optimised in
+/// std, and converts byte offsets to grapheme indices once per hit. The
+/// obvious alternative — collecting the line into a `Vec<String>` of graphemes
+/// and comparing windows — allocates once per character of every line searched,
+/// which on a 100k-line file is millions of allocations per keystroke of an
+/// incremental search.
 pub fn find_in_line(line: &str, query: &SearchQuery) -> Vec<(usize, usize)> {
     if query.needle.is_empty() {
         return Vec::new();
     }
 
-    let fold = |s: &str| {
-        if query.case_sensitive {
-            s.to_string()
-        } else {
-            s.to_lowercase()
-        }
+    // One allocation per line, and only when folding case — not one per
+    // character. Case folding can change byte length, so the folded copy is
+    // only ever used to find byte offsets, which are then mapped back through
+    // the original line.
+    let (haystack, needle) = if query.case_sensitive {
+        (line.to_string(), query.needle.clone())
+    } else {
+        (line.to_lowercase(), query.needle.to_lowercase())
     };
 
-    let haystack: Vec<String> = line.graphemes(true).map(&fold).collect();
-    let needle: Vec<String> = query.needle.graphemes(true).map(&fold).collect();
+    let mut byte_hits: Vec<(usize, usize)> = Vec::new();
+    let mut from = 0usize;
+    while let Some(found) = haystack[from..].find(&needle) {
+        let start = from + found;
+        let end = start + needle.len();
+        byte_hits.push((start, end));
+        // Advance past the match: overlapping hits would let a replace-all
+        // rewrite text it had already rewritten.
+        from = end;
+    }
+    if byte_hits.is_empty() {
+        return Vec::new();
+    }
 
-    let mut hits = Vec::new();
-    let mut i = 0usize;
-    while i + needle.len() <= haystack.len() {
-        if haystack[i..i + needle.len()] == needle[..] {
-            hits.push((i, i + needle.len()));
-            // Advance past the match. Overlapping hits would let a replace-all
-            // rewrite text it had already rewritten.
-            i += needle.len();
-        } else {
-            i += 1;
+    // Walk the line once, converting byte offsets into grapheme indices.
+    let mut hits = Vec::with_capacity(byte_hits.len());
+    let mut pending = byte_hits.into_iter().peekable();
+    let mut open: Option<usize> = None;
+    for (index, (byte, _)) in haystack.grapheme_indices(true).enumerate() {
+        while pending.peek().is_some_and(|(start, _)| *start == byte) {
+            open = Some(index);
+            let (_, end_byte) = *pending.peek().expect("just checked");
+            if end_byte == byte {
+                pending.next();
+            } else {
+                break;
+            }
         }
+        if let Some((_, end_byte)) = pending.peek().copied()
+            && end_byte == byte
+            && let Some(start_index) = open.take()
+        {
+            hits.push((start_index, index));
+            pending.next();
+        }
+    }
+    // A match ending at the end of the line has no following grapheme to close
+    // it, so close it here.
+    if let Some(start_index) = open {
+        hits.push((start_index, line.graphemes(true).count()));
     }
     hits
 }
 ```
+
+Note the import: this needs `UnicodeSegmentation` for both `graphemes` and `grapheme_indices`.
+
+If the offset-mapping loop proves fiddly in practice, the acceptable fallback is a single
+pass building a `Vec<usize>` of byte offsets per grapheme and binary-searching it — still one
+allocation per line rather than one per character. What is **not** acceptable is collecting
+`Vec<String>`.
 
 - [ ] **Step 4: Add the buffer methods**
 
@@ -1524,7 +1566,8 @@ git commit -m "feat(buffer): literal search and single-step range replacement"
 **Interfaces:**
 - Consumes: `typ_buffer::{Selection, Selections}`, `typ_core::Action`
 - Produces:
-  - `Panel::apply_action(&mut self, action: Action) -> Vec<PanelEvent>` — defaulted to empty
+  - `Panel::apply_action(&mut self, action: Action) -> Option<Vec<PanelEvent>>` — defaulted to
+    `None`, meaning "not handled"
   - `EditorPanel::selections(&self) -> &Selections`
   - `EditorPanel::cursor(&self) -> Position` — now the primary head, unchanged signature
   - `typ_panel_editor::render::styled_line(...) -> ratatui::text::Line`
@@ -1537,11 +1580,17 @@ In `crates/typ-core/src/panel.rs`, add to `trait Panel`, beside the other defaul
     /// Perform a named action.
     ///
     /// This is the only way a binding, the command palette, or the vim layer
-    /// reaches a panel's behavior. A panel that ignores an action returns no
-    /// events, which is how the app knows to try the action itself.
-    fn apply_action(&mut self, action: crate::Action) -> Vec<PanelEvent> {
+    /// reaches a panel's behavior.
+    ///
+    /// `None` means "I do not handle this action" and lets the app try it.
+    /// `Some(vec![])` means "handled, nothing to report" — a real outcome, as
+    /// when adding a cursor at the edge of the document does nothing. Folding
+    /// those two into an empty vector reads fine today and becomes a silent bug
+    /// the first time an action needs both a panel implementation and an app
+    /// fallback.
+    fn apply_action(&mut self, action: crate::Action) -> Option<Vec<PanelEvent>> {
         let _ = action;
-        Vec::new()
+        None
     }
 ```
 
@@ -2080,8 +2129,9 @@ impl EditorPanel {
         Position { line, col }
     }
 
-    /// The entry point every consumer uses.
-    pub fn perform(&mut self, action: Action) -> Vec<PanelEvent> {
+    /// The entry point every consumer uses. `None` means this panel does not
+    /// handle the action, so the app should try it.
+    pub fn perform(&mut self, action: Action) -> Option<Vec<PanelEvent>> {
         match action {
             Action::Move { motion, extend } => {
                 // The goal column survives vertical motion and is cleared by
@@ -2119,9 +2169,10 @@ impl EditorPanel {
                     self.selections.push(selection);
                 }
                 self.scroll_to_cursor();
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
-            _ => Vec::new(),
+            // Not this panel's business. The app tries it next.
+            _ => None,
         }
     }
 }
@@ -2140,7 +2191,7 @@ In `crates/typ-panel-editor/src/lib.rs`, add `pub mod actions;`, make `goal_col`
 `impl Panel for EditorPanel` add:
 
 ```rust
-    fn apply_action(&mut self, action: Action) -> Vec<PanelEvent> {
+    fn apply_action(&mut self, action: Action) -> Option<Vec<PanelEvent>> {
         self.perform(action)
     }
 ```
@@ -2348,7 +2399,7 @@ Add to `impl EditorPanel` in `crates/typ-panel-editor/src/actions.rs`:
     fn edit_at_each_selection(
         &mut self,
         mut edit: impl FnMut(&mut typ_buffer::TextBuffer, Selection) -> Position,
-    ) -> Vec<PanelEvent> {
+    ) -> Option<Vec<PanelEvent>> {
         let mut selections: Vec<Selection> = self.selections.iter().copied().collect();
         // The buffer records one undo snapshot per call, so a multi-caret edit
         // is one undo step. Without this, undoing a 30-caret edit would take
@@ -2369,7 +2420,7 @@ Add to `impl EditorPanel` in `crates/typ-panel-editor/src/actions.rs`:
         }
         self.goal_col = None;
         self.scroll_to_cursor();
-        vec![PanelEvent::NeedsRedraw]
+        Some(vec![PanelEvent::NeedsRedraw])
     }
 ```
 
@@ -2403,13 +2454,13 @@ and extend `perform` with these arms, above the catch-all:
             Action::Undo => {
                 self.buffer.undo();
                 self.clamp_selections();
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
 
             Action::Redo => {
                 self.buffer.redo();
                 self.clamp_selections();
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
 ```
 
@@ -2420,7 +2471,7 @@ Deletion needs the line text, so it reads what it needs before mutating:
         &mut self,
         direction: typ_core::Direction,
         by_word: bool,
-    ) -> Vec<PanelEvent> {
+    ) -> Option<Vec<PanelEvent>> {
         use typ_core::Direction;
 
         // Line texts are captured up front: the closure below cannot borrow
@@ -2683,7 +2734,7 @@ Add these arms to `perform` in `crates/typ-panel-editor/src/actions.rs`:
                     head: Position { line: last, col: self.line_grapheme_count(last) },
                 });
                 self.goal_col = None;
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
 
             Action::SelectLine => {
@@ -2696,14 +2747,14 @@ Add these arms to `perform` in `crates/typ-panel-editor/src/actions.rs`:
                     head: Position { line, col: self.line_grapheme_count(line) },
                 });
                 self.goal_col = None;
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
 
             Action::CollapseSelections => {
                 self.selections.collapse_to_heads();
                 self.goal_col = None;
                 self.scroll_to_cursor();
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
 
             Action::AddCursor(direction) => {
@@ -2716,15 +2767,16 @@ Add these arms to `perform` in `crates/typ-panel-editor/src/actions.rs`:
                     }
                 };
                 let Some(line) = target_line else {
-                    // At the edge of the document there is nowhere to add one.
-                    // Silently doing nothing is right: the alternative is
-                    // stacking a duplicate cursor on the line already held.
-                    return Vec::new();
+                    // At the edge of the document there is nowhere to add
+                    // one. Some(vec![]) rather than None: the action was
+                    // handled and simply had nothing to do, so the app must
+                    // not retry it as an app action.
+                    return Some(Vec::new());
                 };
                 let col = from.col.min(self.line_grapheme_count(line));
                 self.selections.push(Selection::caret(Position { line, col }));
                 self.scroll_to_cursor();
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
 ```
 
@@ -3360,11 +3412,13 @@ in `run.rs`:
         }
 
         if let Some(action) = self.keymap.lookup(&chord) {
-            let events = self.focused_mut().apply_action(action);
-            if events.is_empty() {
-                return self.perform_app_action(action);
-            }
-            return self.apply(events);
+            // None means the panel does not handle this action at all, which
+            // is a different answer from handling it and having nothing to
+            // report.
+            return match self.focused_mut().apply_action(action) {
+                Some(events) => self.apply(events),
+                None => self.perform_app_action(action),
+            };
         }
 
         let is_chorded = chord
@@ -3373,8 +3427,8 @@ in `run.rs`:
             .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
         if let KeyCode::Char(c) = chord.raw.code
             && !is_chorded
+            && let Some(events) = self.focused_mut().apply_action(Action::InsertChar(c))
         {
-            let events = self.focused_mut().apply_action(Action::InsertChar(c));
             return self.apply(events);
         }
         Ok(())
@@ -3398,9 +3452,10 @@ in `run.rs`:
     }
 ```
 
-`Focus::Tree` must not swallow `Action::Save`: `TreePanel` leaves `apply_action` defaulted, so
-it returns no events and the app handles it. That is the whole reason the default returns an
-empty vector rather than a redraw.
+`Focus::Tree` must not swallow `Action::Save`: `TreePanel` leaves `apply_action` defaulted,
+so it returns `None` and the app handles it. That is the whole reason the default is `None`
+rather than an empty vector — "did not handle" and "handled, nothing happened" are different
+answers, and `AddCursor` at the edge of the document is a real case of the second.
 
 In `run.rs`, the key branch collapses to:
 
@@ -4392,11 +4447,11 @@ than most editors and needs a timer on the edit path; M2.5 alongside highlightin
 literal, behind a `SearchQuery` type shaped to admit regex later. There is no replace-one,
 only replace-all.
 
-**One behavior worth watching during execution.** Task 12 treats an empty event vector as "the
-panel declined this action", and `Action::AddCursor` at the edge of the document deliberately
-returns empty. The app then tries it as an app action and finds no arm, so it is a harmless
-no-op — but if a future action both belongs to a panel and needs a fallback, that convention
-will need a real "handled" signal rather than an empty vector.
+**Fixed on a fourth pass, before Task 6 was written.** `apply_action` originally returned
+`Vec<PanelEvent>`, with an empty vector meaning "the panel declined". `AddCursor` at the edge
+of the document legitimately returns empty, so the two answers were already conflated. It now
+returns `Option<Vec<PanelEvent>>`: `None` is "not handled", `Some(vec![])` is "handled,
+nothing to report". Free to change while it was still only on paper.
 
 **One execution risk.** Task 6 changes `EditorPanel`'s cursor field to `Selections`, and Tasks
 7–8 add the action path while the old `handle_key` arms still exist. Task 12 deletes them.

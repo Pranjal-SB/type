@@ -1,0 +1,12 @@
+# Pinned so CI and every developer machine agree on one compiler.
+#
+# Without this, CI resolves "stable" to whatever shipped most recently while a
+# laptop stays on whatever it last updated to. Edition 2024 and let-chains are
+# both recent enough that the gap shows up as a build that is green in one place
+# and red in the other, which is the most expensive kind of failure to diagnose.
+#
+# Raise this deliberately, in its own commit, so a toolchain bump is never
+# tangled up with a feature change.
+[toolchain]
+channel = "1.96.0"
+components = ["rustfmt", "clippy"]
