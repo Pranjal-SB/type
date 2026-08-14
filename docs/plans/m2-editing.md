@@ -1318,7 +1318,7 @@ git commit -m "feat(buffer): grapheme-indexed word boundaries with punctuation r
   - `TextBuffer::find_all(&self, query: &SearchQuery) -> Vec<Selection>`
   - `TextBuffer::replace_range(&mut self, start: Position, end: Position, text: &str)`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-buffer/tests/search.rs`:
 
@@ -1402,13 +1402,13 @@ fn replace_range_handles_a_replacement_of_a_different_length() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-buffer --test search`
 
 Expected: FAIL — `unresolved import typ_buffer::SearchQuery`, no method `find_all`.
 
-- [ ] **Step 3: Write the search module**
+- [x] **Step 3: Write the search module**
 
 `crates/typ-buffer/src/search.rs`:
 
@@ -1509,7 +1509,7 @@ pass building a `Vec<usize>` of byte offsets per grapheme and binary-searching i
 allocation per line rather than one per character. What is **not** acceptable is collecting
 `Vec<String>`.
 
-- [ ] **Step 4: Add the buffer methods**
+- [x] **Step 4: Add the buffer methods**
 
 In `crates/typ-buffer/src/buffer.rs`, add these to `impl TextBuffer`, and add
 `use crate::search::SearchQuery;` and `use crate::selection::Selection;` to the imports:
@@ -1554,13 +1554,30 @@ pub mod search;
 pub use search::{SearchQuery, find_in_line};
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `cargo test -p typ-buffer --test search`
 
 Expected: PASS, 9 tests.
 
-- [ ] **Step 6: Run the whole buffer suite**
+Actual: PASS, 12 tests. The implementation took the fallback the plan named rather than its
+first choice, and ended up simpler than either:
+
+- The planned scan folded whole lines with `to_lowercase` and mapped byte offsets back to
+  grapheme indices afterwards. That is not just fiddly, it is **wrong** — case folding can
+  change a string's byte length, so offsets taken in the folded copy do not reliably describe
+  the original.
+- Instead the line and the needle are each split into `Vec<&str>` of graphemes: two
+  allocations of borrowed slices, not one per character, which was the whole point of the
+  rewrite. Indices come out in graphemes directly, so nothing needs mapping back and folding
+  can never shift them.
+- Case-insensitive comparison folds lazily per grapheme via `char::to_lowercase`, which
+  returns an iterator precisely so no `String` is built.
+
+Three tests added: a match made of wide characters, a match at the end of a line, and
+`replace_range` with an empty replacement.
+
+- [x] **Step 6: Run the whole buffer suite**
 
 Run: `cargo test -p typ-buffer`
 
@@ -1568,7 +1585,7 @@ Expected: PASS — the earlier buffer, width, selection and word tests still pas
 and `replace_range` are additive; if `delete_before` or `insert_char` broke, the cause is
 `char_offset` having been changed rather than reused.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add crates/typ-buffer/src/search.rs crates/typ-buffer/src/buffer.rs crates/typ-buffer/src/lib.rs crates/typ-buffer/tests/search.rs

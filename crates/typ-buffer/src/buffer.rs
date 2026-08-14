@@ -5,6 +5,8 @@ use ropey::Rope;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::position::Position;
+use crate::search::SearchQuery;
+use crate::selection::Selection;
 use crate::undo::History;
 
 pub struct TextBuffer {
@@ -117,6 +119,36 @@ impl TextBuffer {
             .map_or(1, |g| g.chars().count());
         self.history.record(self.rope.clone());
         self.rope.remove(offset..offset + n);
+        self.dirty = true;
+    }
+
+    /// Every match in the buffer, in document order, as selections whose head
+    /// sits at the end of the match — so jumping to one leaves the cursor
+    /// where typing would naturally continue.
+    pub fn find_all(&self, query: &SearchQuery) -> Vec<Selection> {
+        let mut hits = Vec::new();
+        for line in 0..self.line_count() {
+            let text = self.line_text(line);
+            for (start, end) in crate::search::find_in_line(&text, query) {
+                hits.push(Selection {
+                    anchor: Position { line, col: start },
+                    head: Position { line, col: end },
+                });
+            }
+        }
+        hits
+    }
+
+    /// Replace the text between two positions as a single undo step.
+    pub fn replace_range(&mut self, start: Position, end: Position, text: &str) {
+        let from = self.char_offset(start);
+        let to = self.char_offset(end);
+        if from >= to {
+            return;
+        }
+        self.history.record(self.rope.clone());
+        self.rope.remove(from..to);
+        self.rope.insert(from, text);
         self.dirty = true;
     }
 
