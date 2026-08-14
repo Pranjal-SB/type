@@ -2885,7 +2885,7 @@ git commit -m "feat(editor): select all, select line, collapse, and stacked curs
 - Consumes: `crossterm::event::{MouseEvent, MouseEventKind}`, `typ_buffer::word_at`
 - Produces: drag-to-select, alt-click to add a cursor, double-click to select a word
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-panel-editor/tests/mouse.rs`:
 
@@ -3020,13 +3020,13 @@ fn releasing_the_button_ends_the_drag() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-panel-editor --test mouse`
 
 Expected: FAIL — `handle_mouse` currently ignores drags and modifiers.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add drag state to `EditorPanel` in `crates/typ-panel-editor/src/lib.rs`:
 
@@ -3110,14 +3110,18 @@ Both start as `None`. Replace `handle_mouse` with:
 
 Add `KeyModifiers` to the crossterm import.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-panel-editor`
 
 Expected: PASS — 9 new mouse tests, and the existing click tests from M1 still pass because a
 plain press still places a caret.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 10 mouse tests, 215 across the workspace. No deviations. One test added for
+clicking twice on a wide character, since click-to-grapheme and word-selection compose there
+and each was only covered separately.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-panel-editor/src/lib.rs crates/typ-panel-editor/tests/mouse.rs

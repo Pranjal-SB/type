@@ -29,6 +29,12 @@ pub struct EditorPanel {
     /// so passing through short lines does not permanently lose the column.
     pub(crate) goal_col: Option<usize>,
     pub(crate) height: usize,
+    /// Where the current drag began, so a drag extends from the press rather
+    /// than from wherever the cursor happened to be.
+    drag_anchor: Option<Position>,
+    /// The last cell clicked, so a second click in the same place can mean
+    /// "select the word" without a double-click timer.
+    last_click: Option<Position>,
 }
 
 impl EditorPanel {
@@ -50,6 +56,8 @@ impl EditorPanel {
             top_line: 0,
             goal_col: None,
             height: 0,
+            drag_anchor: None,
+            last_click: None,
         }
     }
 
@@ -348,18 +356,79 @@ impl Panel for EditorPanel {
     }
 
     fn handle_mouse(&mut self, event: MouseEvent, panel_area: Rect) -> Vec<PanelEvent> {
-        if event.kind != MouseEventKind::Down(MouseButton::Left) {
-            return Vec::new();
+        let at = |panel: &Self, event: &MouseEvent| {
+            let inner = Self::text_area(panel_area);
+            let row = event.row.saturating_sub(inner.y) as usize;
+            let col = event.column.saturating_sub(inner.x) as usize;
+            let line = (panel.top_line + row).min(panel.last_line());
+            Position {
+                line,
+                col: display_to_grapheme_col(&panel.buffer.line_text(line), col, TAB_WIDTH),
+            }
+        };
+
+        match event.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let position = at(self, &event);
+
+                if event.modifiers.contains(KeyModifiers::ALT) {
+                    // Alt+click stacks a cursor: the mouse half of
+                    // multi-cursor, with Action::AddCursor as the keyboard half.
+                    self.selections.push(Selection::caret(position));
+                    self.last_click = Some(position);
+                    self.drag_anchor = Some(position);
+                    return vec![PanelEvent::NeedsRedraw];
+                }
+
+                if self.last_click == Some(position) {
+                    // A second click in the same cell selects the word under
+                    // it. No timing check: clicking the same cell twice is
+                    // deliberate, and a double-click timer would put a clock on
+                    // the render path to distinguish two things a user does not
+                    // confuse.
+                    let text = self.buffer.line_text(position.line);
+                    if let Some((start, end)) = typ_buffer::word_at(&text, position.col) {
+                        self.selections.set_single(Selection {
+                            anchor: Position {
+                                line: position.line,
+                                col: start,
+                            },
+                            head: Position {
+                                line: position.line,
+                                col: end,
+                            },
+                        });
+                        self.drag_anchor = None;
+                        self.goal_col = None;
+                        return vec![PanelEvent::NeedsRedraw];
+                    }
+                }
+
+                self.set_caret(position);
+                self.drag_anchor = Some(position);
+                self.last_click = Some(position);
+                vec![PanelEvent::NeedsRedraw]
+            }
+
+            MouseEventKind::Drag(MouseButton::Left) => {
+                let Some(anchor) = self.drag_anchor else {
+                    // A drag with no press behind it is not ours: it belongs to
+                    // whatever panel the press landed in.
+                    return Vec::new();
+                };
+                let head = at(self, &event);
+                self.selections.set_single(Selection { anchor, head });
+                self.goal_col = None;
+                vec![PanelEvent::NeedsRedraw]
+            }
+
+            MouseEventKind::Up(MouseButton::Left) => {
+                self.drag_anchor = None;
+                Vec::new()
+            }
+
+            _ => Vec::new(),
         }
-        let inner = Self::text_area(panel_area);
-        let row = event.row.saturating_sub(inner.y) as usize;
-        let col = event.column.saturating_sub(inner.x) as usize;
-        let line = (self.top_line + row).min(self.last_line());
-        self.set_caret(Position {
-            line,
-            col: display_to_grapheme_col(&self.buffer.line_text(line), col, TAB_WIDTH),
-        });
-        vec![PanelEvent::NeedsRedraw]
     }
 
     fn handle_scroll(&mut self, delta: i32, _panel_area: Rect) -> Vec<PanelEvent> {
