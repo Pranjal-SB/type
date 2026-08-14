@@ -1666,6 +1666,7 @@ pub struct EditorPanel {
     /// actions, so that every path a user can take is one a test can take.
     #[doc(hidden)]
     pub fn set_selections_for_test(&mut self, list: Vec<Selection>) {
+        assert!(!list.is_empty(), "selections are never empty");
         let mut selections = Selections::single(list[0]);
         for selection in &list[1..] {
             selections.push(*selection);
@@ -2063,7 +2064,21 @@ impl EditorPanel {
                     motion,
                     Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown
                 );
-                if !vertical {
+                if vertical {
+                    // Latch the goal from where the cursor is *now*, before
+                    // moving. Recomputing it afterwards would store the column
+                    // the motion just clamped to, so passing through one short
+                    // line would narrow the goal permanently — which is the
+                    // exact bug this field exists to prevent.
+                    if self.goal_col.is_none() {
+                        let cursor = self.cursor();
+                        self.goal_col = Some(typ_buffer::grapheme_to_display_col(
+                            &self.buffer.line_text(cursor.line),
+                            cursor.col,
+                            TAB_WIDTH,
+                        ));
+                    }
+                } else {
                     self.goal_col = None;
                 }
                 let mut moved: Vec<Selection> = Vec::new();
@@ -2075,13 +2090,6 @@ impl EditorPanel {
                 self.selections.set_single(first);
                 for selection in iter {
                     self.selections.push(selection);
-                }
-                if vertical && self.goal_col.is_none() {
-                    self.goal_col = Some(typ_buffer::grapheme_to_display_col(
-                        &self.buffer.line_text(self.cursor().line),
-                        self.cursor().col,
-                        TAB_WIDTH,
-                    ));
                 }
                 self.scroll_to_cursor();
                 vec![PanelEvent::NeedsRedraw]
@@ -3084,8 +3092,16 @@ Add `left_col: usize` to `EditorPanel` (initialised to `0`) and its accessor:
     }
 ```
 
-Extend `scroll_to_cursor` to handle the horizontal axis. It needs the text width, so record
-it during render as `self.width` alongside `self.height`:
+Add `width: usize` to `EditorPanel` beside the existing `height`, initialised to `0`, and set
+it in `Panel::render` from the inner area:
+
+```rust
+        self.height = inner.height as usize;
+        self.width = inner.width as usize;
+```
+
+Both are learned at render time for the same reason: a panel does not know its size until it
+is asked to draw. Extend `scroll_to_cursor` to handle the horizontal axis:
 
 ```rust
     pub(crate) fn scroll_to_cursor(&mut self) {
@@ -3708,36 +3724,66 @@ Add to `App`: `prompt: Option<Prompt>`, `last_query: Option<SearchQuery>`. Add t
 
 ```rust
     fn handle_prompt_chord(&mut self, chord: KeyChord) -> Result<()> {
+        // Decide first, mutate second. Holding `self.prompt.as_mut()` across an
+        // assignment to `self.prompt` does not compile, and threading the
+        // borrow through every arm is worse than naming the outcome.
+        enum Outcome {
+            Stay,
+            Close,
+            Search(String),
+            AskReplacement(String),
+            Replace { needle: String, replacement: String },
+        }
+
         let Some(prompt) = self.prompt.as_mut() else {
             return Ok(());
         };
-        match chord.raw.code {
-            KeyCode::Esc => {
-                self.prompt = None;
+
+        let outcome = match chord.raw.code {
+            KeyCode::Esc => Outcome::Close,
+            KeyCode::Backspace => {
+                prompt.delete_backward();
+                Outcome::Stay
             }
-            KeyCode::Backspace => prompt.delete_backward(),
+            KeyCode::Char(c) => {
+                prompt.insert_char(c);
+                Outcome::Stay
+            }
             KeyCode::Enter => {
                 let input = prompt.take_input();
                 match prompt.kind() {
                     // Ctrl+H's first Enter banks the needle and asks the second
                     // question; the prompt stays open across both.
                     PromptKind::Search if prompt.is_replace_flow() => {
-                        prompt.set_pending_needle(input);
-                        prompt.become_replace();
+                        Outcome::AskReplacement(input)
                     }
-                    PromptKind::Search => {
-                        self.prompt = None;
-                        self.run_search(input);
-                    }
-                    PromptKind::Replace => {
-                        let needle = prompt.pending_needle().unwrap_or_default().to_string();
-                        self.prompt = None;
-                        self.run_replace_all(&needle, &input);
-                    }
+                    PromptKind::Search => Outcome::Search(input),
+                    PromptKind::Replace => Outcome::Replace {
+                        needle: prompt.pending_needle().unwrap_or_default().to_string(),
+                        replacement: input,
+                    },
                 }
             }
-            KeyCode::Char(c) => prompt.insert_char(c),
-            _ => {}
+            _ => Outcome::Stay,
+        };
+
+        match outcome {
+            Outcome::Stay => {}
+            Outcome::Close => self.prompt = None,
+            Outcome::Search(needle) => {
+                self.prompt = None;
+                self.run_search(needle);
+            }
+            Outcome::AskReplacement(needle) => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.set_pending_needle(needle);
+                    prompt.become_replace();
+                }
+            }
+            Outcome::Replace { needle, replacement } => {
+                self.prompt = None;
+                self.run_replace_all(&needle, &replacement);
+            }
         }
         Ok(())
     }
@@ -4271,37 +4317,58 @@ made the M1.1 and M1.2 patches diagnosable rather than archaeological.
 ```bash
 git add README.md docs
 git commit -m "docs: close out M2 — editing, selections, multi-cursor, search"
-gh pr create --base main --title "M2 — editing" --body-file <(...)
+gh pr create --base main --title "M2 — editing" --body-file docs/plans/m2-pr-body.md
 ```
 
 ---
 
 ## Self-review
 
-Checked after writing, against the spec and against this plan's own interfaces.
+Run twice. The second pass is the one that found things — the first checked coverage, the
+second checked whether the code in the plan would actually compile and pass its own tests.
 
-**Spec coverage.** §4's mouse/keyboard parity: every editing action added here is reachable
-both ways — selection by shift+arrow and by drag, multi-cursor by `ctrl+alt+arrow` and by
-alt-click, word selection by motion and by clicking twice. §4's "modal editing is a setting":
-Tasks 1, 2 and 12 are exactly the seam that makes it possible, and nothing in Tasks 6–13
-bypasses `Action`. §5's `Panel` contract: the trait grows one defaulted method and panels
-still return events rather than touching state. §7's input model: scroll coalescing and
-synchronized output are untouched.
+**Spec coverage.** §4's mouse/keyboard parity: every capability here is reachable both ways —
+selection by shift+arrow and by drag, multi-cursor by `ctrl+alt+arrow` and by alt-click, word
+selection by motion and by clicking twice. §4's "modal editing is a setting": Tasks 1, 2 and
+12 are the seam that makes it possible, and nothing in Tasks 6–13 bypasses `Action`. §5's
+`Panel` contract: the trait grows one defaulted method, and panels still return events rather
+than touching state. §7's input model: scroll coalescing and synchronized output are untouched.
 
-**Known gaps, deliberate.** Tree-sitter highlighting and the command palette are M2.5.
-Undo granularity is per-action, not time-grouped — typing ten characters is ten undo steps.
-That is worse than most editors and is not fixed here; it needs a timer on the edit path,
-which is an M2.5 concern alongside highlighting. Search is literal, not regex, behind a
-`SearchQuery` type shaped to admit regex later. There is no replace-one, only replace-all.
+**Defects found on the second pass, all fixed in place:**
 
-**Type consistency.** `Selection`/`Selections` names match across Tasks 3, 6–13.
-`perform` is the inherent method; `apply_action` is the trait method that calls it — used
-consistently after Task 7. `begin_edit_group`/`end_edit_group` are introduced in Task 8 and
-reused by `replace_all` in Task 13. `line_text` exists on both `TextBuffer` and `EditorPanel`
-(the panel's delegates), which is intentional and used in tests of both.
+1. **`goal_col` was overwritten with the clamped column** after every vertical motion, so
+   `vertical_motion_remembers_the_goal_column` in Task 7 would have failed — passing through
+   one short line would have narrowed the goal permanently, which is the exact bug the field
+   exists to prevent. The goal is now latched *before* moving.
+2. **`handle_prompt_chord` would not have compiled.** It held `self.prompt.as_mut()` across
+   `self.prompt = None`. Rewritten to decide an `Outcome` first and mutate afterwards.
+3. **`self.width` was used by horizontal scrolling and never declared.** Task 11 now adds the
+   field and sets it in `render` beside `height`.
+4. **`become_replace_after_needle` was called but never defined**, and the two-stage replace
+   closed its prompt after the first answer (found on the first pass, fixed then).
+5. `gh pr create --body-file <(...)` was a placeholder — now names a real file.
+6. `set_selections_for_test` indexed `list[0]` without checking; it now asserts.
 
-**One risk worth stating.** Task 6 changes `EditorPanel`'s cursor field to `Selections`, and
-Tasks 7 and 8 rewrite `handle_key` to route through actions. Between Task 6 and Task 12 the
-editor has two input paths — the old `handle_key` arms and the new `perform`. Task 12 deletes
-the old ones. If work stops between 6 and 12, the tree is still green but the editor has
-duplicate logic; the cheapest recovery is to finish Task 12 rather than to revert.
+**Type consistency.** `Selection`/`Selections` match across Tasks 3 and 6–13. `perform` is the
+inherent method, `apply_action` the trait method that calls it — consistent from Task 7 on.
+`begin_edit_group`/`end_edit_group` are introduced in Task 8 and reused by `replace_all` in
+Task 13. `line_text` exists on both `TextBuffer` and `EditorPanel` (the panel delegates), which
+is deliberate and used in tests of both. `page()`, `last_line()`, `line_grapheme_count()` and
+`scroll_to_cursor()` all predate this plan and are made `pub(crate)` in Task 7.
+
+**Known gaps, deliberate.** Tree-sitter highlighting and the command palette are M2.5. Undo is
+per-action with no time grouping — typing ten characters is ten undo steps, which is worse
+than most editors and needs a timer on the edit path; M2.5 alongside highlighting. Search is
+literal, behind a `SearchQuery` type shaped to admit regex later. There is no replace-one,
+only replace-all.
+
+**One behavior worth watching during execution.** Task 12 treats an empty event vector as "the
+panel declined this action", and `Action::AddCursor` at the edge of the document deliberately
+returns empty. The app then tries it as an app action and finds no arm, so it is a harmless
+no-op — but if a future action both belongs to a panel and needs a fallback, that convention
+will need a real "handled" signal rather than an empty vector.
+
+**One execution risk.** Task 6 changes `EditorPanel`'s cursor field to `Selections`, and Tasks
+7–8 add the action path while the old `handle_key` arms still exist. Task 12 deletes them.
+Stopping between 6 and 12 leaves the tree green but with two input paths; the cheap recovery is
+to finish Task 12, not to revert.
