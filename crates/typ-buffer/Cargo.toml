@@ -1,0 +1,11 @@
+[package]
+name = "typ-buffer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+ropey.workspace = true
+unicode-segmentation.workspace = true
+unicode-width.workspace = true

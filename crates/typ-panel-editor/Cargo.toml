@@ -1,0 +1,13 @@
+[package]
+name = "typ-panel-editor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true
+unicode-segmentation.workspace = true
+typ-buffer.workspace = true
+typ-core.workspace = true

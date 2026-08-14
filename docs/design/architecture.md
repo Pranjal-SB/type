@@ -114,6 +114,23 @@ events. The render thread only renders.
 - Nothing is modal-only and nothing is mouse-only.
 - Non-modal by default. Familiar to anyone arriving from VS Code.
 
+**Modal editing is a setting, not a fork.** The core stays non-modal and always usable
+without it; a vim layer sits above the editor as a toggle (`editing.mode = "vim"`), the way
+Zed does it — a mode state machine that intercepts keys and translates them into the same
+actions the non-modal path already calls. That is the whole reason it can be optional: the
+layer owns modes, counts, operators and pending motions, and owns no editing primitives of
+its own.
+
+What modal editors actually have that non-modal ones lack is not modes, it is a **composable
+grammar** — operator × count × motion, so `d3w` is three orthogonal pieces rather than a
+memorised command. That grammar is the thing worth taking; modes are the price it charges,
+and a toggle is how someone declines to pay it.
+
+The obligation this creates on the core: every editing primitive must be reachable as a
+named action taking explicit arguments, never only as a key handler. A `handle_key` arm that
+mutates the buffer inline is unreachable from the vim layer, from the command palette, and
+from a plugin — three consumers, one rule.
+
 ### Without giving up features
 
 Guaranteed by the protocol leverage in §2, not by grinding out features one at a time.
@@ -141,9 +158,37 @@ about tree-sitter ABI-14 versus ABI-15 colliding the exported `tree_sitter_php` 
 link time and silently disabling PHP highlighting. Dynamic loading sidesteps that class of
 failure entirely.
 
-**Unicode width must be handled from day one.** Both Rust projects surveyed hit this; TermIDE
-carries a forked `unicode-width` via `[patch.crates-io]`. Column drift on CJK and emoji is
-not an edge case in an editor, it is a daily correctness bug. Budget for it explicitly.
+**Syntax queries are viewport-scoped, never per-line.** Measured at M0: asking a tree-sitter
+tree for one line's spans costs O(lines above it), twice over — once resolving the line's
+byte offset, once descending from the root past every top-level item to prune it. Done per
+visible line per frame on a 50k-line file that is a **p99 of 1144ms** against a 16ms budget,
+while `p50` stays at 1.1ms because the cost scales with scroll depth rather than viewport
+size. `typ-syntax` therefore exposes a range query, and the fix is traversal, not caching:
+line offsets come from the rope, and the walk seeks in with
+`TreeCursor::goto_first_child_for_byte` rather than starting at the root. 18.7ms → 0.4ms per
+viewport, flat with depth. `Node::descendant_for_byte_range` looks like the answer and is
+not — a multi-line viewport's smallest containing node is the root.
+
+**Tree-sitter parses at ~2 MB/s and that is not improvable.** Linear in file size,
+independent of tree shape, so 50k lines of Rust costs ~750ms of wall clock. Every editor
+surveyed hides it rather than reducing it: vim never builds a whole-file model at all
+(approximate, and visibly wrong after a fast scroll), Neovim slices one parse across
+event-loop iterations via the parse timeout because Lua gives it no threads. TYPE has
+threads, so the parse runs on a worker and the tree arrives as an event — the §4 "no blocking
+work on the render thread" rule is load-bearing here, not decorative. The file opens and
+scrolls immediately, unhighlighted, and recolors when the tree lands.
+
+**Unicode width must be handled from day one.** Column drift on CJK and emoji is not an edge
+case in an editor, it is a daily correctness bug, and it is what mouse-click-to-cursor
+depends on.
+
+TermIDE carries a forked `unicode-width` via `[patch.crates-io]`, which suggested TYPE would
+need one too. Measured instead: stock `unicode-width` 0.2 passes all nine width cases,
+including emoji and combining marks. **No fork needed.** Their patch predates fixes upstream.
+
+The general rule this establishes: prior art is evidence, not authority. Where a surveyed
+project's choice is load-bearing here, it is because it was tested or because the failure it
+avoids was observed — never because they did it.
 
 ### Crates — 14
 
@@ -173,18 +218,25 @@ stop being contributable, including by their own author.
 
 ### The Panel contract
 
-Adapted from TermIDE's `Panel` trait, which is the best single artifact in any of the three
-projects surveyed.
+TermIDE's `Panel` trait is the best single artifact in any of the three projects surveyed.
+TYPE takes its *shape* — return events, never touch state — but not its size.
 
-- ~30 methods, **all but five defaulted**. A new panel implements `name`, `title`, `render`,
-  `handle_key`, `as_any`. Everything else is opt-in.
+- **Starts at five methods**: `name`, `title`, `render`, `handle_key`, `as_any`. Nothing else
+  until a second panel needs it. First growth came at M1.1: `cursor_position(panel_area)`,
+  defaulted to `None`. The app draws the terminal's real cursor from the focused panel rather
+  than styling a cell, so it blinks and reshapes like every other terminal program's; panels
+  with nothing to edit ignore the method entirely. TermIDE's ~30 methods are the endpoint of years of real
+  panels; adopting that surface up front would be guessing at generality we have not earned.
+  The trait grows when a concrete panel forces it, and each addition is defaulted so existing
+  panels do not break.
 - Panels return `Vec<PanelEvent>` rather than mutating application state — decoupled and
   independently testable.
 - `RenderContext` is a narrow struct (theme colors, focus flag, dimensions), **not**
   `&AppState`. A panel cannot reach into the world.
-- `status_segments()` lets the focused panel contribute clickable status-bar chips; clicks
-  route back by id via `handle_status_action`.
-- `to_session()` makes session persistence a per-panel concern rather than a central one.
+Two of TermIDE's methods are worth adopting when their milestone arrives, not before:
+`status_segments()` (focused panel contributes clickable status-bar chips, clicks route back
+by id via `handle_status_action`) at M4 with the status bar, and `to_session()` (session
+persistence as a per-panel concern rather than a central one) at M4 with sessions.
 
 ### Event model — the one deliberate fix
 
@@ -306,7 +358,13 @@ This section is what makes "responsive and mature" real rather than aspirational
 - **Synchronized output (CSI 2026)** wraps every frame, eliminating tearing on partial
   repaints. Borrowed from pi-tui, which is what gives pi and oh-my-pi their visual polish.
 - **Damage-driven redraw.** Repaint on dirty state, never on a timer tick. ratatui's
-  double-buffer diff then emits only changed cells.
+  double-buffer diff then emits only changed cells. This is a measurement concern as well as
+  a performance one: at M0 every mouse-move was repainting and being recorded as a frame,
+  which quietly flattered both `p50` and `p99` until the dirty flag landed.
+- **The event loop blocks on one channel**, with worker threads and a crossterm-pumping
+  thread feeding it. Blocking directly on terminal input instead means an off-thread result
+  — a finished parse, an LSP response — does not appear until the user's next keypress;
+  polling instead of blocking fixes that but burns a wakeup per tick forever.
 - **Input coalescing.** Batch scroll deltas into a single `handle_scroll`; drop stale resize
   events. Prevents the scroll-lag that makes TUIs feel cheap.
 - **Terminal capability detection** at startup: truecolor, the **kitty keyboard protocol**,
@@ -443,8 +501,9 @@ Measured from source, not from READMEs.
 
 Taken from each:
 
-- **TermIDE** — the `Panel` trait, `RenderContext` narrowing, status segments with click
-  routing, `to_session`, panel-per-crate, and the `unicode-width` patch approach.
+- **TermIDE** — the `Panel` trait's shape (not its size), `RenderContext` narrowing,
+  panel-per-crate, and later, status segments with click routing and `to_session`. Its
+  `unicode-width` patch was evaluated and rejected: stock 0.2 passes every case we tested.
 - **ttt** — its 87-line diff renderer, as the standing reminder of how little this actually
   needs to be. Plus the "plugins can create panels" surface.
 - **Fresh** — typed plugin API generation: emit type stubs from the Rust API so extension

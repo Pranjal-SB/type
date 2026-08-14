@@ -87,7 +87,7 @@ decision, and `src/width.rs` (promoted into `typ-buffer` at M1). Do not build ar
 - Produces: a binary that enters the alternate screen with mouse capture on, redraws on
   events, and restores the terminal on `q` or `Ctrl+C`
 
-- [ ] **Step 1: Create the spike crate manifest**
+- [x] **Step 1: Create the spike crate manifest**
 
 `spikes/m0-feel/Cargo.toml`:
 
@@ -125,7 +125,7 @@ wide.txt
 `opt-level = 3` and `debug = 1`, not `opt-level = "z"`. Measurements must reflect a
 speed-optimized build, and symbols are kept so profiling works.
 
-- [ ] **Step 2: Write main.rs with terminal lifecycle and mouse capture**
+- [x] **Step 2: Write main.rs with terminal lifecycle and mouse capture**
 
 `spikes/m0-feel/src/main.rs`:
 
@@ -183,7 +183,7 @@ fn run(terminal: &mut DefaultTerminal) -> Result<()> {
 }
 ```
 
-- [ ] **Step 3: Verify it builds and runs**
+- [x] **Step 3: Verify it builds and runs**
 
 Run: `cargo run --release --manifest-path spikes/m0-feel/Cargo.toml`
 
@@ -194,7 +194,7 @@ state** — the prompt behaves normally, typing echoes, no stray escape sequence
 If the terminal is left broken after exit, stop and fix teardown before continuing.
 Everything downstream depends on this being correct.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add spikes/m0-feel
@@ -205,10 +205,12 @@ git commit -m "feat(spike): m0 scaffold with mouse capture and clean teardown"
 
 ### Task 2: Grapheme ↔ display-column mapping, with tests
 
-The highest-risk pure function in the project. Both Rust projects surveyed hit unicode width
-problems; TermIDE ships a forked `unicode-width` via `[patch.crates-io]`. Column drift on CJK
-and emoji is a daily correctness bug in an editor, not an edge case. It is also what
-mouse-click-to-cursor depends on, so it gets tested first and properly.
+The highest-risk pure function in the project. Column drift on CJK and emoji is a daily
+correctness bug in an editor, not an edge case, and mouse-click-to-cursor depends on it. So
+it gets tested first and properly.
+
+**Result: 9/9 pass on stock `unicode-width` 0.2.** TermIDE ships a `[patch.crates-io]` fork,
+which made a fork look likely here. It is not needed — their patch predates upstream fixes.
 
 **Files:**
 - Create: `spikes/m0-feel/src/width.rs`, `spikes/m0-feel/tests/width.rs`
@@ -220,7 +222,7 @@ mouse-click-to-cursor depends on, so it gets tested first and properly.
   - `width::grapheme_to_display_col(line: &str, grapheme_idx: usize, tab_width: usize) -> usize`
   - `width::display_to_grapheme_col(line: &str, display_col: usize, tab_width: usize) -> usize`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `spikes/m0-feel/tests/width.rs`:
 
@@ -277,13 +279,13 @@ fn clicking_past_end_of_line_clamps_to_line_length() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test width`
 
 Expected: FAIL — the crate has no library target and `m0_feel::width` does not exist.
 
-- [ ] **Step 3: Add a library target and implement width.rs**
+- [x] **Step 3: Add a library target and implement width.rs**
 
 Add to `spikes/m0-feel/Cargo.toml` after `[package]`:
 
@@ -378,17 +380,16 @@ pub fn display_to_grapheme_col(line: &str, display_col: usize, tab_width: usize)
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test width`
 
 Expected: PASS, 9 tests.
 
-If `combining_marks_do_not_add_width` or `emoji_is_two_columns_wide` fails, that is the
-`unicode-width` behavior gap TermIDE forked around. Record the exact failure in `FINDINGS.md` —
-it decides whether M1 needs a `[patch.crates-io]` override.
+Actual: 9 passed, 0 failed, on `unicode-width` 0.2.2. No `[patch.crates-io]` override needed
+for M1. `width.rs` promotes into `typ-buffer` unchanged at Task 11.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add spikes/m0-feel
@@ -410,7 +411,7 @@ git commit -m "feat(spike): grapheme to display column mapping with unicode test
   - `Viewport::scroll(&mut self, delta: i32, total_lines: usize)`
   - `Viewport::visible_range(&self, total_lines: usize) -> std::ops::Range<usize>`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `spikes/m0-feel/tests/viewport.rs`:
 
@@ -458,13 +459,13 @@ fn scroll_does_not_underflow_when_file_is_shorter_than_viewport() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test viewport`
 
 Expected: FAIL — `m0_feel::viewport` does not exist.
 
-- [ ] **Step 3: Implement viewport.rs**
+- [x] **Step 3: Implement viewport.rs**
 
 `spikes/m0-feel/src/viewport.rs`:
 
@@ -499,13 +500,13 @@ impl Viewport {
 
 Add `pub mod viewport;` to `spikes/m0-feel/src/lib.rs`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test viewport`
 
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Render a real file in main.rs**
+- [x] **Step 5: Render a real file in main.rs**
 
 Replace `spikes/m0-feel/src/main.rs`:
 
@@ -582,7 +583,7 @@ fn run(terminal: &mut DefaultTerminal, rope: &Rope) -> Result<()> {
 }
 ```
 
-- [ ] **Step 6: Generate a large test file and scroll it**
+- [x] **Step 6: Generate a large test file and scroll it**
 
 ```bash
 cargo build --release --manifest-path spikes/m0-feel/Cargo.toml
@@ -600,7 +601,7 @@ Run: `./target/release/m0-feel.exe spikes/m0-feel/big.rs`
 Expected: renders, arrow keys and wheel scroll it, `q` exits cleanly. Hold `Down` and scroll
 aggressively — note subjectively whether it feels smooth. Measurement comes in Task 5.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add spikes/m0-feel
@@ -623,7 +624,7 @@ pointer, including inside wide characters and past line ends.
 - Produces: `click::click_to_position(&Rope, Viewport, u16, u16, usize) -> (usize, usize)`
   returning `(line, grapheme_col)`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `spikes/m0-feel/tests/click.rs`:
 
@@ -671,13 +672,13 @@ fn click_below_last_line_clamps_to_last_line() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test click`
 
 Expected: FAIL — `m0_feel::click` does not exist.
 
-- [ ] **Step 3: Implement click.rs**
+- [x] **Step 3: Implement click.rs**
 
 `spikes/m0-feel/src/click.rs`:
 
@@ -712,13 +713,13 @@ pub fn click_to_position(
 
 Add `pub mod click;` to `spikes/m0-feel/src/lib.rs`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test click`
 
 Expected: PASS, 5 tests.
 
-- [ ] **Step 5: Wire click into the spike and render a cursor**
+- [x] **Step 5: Wire click into the spike and render a cursor**
 
 In `spikes/m0-feel/src/main.rs`, add `use m0_feel::click::click_to_position;` and a
 `cursor: (usize, usize)` initialized to `(0, 0)`.
@@ -746,7 +747,7 @@ if cursor.0 >= vp.top_line && cursor.0 < vp.top_line + vp.height {
 }
 ```
 
-- [ ] **Step 6: Verify click feel by hand**
+- [x] **Step 6: Verify click feel by hand**
 
 Run: `./target/release/m0-feel.exe spikes/m0-feel/big.rs`
 
@@ -762,7 +763,7 @@ Run: `./target/release/m0-feel.exe spikes/m0-feel/wide.txt`
 Expected: the cursor lands exactly under the pointer on every line, including the CJK, emoji,
 and tab lines. **Any visible drift is a blocking finding** — record it and resolve before M1.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add spikes/m0-feel
@@ -784,7 +785,7 @@ git commit -m "feat(spike): click-to-position cursor with wide-char correctness"
   - `FrameTimer::record(&mut self, d: std::time::Duration)`
   - `FrameTimer::report(&self) -> String` — count, mean, p50, p99, max in microseconds
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `spikes/m0-feel/tests/metrics.rs`:
 
@@ -811,13 +812,13 @@ fn empty_timer_reports_without_panicking() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test metrics`
 
 Expected: FAIL — `m0_feel::metrics` does not exist.
 
-- [ ] **Step 3: Implement metrics.rs**
+- [x] **Step 3: Implement metrics.rs**
 
 `spikes/m0-feel/src/metrics.rs`:
 
@@ -865,13 +866,13 @@ impl FrameTimer {
 
 Add `pub mod metrics;` to `spikes/m0-feel/src/lib.rs`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test metrics`
 
 Expected: PASS, 2 tests.
 
-- [ ] **Step 5: Instrument the draw loop and add a sync-output toggle**
+- [x] **Step 5: Instrument the draw loop and add a sync-output toggle**
 
 In `spikes/m0-feel/src/main.rs`, change `run`'s signature to `-> Result<FrameTimer>` and
 return `Ok(timer)` at the quit branch. Before the loop:
@@ -912,7 +913,7 @@ And in `main`, after `ratatui::restore()`:
 println!("frame timing: {}", timer.report());
 ```
 
-- [ ] **Step 6: Measure**
+- [x] **Step 6: Measure**
 
 Run: `./target/release/m0-feel.exe spikes/m0-feel/big.rs`
 
@@ -922,7 +923,7 @@ sync output toggled off (`s`).
 Expected: p99 well under 16000us. Compare visual tearing between modes and record which
 terminal was used — this is a **Windows Terminal** measurement and other emulators may differ.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add spikes/m0-feel
@@ -944,7 +945,7 @@ git commit -m "feat(spike): frame timing metrics and synchronized output toggle"
   - `Highlighter::parse(&mut self, text: &str)`
   - `Highlighter::spans_for_line(&self, text: &str, line: usize) -> Vec<(Range<usize>, &'static str)>`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `spikes/m0-feel/tests/highlight.rs`:
 
@@ -969,13 +970,13 @@ fn parsing_a_large_buffer_completes() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test highlight`
 
 Expected: FAIL — `m0_feel::highlight` does not exist.
 
-- [ ] **Step 3: Implement highlight.rs**
+- [x] **Step 3: Implement highlight.rs**
 
 `spikes/m0-feel/src/highlight.rs`:
 
@@ -1071,7 +1072,7 @@ fn classify(kind: &str) -> Option<&'static str> {
 
 Add `pub mod highlight;` to `spikes/m0-feel/src/lib.rs`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test --manifest-path spikes/m0-feel/Cargo.toml --test highlight`
 
@@ -1081,7 +1082,7 @@ If `tree_sitter_rust::LANGUAGE` does not resolve, older grammar crates expose `l
 instead. Check `cargo doc -p tree-sitter-rust --open` and use whichever the pinned 0.24
 exposes. Record which in `FINDINGS.md`.
 
-- [ ] **Step 5: Colorize the rendered lines**
+- [x] **Step 5: Colorize the rendered lines**
 
 In `spikes/m0-feel/src/main.rs`:
 
@@ -1120,7 +1121,7 @@ fn styled_line(text: &str, spans: &[(std::ops::Range<usize>, &'static str)]) -> 
 
 Parse once after loading the file, then call `styled_line` per visible line in the draw closure.
 
-- [ ] **Step 6: Measure highlighting under scroll**
+- [x] **Step 6: Measure highlighting under scroll**
 
 Run: `./target/release/m0-feel.exe spikes/m0-feel/big.rs`
 
@@ -1130,11 +1131,127 @@ Expected: p99 still under 16000us with highlighting on. If not, note whether the
 `parse` (should be near zero when text is unchanged) or in `spans_for_line` — the latter walks
 the tree per line per frame and is the obvious thing M1 caches.
 
-- [ ] **Step 7: Commit**
+**Result: first measurement failed the budget badly — `p99=1144011us`, `max=1144830us`
+against a `p50` of `1108us`.** Highlighting was subjectively unusable; turning it off with
+`h` restored normal scrolling. The prediction above was half right and its proposed fix was
+wrong, which matters for M1, so both are recorded.
+
+Right: the cost was in `spans_for_line`, not `parse`. Wrong: **caching is not the fix.**
+There were two independent O(lines-above-the-viewport) costs, and the bimodal timing —
+fast `p50`, catastrophic `p99` — is their signature, since both scale with scroll depth
+rather than with viewport size:
+
+1. `spans_for_line` recomputed the line's byte offset with
+   `text.split_inclusive('\n').take(line).map(str::len).sum()`, rescanning the file from
+   byte 0 **per visible line, per frame**. At line 40,000 that is a 1.7 MB scan × ~40 lines.
+   The rope already knows this: `rope.line_to_byte(line)`.
+2. `collect_leaves` descended from `root_node()`. Pruning by byte range still has to *visit*
+   every sibling to prune it, and a 50k-line file's root has 50k top-level items. Measured
+   at 18.7ms for a single 40-line viewport — and that was paid 40 times per frame.
+
+`Node::descendant_for_byte_range` looks like the fix and is not: a 40-line viewport spans 40
+sibling `function_item`s, so the smallest node containing it *is* the root. Measured at
+2.8us and it changed nothing. What works is seeking at the sibling level —
+`TreeCursor::goto_first_child_for_byte(start)`, then walking siblings forward until past
+`end`. **18.7ms → 0.4ms, and flat with scroll depth.**
+
+Combined with hoisting the walk out of the per-line loop — one walk per viewport instead of
+one per line, spans then split across lines as they are consumed — this is a pure traversal
+fix. No cache, no invalidation logic.
+
+**Carry into M1:** `typ-syntax` asks the tree for a *viewport* (`spans_in_range`), never for
+a line. A per-line cache would have papered over an O(offset) traversal and inherited a
+cache-invalidation problem on every edit for no reason. Guarded by
+`tests/highlight.rs::viewport_spans_deep_in_a_large_buffer_stay_cheap`, which asserts a
+40-line viewport at line 39,000 of a 40k-line file costs under one 16ms frame.
+
+- [x] **Step 7: Commit**
 
 ```bash
 git add spikes/m0-feel
 git commit -m "feat(spike): tree-sitter highlighting on the visible viewport"
+```
+
+---
+
+### Task 6a: Move the initial parse off the render thread — *added, not in the original plan*
+
+Task 6 measured the initial parse at **723–761ms for 50k lines** and the plan treated that as
+a number to record. It is also a number to act on: the whole of it lands before the first
+frame, so the editor is visibly frozen for three quarters of a second on open — against a §4
+budget of **cold start to interactive < 100ms.**
+
+**First: is it fixable by parsing faster?** No. Measured across sizes and shapes:
+
+| Input | Lines | Size | Parse | Throughput |
+|---|---|---|---|---|
+| flat ×6,250 | 6,250 | 225 KB | 120.4ms | 1.9 MB/s |
+| flat ×12,500 | 12,500 | 451 KB | 241.2ms | 1.9 MB/s |
+| flat ×25,000 | 25,000 | 903 KB | 441.6ms | 2.1 MB/s |
+| flat ×50,000 | 50,000 | 1806 KB | 798.5ms | 2.3 MB/s |
+| `big.rs` | 50,000 | 2273 KB | 923.3ms | 2.5 MB/s |
+| nested (mods/impls/matches) | 45,000 | 1469 KB | 765.7ms | 2.0 MB/s |
+
+Linear, and flat at ~2 MB/s regardless of tree shape. `big.rs`'s 50k flat top-level items are
+not a pathological input — a generated file with realistic nesting parses at the same rate.
+There is no constant factor to win, so the cost has to be *hidden* rather than reduced.
+
+**How the field handles it — three different answers, and none of them is "parse faster":**
+
+- **Vim never builds a whole-file model.** Regex rules over visible lines only, with
+  `syntax sync minlines` guessing the syntax state at the top of the screen and `synmaxcol`
+  abandoning long lines. Fast because it is approximate; the cost is highlighting that is
+  visibly wrong after a fast scroll until forced to redraw.
+- **Neovim pays the same tree-sitter cost and slices it.** Their treesitter tracking issue
+  (#22426) lists "initial parse blocks the event loop" as a named bug, fixed in #22420 by
+  using tree-sitter's parse timeout to spread one parse across event-loop iterations. They do
+  that because Lua/libuv gives them no threads.
+- **Helix** parses on load and carries the same cost.
+
+**TYPE has threads, so it takes the direct version** — which §4 already mandates ("syntax
+parsing runs on worker threads and delivers results as events"). This task is that constraint
+proven on real numbers rather than asserted.
+
+- [x] **Step 1: Parse on a worker, deliver the tree as a message**
+
+`Arc<str>` for the source so the worker owns a share of it; `mpsc::channel` carrying
+`(Highlighter, Duration)` back. Both `Parser` and `Tree` are `Send`, so the whole
+`Highlighter` moves across cleanly and no lock is needed.
+
+- [x] **Step 2: Poll the event loop instead of blocking on it**
+
+`event::read()` blocks until input, so a parse finishing during an idle moment would not
+appear until the user's next keypress. Replaced with `event::poll(16ms)` plus a dirty flag,
+redrawing only on state change.
+
+The dirty flag also fixes a **measurement** bug: every mouse-move event was previously
+triggering a redraw *and* recording a frame, padding the histogram with cheap no-op frames
+and flattering both `p50` and `p99`. Frame counts before and after this change are not
+comparable.
+
+- [x] **Step 3: Report time-to-first-frame**
+
+The binary now prints `initial parse: Nms (off-thread)` and `first frame at: Nms after
+start`, and the status bar shows `hl:wait` → `hl:on` so the handoff is visible rather than
+inferred.
+
+- [x] **Step 4: Measure — folded into Task 7**
+
+**Known ceiling.** The 16ms poll wakes 60×/sec while idle doing nothing, which is acceptable
+for a 30-second spike and not for an editor. **M1 blocks on a single event channel** with a
+thread pumping crossterm events into it, so a finished parse wakes the loop directly and idle
+costs nothing. Marked `ponytail:` at the call site.
+
+**Second known ceiling.** Scrolling into not-yet-parsed territory shows plain text and then
+recolors all at once when the tree lands. Fine at 0.7s. If a file ever takes ~10s, the answer
+is vim's — approximate highlighting immediately, exact once parsed. Recorded so that
+"off-thread" is not mistaken for something that scales without limit.
+
+- [x] **Step 5: Commit**
+
+```bash
+git add spikes/m0-feel
+git commit -m "perf(spike): parse off-thread so the first frame does not wait"
 ```
 
 ---
@@ -1148,7 +1265,7 @@ git commit -m "feat(spike): tree-sitter highlighting on the visible viewport"
 - Consumes: measurements from Tasks 4, 5, 6
 - Produces: the M0 decision that gates M1
 
-- [ ] **Step 1: Write FINDINGS.md**
+- [x] **Step 1: Write FINDINGS.md**
 
 Fill in every measured value. Do not write "good" or "fine" — write numbers.
 
@@ -1177,19 +1294,32 @@ Fill in every measured value. Do not write "good" or "fine" — write numbers.
 
 ## 3. Frame timing
 
-| Scenario | n | mean | p50 | p99 | max |
-|---|---|---|---|---|---|
-| Scroll, no highlight, sync on | | | | | |
-| Scroll, no highlight, sync off | | | | | |
-| Scroll, highlight on, sync on | | | | | |
+Runs must be of comparable length — a 90-frame run and a 1100-frame run do not compare, and
+`p99` on 90 samples is just the 90th sample. Numbers below are post-fix; see §4.
+
+| Scenario | n | mean | p50 | p99 | max | max_at_frame |
+|---|---|---|---|---|---|---|
+| Scroll, highlight on, sync on | | | | | | |
+| Scroll, no highlight, sync on | | | | | | |
+| Scroll, no highlight, sync off | | | | | | |
 
 Budget: p99 < 16000us. Met: <yes / no>
 
+Was the worst frame the startup paint (`max_at_frame` 0 or 1) or a real stall: <which>
+
 ## 4. Tree-sitter under scroll
 
-- Initial parse of 50k lines: <N>ms
+- Initial parse of 50k lines: <N>ms, off-thread
+- Time from process start to first painted frame: <N>ms
+- Parse throughput: ~2 MB/s, linear in file size and independent of tree shape
 - Cost concentrated in: <parse / spans_for_line / rendering>
-- Needs per-line caching in M1: <yes / no>
+- Needs per-line caching in M1: **no** — it needed viewport-scoped traversal instead.
+  Two O(lines-above-viewport) costs, both fixed by construction rather than by cache:
+  `rope.line_to_byte()` for the line offset, and `TreeCursor::goto_first_child_for_byte()`
+  to seek to the first top-level item instead of descending from the root. Measured
+  18.7ms → 0.4ms per viewport, flat with scroll depth. See Task 6 Step 6.
+- Highlighting p99 before the traversal fix: 1144011us (recorded because "tree-sitter is
+  too slow to scroll" would have been the wrong conclusion to draw from it)
 
 ## 5. Unicode width
 
@@ -1200,7 +1330,16 @@ Budget: p99 < 16000us. Met: <yes / no>
 ## 6. API surprises
 
 - `tree_sitter_rust` language accessor used: <LANGUAGE / language()>
+- `Node::descendant_for_byte_range` does not help viewport queries — a multi-line viewport's
+  smallest containing node is the root. `TreeCursor::goto_first_child_for_byte` is the one
+  that works.
 - Other deviations from the plan:
+  - `h` runtime toggle for highlighting, so the on/off comparison is one process and one
+    scroll pattern rather than two runs.
+  - Initial parse timed and printed — the FINDINGS template asked for the number and nothing
+    was measuring it.
+  - Parse moved off-thread (Task 6a), which forced `event::poll` + a dirty flag in place of
+    blocking `event::read()`.
 
 ---
 
@@ -1218,14 +1357,14 @@ Discard:
 - everything else in this spike
 ```
 
-- [ ] **Step 2: Commit the findings**
+- [x] **Step 2: Commit the findings**
 
 ```bash
 git add spikes/m0-feel/FINDINGS.md
 git commit -m "docs(spike): record m0 feel measurements and go/no-go verdict"
 ```
 
-- [ ] **Step 3: Stop and review**
+- [x] **Step 3: Stop and review**
 
 **Hard gate.** Do not begin M1 until `FINDINGS.md` is read and GO is confirmed.
 
@@ -1233,6 +1372,12 @@ M1 does not start while any of these is true:
 - Click-to-position drifts on wide characters
 - p99 frame time exceeds 16000us while scrolling with highlighting on
 - The terminal is left broken on exit under any condition
+
+**GO confirmed 2026-08-13.** None of the three blockers hold: click-to-position is exact on
+CJK, emoji and tabs; p99 with highlighting on is 3657us against a 16000us budget; the terminal
+restores on both `q` and `Ctrl+C`. One non-blocking defect is carried into M1 rather than
+fixed here — mouse capture leaks on panic, see FINDINGS §6. M0 code is now frozen; the spike
+is deleted once `src/width.rs` is promoted at Task 11.
 
 ---
 
@@ -1258,7 +1403,7 @@ constraints.
   - `typ_core::KeyChord { pub raw: crossterm::event::KeyEvent, pub canonical: String }`
   - `KeyChord::from_event(KeyEvent) -> KeyChord`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-core/tests/event.rs`:
 
@@ -1311,13 +1456,13 @@ fn panel_event_stays_small() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-core`
 
 Expected: FAIL — no workspace or crate exists yet.
 
-- [ ] **Step 3: Create the workspace**
+- [x] **Step 3: Create the workspace**
 
 Root `Cargo.toml`:
 
@@ -1382,7 +1527,7 @@ crossterm.workspace = true
 ratatui.workspace = true
 ```
 
-- [ ] **Step 4: Implement event.rs, key.rs, lib.rs**
+- [x] **Step 4: Implement event.rs, key.rs, lib.rs**
 
 `crates/typ-core/src/event.rs`:
 
@@ -1505,13 +1650,30 @@ pub use panel::{Panel, RenderContext, ThemeColors};
 `panel` is filled in at Task 9. To keep this task compiling, create an empty
 `crates/typ-core/src/panel.rs` and comment out the `pub use panel::...` line until then.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-core`
 
 Expected: PASS, 5 tests.
 
-- [ ] **Step 6: Commit**
+**Result: 5 passed.** `cargo clippy -p typ-core --all-targets -- -D warnings` is also clean.
+
+Two deviations from this task as written:
+
+1. **`exclude` needs a literal path.** The workspace section above did not mention
+   `spikes/m0-feel`, and without excluding it cargo refuses to build the spike at all — a
+   manifest under the workspace root must be a member or explicitly excluded. `exclude` does
+   not glob the way `members` does, so `exclude = ["spikes/*"]` silently fails to match and
+   `exclude = ["spikes/m0-feel"]` is required. Verified both workspaces build independently
+   afterwards: 5 tests in `typ-core`, 25 in the spike.
+
+2. **`panel_event_stays_small` needed teeth.** As specified the test built an 8-element array
+   and asserted its length was 8, which is true by construction and stays true after a 9th
+   variant is added. An exhaustive `match` with no wildcard arm was added, so growing
+   `PanelEvent` breaks the build here and forces the decision to be deliberate. That is the
+   behaviour the test's name and comment already claimed.
+
+- [x] **Step 6: Commit**
 
 ```bash
 git add Cargo.toml .gitignore .gitattributes crates/typ-core
@@ -1536,7 +1698,7 @@ git commit -m "feat(core): workspace scaffold with panel event vocabulary and ke
     terminal_height }`
   - `typ_core::Panel` — five required methods, everything else defaulted
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-core/tests/panel.rs`:
 
@@ -1594,13 +1756,13 @@ fn panels_are_dispatchable_as_trait_objects() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-core --test panel`
 
 Expected: FAIL — `Panel`, `RenderContext`, `ThemeColors` are not defined.
 
-- [ ] **Step 3: Implement panel.rs**
+- [x] **Step 3: Implement panel.rs**
 
 `crates/typ-core/src/panel.rs`:
 
@@ -1709,13 +1871,22 @@ pub trait Panel: Any {
 
 Uncomment the `pub use panel::{Panel, RenderContext, ThemeColors};` line in `lib.rs`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-core`
 
 Expected: PASS, 8 tests across both files.
 
-- [ ] **Step 5: Commit**
+**Result: 8 passed** (5 event, 3 panel), clippy clean under `-D warnings`. No deviations
+from the task as written.
+
+One constraint this task locks in, worth knowing before Task 12 writes a real panel:
+`trait Panel: Any` implies `'static`, so no panel may borrow — a panel that wants to read a
+buffer owns it or shares it behind `Rc`/`Arc`. That is the price of downcasting through
+`as_any`, and it is the right trade here, but it is a real constraint rather than an
+accident.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-core
@@ -1738,7 +1909,7 @@ git commit -m "feat(core): add Panel trait with defaulted optional methods"
   - `typ_buffer::TextBuffer::{from_path, from_str, line_count, line_text, insert_char,
     delete_before, save, is_dirty, path, undo, redo}`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-buffer/tests/buffer.rs`:
 
@@ -1827,13 +1998,13 @@ fn save_writes_to_disk_and_clears_dirty() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-buffer`
 
 Expected: FAIL — the crate does not exist.
 
-- [ ] **Step 3: Create the crate**
+- [x] **Step 3: Create the crate**
 
 `crates/typ-buffer/Cargo.toml`:
 
@@ -2042,7 +2213,7 @@ pub use position::{
 };
 ```
 
-- [ ] **Step 4: Carry the width tests across**
+- [x] **Step 4: Carry the width tests across**
 
 Copy `spikes/m0-feel/tests/width.rs` to `crates/typ-buffer/tests/width.rs`, changing the
 import to:
@@ -2051,13 +2222,18 @@ import to:
 use typ_buffer::{display_to_grapheme_col, display_width, grapheme_to_display_col};
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-buffer`
 
 Expected: PASS — 10 buffer tests plus the 9 width tests carried over.
 
-- [ ] **Step 6: Commit**
+Actual: PASS — 10 + 9. One deviation: `TextBuffer::from_str` trips
+`clippy::should_implement_trait`, allowed at the method with a comment. The name
+matches `Rope::from_str` and construction is infallible, so the `FromStr` trait's
+`Result` shape would be wrong here.
+
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/typ-buffer
@@ -2078,7 +2254,7 @@ git commit -m "feat(buffer): rope-backed text buffer with grapheme positions and
   - `Registry::register(&mut self, ext: &'static str, handler: HandlerId)`
   - `Registry::handler_for(&self, path: &Path) -> HandlerId` — falls back to `HandlerId("editor")`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-registry/tests/registry.rs`:
 
@@ -2121,13 +2297,13 @@ fn extension_matching_is_case_insensitive() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-registry`
 
 Expected: FAIL — the crate does not exist.
 
-- [ ] **Step 3: Implement the crate**
+- [x] **Step 3: Implement the crate**
 
 `crates/typ-registry/Cargo.toml`:
 
@@ -2193,13 +2369,15 @@ impl Default for Registry {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-registry`
 
 Expected: PASS, 5 tests.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 5 tests. Clippy clean. No deviations.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-registry
@@ -2218,7 +2396,7 @@ git commit -m "feat(registry): map file extensions to panel handlers"
 - Produces:
   - `typ_panel_editor::EditorPanel::{from_path, from_str, cursor, top_line}`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-panel-editor/tests/editor.rs`:
 
@@ -2321,13 +2499,13 @@ fn scrolling_moves_the_viewport_not_the_cursor() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-panel-editor`
 
 Expected: FAIL — the crate does not exist.
 
-- [ ] **Step 3: Implement the panel**
+- [x] **Step 3: Implement the panel**
 
 `crates/typ-panel-editor/Cargo.toml`:
 
@@ -2551,16 +2729,20 @@ impl Panel for EditorPanel {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-panel-editor`
 
 Expected: PASS, 9 tests.
 
+Actual: PASS, 9 tests. Clippy clean. One addition: `EditorPanel::from_str`
+carries the same `allow(clippy::should_implement_trait)` as `TextBuffer::from_str`,
+for the same reason.
+
 `scrolling_moves_the_viewport_not_the_cursor` runs without a render pass, so `height` is 0.
 The `self.height.max(1)` in `handle_scroll` is what makes that case work.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-panel-editor
@@ -2578,7 +2760,7 @@ git commit -m "feat(editor): editor panel with keyboard, mouse, and scroll handl
 - Consumes: `typ_core::{Panel, RenderContext, PanelEvent, KeyChord}`
 - Produces: `typ_panel_tree::TreePanel::{new, selected, entry_count, root}`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-panel-tree/tests/tree.rs`:
 
@@ -2651,13 +2833,13 @@ fn pressing_enter_on_a_directory_does_not_emit_open_file() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-panel-tree`
 
 Expected: FAIL — the crate does not exist.
 
-- [ ] **Step 3: Implement the panel**
+- [x] **Step 3: Implement the panel**
 
 `crates/typ-panel-tree/Cargo.toml`:
 
@@ -2848,13 +3030,18 @@ impl Panel for TreePanel {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-panel-tree`
 
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 6 tests. Clippy clean. One deviation from the spec above: the test
+`fixture()` takes a name and builds one directory per test. As written it was a
+single shared path that each test deleted and recreated, which races under
+cargo's test threads.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-panel-tree
@@ -2876,7 +3063,7 @@ git commit -m "feat(tree): file tree panel with selection and open events"
   - `typ_app::layout::split(area: Rect) -> (Rect, Rect)` — `(tree_area, editor_area)`
   - `typ_app::run::run(app: App) -> anyhow::Result<()>`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ-app/tests/app.rs`:
 
@@ -2961,13 +3148,13 @@ fn layout_shrinks_the_sidebar_on_narrow_terminals() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-app`
 
 Expected: FAIL — the crate does not exist.
 
-- [ ] **Step 3: Create the crate and implement layout.rs**
+- [x] **Step 3: Create the crate and implement layout.rs**
 
 `crates/typ-app/Cargo.toml`:
 
@@ -3020,7 +3207,7 @@ pub fn split(area: Rect) -> (Rect, Rect) {
 }
 ```
 
-- [ ] **Step 4: Implement app.rs and lib.rs**
+- [x] **Step 4: Implement app.rs and lib.rs**
 
 `crates/typ-app/src/app.rs`:
 
@@ -3170,13 +3357,16 @@ pub mod run;
 pub use app::{App, Focus};
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-app`
 
 Expected: PASS, 7 tests.
 
-- [ ] **Step 6: Implement run.rs — the event loop**
+Actual: PASS, 7 tests. Same fixture change as Task 13 — one temp directory per
+test rather than a shared path, which races under cargo's test threads.
+
+- [x] **Step 6: Implement run.rs — the event loop**
 
 `crates/typ-app/src/run.rs`:
 
@@ -3300,13 +3490,16 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
 }
 ```
 
-- [ ] **Step 7: Verify the workspace builds**
+- [x] **Step 7: Verify the workspace builds**
 
 Run: `cargo build --workspace`
 
 Expected: builds with no errors.
 
-- [ ] **Step 8: Commit**
+Actual: `cargo build --workspace` and `cargo clippy --workspace --all-targets
+-- -D warnings` both clean.
+
+- [x] **Step 8: Commit**
 
 ```bash
 git add crates/typ-app
@@ -3324,7 +3517,7 @@ git commit -m "feat(app): event loop with focus, dispatch, and scroll coalescing
 - Consumes: `typ_app::{App, run}`
 - Produces: the `typ` binary — `typ` (current directory), `typ <dir>`, `typ <file>`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/typ/tests/cli.rs`:
 
@@ -3367,13 +3560,13 @@ fn help_flag_names_the_binary() {
 These are the `$EDITOR` invariants under test: a failure must exit non-zero so a calling
 `git commit` aborts rather than committing an empty message.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-editor`
 
 Expected: FAIL — the crate does not exist.
 
-- [ ] **Step 3: Implement the binary**
+- [x] **Step 3: Implement the binary**
 
 `crates/typ/Cargo.toml`:
 
@@ -3480,14 +3673,16 @@ fn real_main() -> Result<()> {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-editor`
 
 Expected: PASS, 3 tests. Note the crate is `typ-editor` while `CARGO_BIN_EXE_typ` refers to
 the binary name.
 
-- [ ] **Step 5: Verify the walking skeleton by hand**
+Actual: PASS, 3 tests.
+
+- [x] **Step 5: Verify the walking skeleton by hand**
 
 ```bash
 cargo build --release
@@ -3512,7 +3707,16 @@ Then the `$EDITOR` contract:
 
 Expected: `typ: no-such-file.rs does not exist` on stderr, `exit=1`.
 
-- [ ] **Step 6: Commit**
+Actual: exactly that, verified.
+
+The interactive checklist was run at a real terminal after M1.2 and passed: the two panels
+render, focus cycling is visible, the tree expands, click-to-position lands correctly
+including on wide characters, the wheel scrolls the panel under the pointer, editing and
+saving work, and the terminal is left working on exit. Note the order — it only passed
+*after* M1.1 and M1.2, because as specified M1 had no cursor, no focus indicator and no way
+into a directory, and could not have been evaluated by hand at all.
+
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/typ
@@ -3531,7 +3735,7 @@ git commit -m "feat(cli): typ binary with workspace and single-file entry points
 - Consumes: the whole workspace
 - Produces: a green CI run gating future work
 
-- [ ] **Step 1: Write the CI workflow**
+- [x] **Step 1: Write the CI workflow**
 
 `.github/workflows/ci.yml`:
 
@@ -3569,7 +3773,7 @@ jobs:
 
 The spike is excluded automatically — it is a standalone crate, not a workspace member.
 
-- [ ] **Step 2: Run the same checks locally**
+- [x] **Step 2: Run the same checks locally**
 
 ```bash
 cargo fmt --all
@@ -3579,10 +3783,16 @@ cargo test --workspace
 
 Expected: formatting clean, no clippy warnings, all tests passing.
 
+Actual: all three clean. 57 tests across the workspace.
+
 Fix warnings rather than allowing them. The per-file cap and the render-thread constraint are
 not machine-checkable yet; clippy is the part that is, so keep it at zero.
 
-- [ ] **Step 3: Write the README**
+- [x] **Step 3: Write the README**
+
+The existing README already carried the why, the design goals, the roadmap and the
+non-goals. Rather than replace it with the shorter text below, the Status section was
+rewritten and Build and Keys sections were added.
 
 `README.md`:
 
@@ -3627,7 +3837,7 @@ See [`docs/design/architecture.md`](docs/design/architecture.md).
 MIT
 ````
 
-- [ ] **Step 4: Delete the spike**
+- [x] **Step 4: Delete the spike**
 
 M0's job is done. Its measurements live in `FINDINGS.md` (kept), and `width.rs` was promoted
 into `typ-buffer/src/position.rs` (kept). The rest is finished.
@@ -3639,7 +3849,13 @@ git rm -r spikes/m0-feel/src spikes/m0-feel/tests spikes/m0-feel/Cargo.toml
 Keep `spikes/m0-feel/FINDINGS.md` — it is the record of what was measured and why the design
 choices hold.
 
-- [ ] **Step 5: Commit**
+One fix landed here that the plan did not schedule: `run()` now installs a panic hook that
+disables mouse capture before delegating to ratatui's. FINDINGS §6 recorded this as the one
+M0 defect carried into M1 — ratatui's hook restores raw mode and the alternate screen but
+knows nothing about mouse capture, so a panic returned the user to a shell still emitting
+mouse escapes.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github README.md
@@ -3656,3 +3872,77 @@ Stated so nobody goes looking: no syntax highlighting in the real editor panel (
 file association (M6), no plugin host, no debugger. Selections, multi-cursor, and search also
 land at M2 — M1 proves the architecture carries input, render, and events correctly across two
 panels, and nothing more.
+
+---
+
+## M1.1 — usability patch, added after running M1
+
+M1 passed every test it specified and was still not usable when driven by hand. Three things
+the plan never specified turned out to be load-bearing, found in the first real session:
+
+1. **The cursor was never drawn.** `EditorPanel::render` painted text and nothing else, and
+   no code anywhere called `set_cursor_position`. You could type into a file and not see
+   where you were. This is a plan omission, not a deviation — no task ever said to draw it.
+2. **Focus was invisible.** `RenderContext::is_focused` was computed by `App` and passed to
+   every panel, and no panel read it. `Tab` cycled focus with no visible effect.
+3. **Directories could not be opened.** By design — `activate()` returned `NeedsRedraw` for
+   a directory — but a tree that draws folders and refuses to open them reads as broken
+   rather than as scoped.
+
+Plus a keyboard set thin enough to block ordinary editing: `Enter` did not insert a newline,
+and there was no `Home`, `End`, `PageUp`, `PageDown`, `Delete`, or undo binding, despite
+`TextBuffer::undo`/`redo` existing since Task 10 and never being wired to a key.
+
+### What shipped
+
+| Area | Change |
+|---|---|
+| `typ-core` | `Panel::cursor_position(panel_area) -> Option<(u16, u16)>`, defaulted to `None` |
+| `typ-buffer` | `delete_after` — forward delete, joining the next line at end of line |
+| `typ-panel-editor` | `Enter`, `Home`, `End`, `PageUp`, `PageDown`, `Delete`, `Ctrl+Z`, `Ctrl+Y`; backspace at column 0 joins lines; bordered + titled with focus color; cursor position reported |
+| `typ-panel-tree` | Expandable directories to any depth, `Enter`/`Right`/`Left`, indentation and `v`/`>` markers, selection preserved across rebuilds; bordered + titled |
+| `typ-app` | Sets the terminal cursor from the focused panel after drawing the frame |
+
+Two decisions worth keeping:
+
+- **The real terminal cursor, not a styled cell.** ratatui applies `Frame::set_cursor_position`
+  after the buffer diff is flushed, so the cursor lands on top of the frame and behaves like
+  every other terminal program's — it blinks, and it honours the user's cursor shape.
+- **Chorded keys are matched before `KeyCode`.** Without that, `Ctrl+Z` arrives as
+  `KeyCode::Char('z')` and gets typed into the buffer. Any modifier the editor does not
+  claim now returns no events instead of inserting text.
+
+Borders cost one cell on each side, which moved every mouse coordinate. Both existing click
+tests were updated to the new geometry rather than the panels being left border-free — the
+focus indicator has a job, and hit-testing through `Block::inner` is the same call the
+renderer uses, so the two cannot drift apart.
+
+### M1.2 — status bar and the quit guard
+
+Written immediately after M1.1, because the data-loss risk it left open could not be closed
+without somewhere to ask a question.
+
+A one-row status bar now sits below both panels. It carries three things: the current message,
+the open file with its dirty marker, and the cursor position counted from 1. When idle it
+advertises `Tab focus · Enter open · Ctrl+S save · Ctrl+Q quit` — discoverability is a feature,
+and a binding nobody can find is a binding that does not exist. This was the actual complaint
+from the first hand-run: not that keys were missing, but that nothing told you any existed.
+
+`Ctrl+Q` on a dirty buffer now routes through `Panel::needs_close_confirmation` — unused since
+Task 9 — and refuses, printing `Unsaved changes. Close anyway?  Ctrl+Q again to discard,
+Ctrl+S to save.` A second `Ctrl+Q` goes through. **Every other key retires the message and the
+pending quit with it**, so the confirmation is answered by the very next keystroke or not at
+all; a `Ctrl+Q` from ten minutes ago must never silently arm the next one.
+
+`Ctrl+S` reports its outcome instead of swallowing it. A failed save that says nothing is the
+same bug as a silent quit, one step later.
+
+The status row is taken off the top of the frame by `layout::split_frame`, before the sidebar
+split, and `App::areas` routes through the same function — so a click on the status row hits
+neither panel rather than landing on whatever used to be under it.
+
+### Still open after M1.2
+
+- No selections, no mouse drag, no word-wise motions (`Ctrl+Left`/`Right`) — M2.
+- Tree does not watch the filesystem; external changes need a restart to appear.
+- No horizontal scrolling: a cursor past the right edge of the panel stops being drawn.

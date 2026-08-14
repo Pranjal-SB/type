@@ -38,14 +38,57 @@ immediately if you're arriving from a GUI editor, without giving up capability t
 
 ## Status
 
-**Pre-alpha — design phase.** No usable build yet.
+**Pre-alpha.** Walking skeleton runs: file tree with expandable directories, editor panel,
+focus cycling with visible focus, mouse and keyboard as peers, scroll coalescing, undo/redo
+and save. No syntax highlighting, no LSP, no selections, no splits or tabs yet — see the
+roadmap.
 
-The architecture is settled and documented; implementation starts with a throwaway spike that
-measures whether the terminal can hit the responsiveness targets above before any real code
-gets written.
+A status bar carries messages, the open file, and the cursor position. Quitting with unsaved
+changes asks before discarding them.
 
 - [Architecture and design rationale](docs/design/architecture.md)
 - [Current implementation plan](docs/plans/m0-m1-foundation.md)
+
+## Build
+
+```bash
+cargo build --release
+./target/release/typ .
+```
+
+## Keys
+
+| Key | Action |
+|---|---|
+| `Tab` | Cycle focus between tree and editor |
+| `Ctrl+S` | Save |
+| `Ctrl+Q` | Quit |
+
+**Tree**
+
+| Key | Action |
+|---|---|
+| `↑` `↓` | Move the selection |
+| `Enter` | Open a file, or expand/collapse a directory |
+| `→` `←` | Expand / collapse a directory |
+
+**Editor**
+
+| Key | Action |
+|---|---|
+| Arrows | Move the cursor |
+| `Home` `End` | Start / end of line |
+| `PageUp` `PageDown` | Move by a screen |
+| `Enter` | Split the line |
+| `Backspace` `Delete` | Delete before / under the cursor |
+| `Ctrl+Z` `Ctrl+Y` | Undo / redo |
+
+Mouse: click to select or position the cursor, click a selected tree entry to open or toggle
+it, wheel to scroll whichever panel the pointer is over.
+
+Keybindings are non-modal, and will stay usable that way. A vim layer — modes, counts,
+operators, composable motions — is planned as an opt-in setting, not as the default and not
+as a fork of the editor core.
 
 ## Roadmap
 
