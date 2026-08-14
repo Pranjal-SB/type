@@ -1099,7 +1099,7 @@ git commit -m "feat(buffer): selections with a primary, ordered and non-overlapp
   - `typ_buffer::previous_word_boundary(line: &str, col: usize) -> usize`
   - `typ_buffer::word_at(line: &str, col: usize) -> Option<(usize, usize)>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-buffer/tests/word.rs`:
 
@@ -1164,13 +1164,13 @@ fn a_cursor_just_past_a_word_is_still_on_it() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-buffer --test word`
 
 Expected: FAIL — unresolved imports.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 `crates/typ-buffer/src/word.rs`:
 
@@ -1283,13 +1283,19 @@ pub mod word;
 pub use word::{next_word_boundary, previous_word_boundary, word_at};
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cargo test -p typ-buffer --test word`
 
 Expected: PASS, 10 tests.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 11 tests. One planned assertion was wrong and the code was right:
+`previous_word_boundary("日本語 ok", 4)` was written expecting 4, but a cursor at grapheme 4
+sits at the *start* of "ok", so moving back a word must reach the start of the CJK run at 0 —
+expecting 4 would mean the key did nothing. Rewritten to assert both meaningful cases (from 6
+back to 4, from 4 back to 0), and one test added for `word_at` on an empty line.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-buffer/src/word.rs crates/typ-buffer/src/lib.rs crates/typ-buffer/tests/word.rs
