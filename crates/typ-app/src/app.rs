@@ -35,6 +35,20 @@ pub struct App {
     /// A quit was refused because a panel had something to confirm. The next
     /// quit goes through.
     quit_pending: bool,
+    /// An open was refused because the buffer was dirty, and the input event it
+    /// was refused on. Repeating the same open on the very next event goes
+    /// through; anything else in between abandons it.
+    ///
+    /// Carries the path because confirming one file must not arm every other
+    /// file, and carries the event number because a confirmation the user
+    /// answers ten minutes later is not an answer — it is a stale trap that
+    /// discards their work. `quit_pending` avoids the same trap by expiring in
+    /// `clear_transient`; an open cannot use that mechanism, because the
+    /// keypress that repeats the open runs `clear_transient` on its way in and
+    /// would erase the very flag it is meant to satisfy.
+    open_pending: Option<(std::path::PathBuf, u64)>,
+    /// Counts input events, so `open_pending` can be valid for exactly one.
+    event_seq: u64,
     /// The status-bar prompt, when one is open. It owns the keyboard while it
     /// is.
     prompt: Option<Prompt>,
@@ -58,6 +72,8 @@ impl App {
             quit: false,
             status: None,
             quit_pending: false,
+            open_pending: None,
+            event_seq: 0,
             prompt: None,
             last_query: None,
         })
@@ -93,9 +109,14 @@ impl App {
     ///
     /// A pending quit expires with the message that announced it — otherwise a
     /// Ctrl+Q from ten minutes ago silently arms the next one.
+    ///
+    /// Called once per input event — every keypress but Ctrl+Q, and every mouse
+    /// press — which is what makes `event_seq` a count of input events and lets
+    /// a pending open be valid for exactly the next one.
     pub fn clear_transient(&mut self) {
         self.status = None;
         self.quit_pending = false;
+        self.event_seq = self.event_seq.wrapping_add(1);
     }
 
     /// Quit, unless a panel has something to confirm first.
@@ -145,12 +166,34 @@ impl App {
         };
     }
 
+    /// Open a file, unless doing so would discard unsaved work.
+    ///
+    /// Until tabs land at M4 an open *replaces* the buffer, so this is the one
+    /// path in the editor that can lose work. It asks the same question
+    /// `request_quit` asks, through the same `needs_close_confirmation` method,
+    /// and takes the same answer: do it again and it goes through.
+    ///
+    /// M4 turns this into a per-tab guard on *close* rather than on open. The
+    /// trigger moves; the question does not.
     pub fn open_path(&mut self, path: &Path) -> Result<()> {
+        if let Some(message) = self.editor.needs_close_confirmation() {
+            let confirmed = self
+                .open_pending
+                .as_ref()
+                .is_some_and(|(pending, at)| pending == path && self.event_seq <= at + 1);
+            if !confirmed {
+                self.status = Some(format!("{message}  Open again to discard, Ctrl+S to save."));
+                self.open_pending = Some((path.to_path_buf(), self.event_seq));
+                return Ok(());
+            }
+        }
+
         // The registry decides the handler. There is one content panel today,
         // but the lookup runs from day one so adding viewers never touches this.
         let _handler = self.registry.handler_for(path);
         self.editor = EditorPanel::from_path(path)?;
         self.focus = Focus::Editor;
+        self.open_pending = None;
         Ok(())
     }
 
