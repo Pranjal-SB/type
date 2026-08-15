@@ -3140,7 +3140,7 @@ git commit -m "feat(editor): drag to select, alt-click to stack cursors, click t
 - Consumes: `typ_buffer::{display_width_with_tabs, grapheme_to_display_col}`
 - Produces: `EditorPanel::left_col(&self) -> usize`, horizontal windowing in `render`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-panel-editor/tests/horizontal.rs`:
 
@@ -3239,13 +3239,13 @@ fn vertical_scrolling_still_works_alongside_it() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-panel-editor --test horizontal`
 
 Expected: FAIL — no method `left_col`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add `left_col: usize` to `EditorPanel` (initialised to `0`) and its accessor:
 
@@ -3335,13 +3335,31 @@ compares against selections by the number of skipped graphemes, so highlighting 
 with the text after scrolling. `cursor_position` subtracts `left_col` from the display column
 and returns `None` when the result is negative or past the width.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-panel-editor`
 
 Expected: PASS — 6 new horizontal tests plus everything before.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 8 horizontal tests, 242 across the workspace, clippy clean.
+
+Three deviations.
+
+1. **`window` returns `&str`, not `String`.** The plan allocated a fresh string per visible
+   line per frame to drop a prefix. A subslice does the same job; the only reason to own it
+   would be to modify it, and nothing does.
+2. **Two extra tests, both covering things the plan changed silently.** Selection
+   highlighting after a scroll — `styled_line` now offsets its grapheme index by the number
+   of dropped graphemes, and nothing in the plan's six tests would have caught that offset
+   being wrong or missing. And a click in a scrolled view: the plan never mentioned
+   `handle_mouse`, which was still translating screen columns as if `left_col` were zero, so
+   every click in a scrolled view landed on the wrong character. Mouse and keyboard are
+   peers; the mouse half needed the same offset and its own test.
+3. **`cursor_position` returns `None` when the cursor is off the *left* edge**, via
+   `checked_sub`. The plan said "subtracts `left_col`"; unsigned subtraction there would have
+   panicked in debug and wrapped in release.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-panel-editor/src crates/typ-panel-editor/tests/horizontal.rs

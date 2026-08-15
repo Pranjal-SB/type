@@ -24,10 +24,16 @@ pub struct EditorPanel {
     /// path is written once and works for one cursor or thirty.
     pub(crate) selections: Selections,
     pub(crate) top_line: usize,
+    /// Leftmost *display* column drawn. Display, not grapheme: a line of CJK
+    /// scrolls by cells the way it is drawn, not by characters.
+    pub(crate) left_col: usize,
     /// Display column the cursor "wants", preserved across vertical movement
     /// so passing through short lines does not permanently lose the column.
     pub(crate) goal_col: Option<usize>,
     pub(crate) height: usize,
+    /// Learned at render time, beside `height`: a panel does not know its size
+    /// until it is asked to draw.
+    pub(crate) width: usize,
     /// Where the current drag began, so a drag extends from the press rather
     /// than from wherever the cursor happened to be.
     drag_anchor: Option<Position>,
@@ -53,8 +59,10 @@ impl EditorPanel {
             buffer,
             selections: Selections::default(),
             top_line: 0,
+            left_col: 0,
             goal_col: None,
             height: 0,
+            width: 0,
             drag_anchor: None,
             last_click: None,
         }
@@ -83,6 +91,10 @@ impl EditorPanel {
 
     pub fn top_line(&self) -> usize {
         self.top_line
+    }
+
+    pub fn left_col(&self) -> usize {
+        self.left_col
     }
 
     pub fn save(&mut self) -> Result<()> {
@@ -123,15 +135,34 @@ impl EditorPanel {
 
     /// Keep the cursor inside the viewport after any movement.
     pub(crate) fn scroll_to_cursor(&mut self) {
-        if self.height == 0 {
-            return;
-        }
         let cursor = self.cursor();
-        if cursor.line < self.top_line {
-            self.top_line = cursor.line;
-        } else if cursor.line >= self.top_line + self.height {
-            self.top_line = cursor.line - self.height + 1;
+
+        if self.height > 0 {
+            if cursor.line < self.top_line {
+                self.top_line = cursor.line;
+            } else if cursor.line >= self.top_line + self.height {
+                self.top_line = cursor.line - self.height + 1;
+            }
         }
+
+        if self.width > 0 {
+            let col = self.cursor_display_col(cursor);
+            if col < self.left_col {
+                self.left_col = col;
+            } else if col >= self.left_col + self.width {
+                // Keep the cursor one column inside the right edge so the
+                // character being typed is visible rather than flush against
+                // the border.
+                self.left_col = col + 1 - self.width;
+            }
+        }
+    }
+
+    /// The display column a cursor sits at, tabs expanded.
+    fn cursor_display_col(&self, cursor: Position) -> usize {
+        self.buffer.with_line_str(cursor.line, |line| {
+            grapheme_to_display_col(line, cursor.col, TAB_WIDTH)
+        })
     }
 
     /// Rows a page motion covers. Before the first frame the height is unknown,
@@ -187,11 +218,15 @@ impl Panel for EditorPanel {
         block.render(area, buf);
 
         self.height = inner.height as usize;
+        self.width = inner.width as usize;
         let end = (self.top_line + self.height).min(self.buffer.line_count());
         let selections: Vec<Selection> = self.selections.iter().copied().collect();
+        let left_col = self.left_col;
         let lines: Vec<Line> = (self.top_line..end)
             .map(|i| {
-                crate::render::styled_line(&self.buffer.line_text(i), i, &selections, ctx.theme)
+                self.buffer.with_line_str(i, |text| {
+                    crate::render::styled_line(text, i, left_col, TAB_WIDTH, &selections, ctx.theme)
+                })
             })
             .collect();
         Paragraph::new(lines)
@@ -210,8 +245,10 @@ impl Panel for EditorPanel {
         if row >= inner.height as usize {
             return None;
         }
-        let col =
-            grapheme_to_display_col(&self.buffer.line_text(cursor.line), cursor.col, TAB_WIDTH);
+        // Scrolled off the left edge is as invisible as scrolled off the right,
+        // so both answer None rather than clamping to an edge the cursor is not
+        // actually at.
+        let col = self.cursor_display_col(cursor).checked_sub(self.left_col)?;
         if col >= inner.width as usize {
             return None;
         }
@@ -345,11 +382,15 @@ impl Panel for EditorPanel {
         let at = |panel: &Self, event: &MouseEvent| {
             let inner = Self::text_area(panel_area);
             let row = event.row.saturating_sub(inner.y) as usize;
-            let col = event.column.saturating_sub(inner.x) as usize;
+            // Both offsets apply: a click is at a screen cell, and the text
+            // under it is `top_line` rows down and `left_col` columns across.
+            let col = event.column.saturating_sub(inner.x) as usize + panel.left_col;
             let line = (panel.top_line + row).min(panel.last_line());
             Position {
                 line,
-                col: display_to_grapheme_col(&panel.buffer.line_text(line), col, TAB_WIDTH),
+                col: panel
+                    .buffer
+                    .with_line_str(line, |text| display_to_grapheme_col(text, col, TAB_WIDTH)),
             }
         };
 
