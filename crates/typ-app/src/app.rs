@@ -281,6 +281,37 @@ impl App {
         self.prompt.as_ref()
     }
 
+    /// Text arriving as one bracketed-paste event rather than as N keypresses.
+    ///
+    /// Without this a paste is delivered a character at a time: one loop pass
+    /// and one repaint each, and — worse — any chord inside the pasted text
+    /// executes as a command instead of being inserted.
+    ///
+    /// The text travels through the clipboard register rather than through an
+    /// `Action` carrying a `String`. `Action` is `Copy` and the keymap depends
+    /// on that; widening it for one variant would touch the keymap, its tests
+    /// and every match in the dispatcher. Pasting is still an action, still
+    /// reachable from the palette and the vim layer — the payload just goes the
+    /// way payloads already go.
+    pub fn handle_paste(&mut self, text: String) -> Result<()> {
+        self.clear_transient();
+
+        // A paste into an open prompt is a search term, not an edit.
+        if let Some(prompt) = self.prompt.as_mut() {
+            for ch in text.chars().filter(|c| !c.is_control()) {
+                prompt.insert_char(ch);
+            }
+            return Ok(());
+        }
+
+        typ_buffer::clipboard::set_register(&text);
+        let events = self
+            .focused_mut()
+            .apply_action(Action::Paste)
+            .unwrap_or_default();
+        self.apply(events)
+    }
+
     /// Say something in the status bar.
     ///
     /// Startup warnings go here rather than to stderr: stderr is invisible once
