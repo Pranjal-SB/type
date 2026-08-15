@@ -5,8 +5,8 @@
 //! command palette, and the future vim layer able to reach the same behavior.
 
 use typ_buffer::{
-    EditKind, Position, Selection, TextBuffer, display_to_grapheme_col, grapheme_to_display_col,
-    next_word_boundary, previous_word_boundary,
+    EditKind, Position, Selection, Shift, TextBuffer, display_to_grapheme_col,
+    grapheme_to_display_col, next_word_boundary, previous_word_boundary,
 };
 use typ_core::{Action, Direction, Motion, PanelEvent};
 use unicode_segmentation::UnicodeSegmentation;
@@ -492,45 +492,4 @@ fn position_after(start: Position, text: &str) -> Position {
         }
     }
     Position { line, col }
-}
-
-/// The accumulated effect of edits already applied, in original coordinates.
-///
-/// Column shifts apply only to positions on the line where the last edit
-/// ended; line shifts apply to everything after it. Tracking both is what lets
-/// several cursors edit the same line without the later ones landing in the
-/// wrong place.
-#[derive(Default)]
-struct Shift {
-    lines: isize,
-    cols: isize,
-    /// Original line index the column shift belongs to.
-    col_line: Option<usize>,
-}
-
-impl Shift {
-    fn apply(&self, pos: Position) -> Position {
-        let col = if self.col_line == Some(pos.line) {
-            (pos.col as isize + self.cols).max(0) as usize
-        } else {
-            pos.col
-        };
-        Position {
-            line: (pos.line as isize + self.lines).max(0) as usize,
-            col,
-        }
-    }
-
-    /// Record what an edit did: `original_end_line` is in original
-    /// coordinates, `applied_end` and `after` in current ones.
-    fn record(&mut self, original_end_line: usize, applied_end: Position, after: Position) {
-        let col_delta = after.col as isize - applied_end.col as isize;
-        if self.col_line == Some(original_end_line) {
-            self.cols += col_delta;
-        } else {
-            self.cols = col_delta;
-            self.col_line = Some(original_end_line);
-        }
-        self.lines += after.line as isize - applied_end.line as isize;
-    }
 }

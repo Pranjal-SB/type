@@ -1,4 +1,5 @@
 pub mod buffer;
+pub mod change;
 pub mod position;
 pub mod search;
 pub mod selection;
@@ -6,6 +7,7 @@ pub mod undo;
 pub mod word;
 
 pub use buffer::TextBuffer;
+pub use change::Shift;
 pub use position::{
     Position, display_to_grapheme_col, display_width, display_width_with_tabs,
     grapheme_to_display_col,
