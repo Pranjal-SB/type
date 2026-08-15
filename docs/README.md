@@ -23,6 +23,7 @@ copy of that history.
 |---|---|
 | [`design/architecture.md`](design/architecture.md) | The spec. Goals, invariants, budgets, the panel contract, milestones. Deviating from it needs a stated reason. |
 | [`design/gap-analysis.md`](design/gap-analysis.md) | Known defects, how TYPE measures against other editors, and the install and first-launch design. Re-run at each milestone. |
+| [`plans/m2.3-polish.md`](plans/m2.3-polish.md) | The current plan — M2.3, in progress. |
 | [`../README.md`](../README.md) | The public face. Status, keys, roadmap, versioning. |
 
 ## Records
@@ -32,6 +33,7 @@ copy of that history.
 | [`plans/m0-m1-foundation.md`](plans/m0-m1-foundation.md) | M0 feel spike, M1 walking skeleton | v0.1.0 |
 | [`plans/m2-editing.md`](plans/m2-editing.md) | M2 editing — selections, multi-cursor, search | v0.2.0 |
 | [`plans/m2.1-correctness.md`](plans/m2.1-correctness.md) | M2.1 keystroke budgets, undo coalescing | v0.2.1 |
+| [`plans/m2.2-usable.md`](plans/m2.2-usable.md) | M2.2 clipboard, indent, guarded open | v0.2.2 |
 | [`../spikes/m0-feel/FINDINGS.md`](../spikes/m0-feel/FINDINGS.md) | M0 measurements — the spike's code is gone, its numbers are not | — |
 
 ## Conventions

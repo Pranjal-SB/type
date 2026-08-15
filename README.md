@@ -62,7 +62,7 @@ the cursor back where the edit was made.
 
 - [Architecture and design rationale](docs/design/architecture.md)
 - [Gap analysis — known defects and how TYPE measures against the field](docs/design/gap-analysis.md)
-- [Current implementation plan](docs/plans/m2.2-usable.md)
+- [Current implementation plan](docs/plans/m2.3-polish.md)
 
 ## Build
 
@@ -179,7 +179,8 @@ worse than one that plainly did nothing.
 | v0.2.0 | M2 | Editing — multi-cursor, selections, word motion, search and replace | shipped |
 | v0.2.1 | M2.1 | Correctness — keystroke budgets, undo coalescing, the shift map | shipped |
 | v0.2.2 | M2.2 | Usable — clipboard, indent, new files, guarded open. Self-hosting starts here | **current** |
-| v0.2.5 | M2.5 | Damage-driven redraw, wakeable event loop, tree-sitter highlighting, themes | next |
+| v0.2.3 | M2.3 | Polish — gutter and line numbers, truecolor theme, status segments, `Ctrl+D` | next |
+| v0.2.5 | M2.5 | File watching, damage-driven redraw, wakeable event loop, tree-sitter, themes as files | |
 | v0.3.0 | M3 | Code intelligence — LSP client | |
 | v0.4.0 | M4 | Workspace — splits, tabs, sessions, command palette, project search | |
 | v0.5.0 | M5 | Terminal panel and git integration | |
