@@ -5,7 +5,7 @@
 //! command palette, and the future vim layer able to reach the same behavior.
 
 use typ_buffer::{
-    EditKind, Position, Selection, Shift, TextBuffer, display_to_grapheme_col,
+    EditKind, Position, Selection, Shift, TextBuffer, clipboard, display_to_grapheme_col,
     grapheme_to_display_col, next_word_boundary, previous_word_boundary,
 };
 use typ_core::{Action, Direction, Motion, PanelEvent};
@@ -146,6 +146,23 @@ impl EditorPanel {
         Position { line, col }
     }
 
+    /// Every selection's text, joined by newlines.
+    ///
+    /// Newlines rather than nothing, because the counterpart paste splits on
+    /// them to hand one line back to each cursor. Joining with the empty string
+    /// would make a three-cursor copy indistinguishable from one long word.
+    fn selected_text(&self) -> String {
+        self.selections
+            .iter()
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                let (start, end) = s.range();
+                self.buffer.text_in_range(start, end)
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     /// Replace the selection set, preserving order and the primary.
     pub(crate) fn set_selections(&mut self, list: Vec<Selection>) {
         let mut iter = list.into_iter();
@@ -202,6 +219,114 @@ impl EditorPanel {
         self.buffer.end_edit_group();
 
         self.set_selections(heads.into_iter().map(Selection::caret).collect());
+        self.goal_col = None;
+        self.scroll_to_cursor();
+        Some(vec![PanelEvent::NeedsRedraw])
+    }
+
+    /// Add or remove one indent level on every line a selection touches.
+    ///
+    /// This does not go through `edit_at_each_selection`, and the reason is the
+    /// difference between the two operations. That one edits *at* each
+    /// selection and collapses the result to carets, which is right for typing
+    /// and wrong here: an indent must leave the selection standing so the user
+    /// can press Tab again. It also works per *line* rather than per selection,
+    /// so two cursors on one line indent it once.
+    ///
+    /// Edits run last line first, so every earlier line's offsets stay valid
+    /// without a shift map — the edits are disjoint and each sits at the start
+    /// of its own line, which is a much smaller problem than the general one.
+    fn shift_lines(&mut self, indent: bool) -> Option<Vec<PanelEvent>> {
+        let mut lines: Vec<usize> = Vec::new();
+        for selection in self.selections.iter() {
+            let (start, end) = selection.range();
+            // A selection ending at column 0 has nothing of that line in it, so
+            // the line is not part of the block. Including it is the classic
+            // off-by-one that indents a line the user cannot see selected.
+            let last = if end.col == 0 && end.line > start.line {
+                end.line - 1
+            } else {
+                end.line
+            };
+            lines.extend(start.line..=last);
+        }
+        lines.sort_unstable();
+        lines.dedup();
+
+        // How each line's columns move. Only affected lines appear.
+        let mut deltas: Vec<(usize, isize)> = Vec::new();
+        for &line in &lines {
+            let delta = self.buffer.with_line_str(line, |text| {
+                if indent {
+                    // Indenting a blank line leaves trailing whitespace and
+                    // achieves nothing else.
+                    if text.trim().is_empty() {
+                        return 0;
+                    }
+                    TAB_WIDTH as isize
+                } else if text.starts_with('\t') {
+                    -1
+                } else {
+                    // A partial level goes to zero rather than to minus one.
+                    -(text
+                        .chars()
+                        .take(TAB_WIDTH)
+                        .take_while(|c| *c == ' ')
+                        .count() as isize)
+                }
+            });
+            if delta != 0 {
+                deltas.push((line, delta));
+            }
+        }
+
+        if deltas.is_empty() {
+            // Handled, nothing to do — not "unhandled", which would send the
+            // action on to the app and eventually to a raw key.
+            return Some(Vec::new());
+        }
+
+        // `Other`: an indent is never part of a typing run.
+        self.buffer
+            .begin_edit_group(EditKind::Other, &self.selections);
+        for &(line, delta) in deltas.iter().rev() {
+            let start = Position { line, col: 0 };
+            if delta > 0 {
+                self.buffer
+                    .replace_range(start, start, &" ".repeat(delta as usize));
+            } else {
+                let end = Position {
+                    line,
+                    col: (-delta) as usize,
+                };
+                self.buffer.replace_range(start, end, "");
+            }
+        }
+        self.buffer.end_edit_group();
+
+        // Move every selection by its own line's delta, so the selection ends
+        // up around the same text it started around.
+        let shifted: Vec<Selection> = self
+            .selections
+            .iter()
+            .map(|selection| {
+                let move_position = |p: Position| {
+                    let delta = deltas
+                        .iter()
+                        .find(|(line, _)| *line == p.line)
+                        .map_or(0, |(_, d)| *d);
+                    Position {
+                        line: p.line,
+                        col: p.col.saturating_add_signed(delta),
+                    }
+                };
+                Selection {
+                    anchor: move_position(selection.anchor),
+                    head: move_position(selection.head),
+                }
+            })
+            .collect();
+        self.set_selections(shifted);
         self.goal_col = None;
         self.scroll_to_cursor();
         Some(vec![PanelEvent::NeedsRedraw])
@@ -441,6 +566,91 @@ impl EditorPanel {
                 self.scroll_to_cursor();
                 Some(vec![PanelEvent::NeedsRedraw])
             }
+
+            Action::Copy => {
+                let text = self.selected_text();
+                // Copying nothing must not wipe what is already held. Every
+                // editor in the field either copies the whole line or does
+                // nothing; doing nothing is the one that never surprises.
+                if !text.is_empty() {
+                    clipboard::set(&text);
+                }
+                Some(vec![PanelEvent::NeedsRedraw])
+            }
+
+            Action::Cut => {
+                let text = self.selected_text();
+                if text.is_empty() {
+                    return Some(Vec::new());
+                }
+                clipboard::set(&text);
+                // `Other`, so a cut always stands alone in the undo history
+                // rather than folding into a run of typing on either side.
+                self.edit_at_each_selection(EditKind::Other, |selection, _buffer| {
+                    let (start, end) = selection.range();
+                    Edit::delete(start, end)
+                })
+            }
+
+            Action::Paste => {
+                let text = clipboard::get();
+                if text.is_empty() {
+                    return Some(Vec::new());
+                }
+
+                // One clipboard line per cursor when the counts match, which is
+                // what makes a multi-cursor copy round-trip through a paste.
+                // VS Code and Sublime both do this, and without it a three-line
+                // copy stamps all three lines at all three cursors.
+                let lines: Vec<String> = text.lines().map(str::to_string).collect();
+                let distribute = lines.len() == self.selections.len() && self.selections.len() > 1;
+
+                let index = std::cell::Cell::new(0usize);
+                self.edit_at_each_selection(EditKind::Other, move |selection, _buffer| {
+                    let (start, end) = selection.range();
+                    let piece = if distribute {
+                        let i = index.get();
+                        index.set(i + 1);
+                        lines[i].clone()
+                    } else {
+                        text.clone()
+                    };
+                    Edit {
+                        start,
+                        end,
+                        text: piece,
+                    }
+                })
+            }
+
+            // Tab is two behaviours behind one key, which is what every editor
+            // in the field does. With nothing selected it inserts to the next
+            // tab stop, the way typing does. With a selection it shifts every
+            // line the selection touches, because that is what a block indent
+            // means — and inserting there would replace the selection instead.
+            Action::Indent => {
+                if self.selections.iter().all(Selection::is_empty) {
+                    self.edit_at_each_selection(EditKind::Other, |selection, buffer| {
+                        let head = selection.head;
+                        // From the *display* column, so a line containing tabs
+                        // lands on the same stop the renderer draws.
+                        let display = buffer.with_line_str(head.line, |line| {
+                            grapheme_to_display_col(line, head.col, TAB_WIDTH)
+                        });
+                        Edit {
+                            start: head,
+                            end: head,
+                            text: " ".repeat(TAB_WIDTH - (display % TAB_WIDTH)),
+                        }
+                    })
+                } else {
+                    self.shift_lines(true)
+                }
+            }
+
+            // Outdent always works on lines. Shift+Tab at a bare caret means
+            // "unindent this line", not "delete something to my left".
+            Action::Outdent => self.shift_lines(false),
 
             // Not this panel's business. The app tries it next.
             _ => None,

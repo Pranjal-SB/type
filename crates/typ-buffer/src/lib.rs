@@ -1,5 +1,6 @@
 pub mod buffer;
 pub mod change;
+pub mod clipboard;
 pub mod position;
 pub mod search;
 pub mod selection;

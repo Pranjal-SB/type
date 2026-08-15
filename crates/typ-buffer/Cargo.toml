@@ -15,3 +15,12 @@ anyhow.workspace = true
 ropey.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
+
+# Windows only, and the only clipboard dependency in the workspace. Every other
+# platform shells out to a provider that already owns the selection — see
+# `clipboard.rs` for why a cross-platform crate is the wrong shape here. Windows
+# has no such provider worth trusting: `clip.exe` writes in the console codepage
+# and mangles anything outside it, which an editor built on grapheme correctness
+# cannot ship.
+[target.'cfg(windows)'.dependencies]
+clipboard-win = { version = "5.4", features = ["std"] }

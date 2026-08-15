@@ -3,12 +3,12 @@ type: design
 status: living
 area: audit
 verified: 2026-08-15
-verified-against: v0.2.1
+verified-against: v0.2.2
 ---
 
 # Gap analysis — TYPE against itself and against the field
 
-**Status:** living document · **Written at:** v0.2.1 (M2 + M2.1 complete) · **Date:** 2026-08-15
+**Status:** living document · **Written at:** v0.2.1 · **Re-verified at:** v0.2.2 · **Date:** 2026-08-15
 
 Two questions, answered together because they turn out to be the same question:
 
@@ -23,16 +23,17 @@ these](#why-the-plans-could-not-catch-these).
 
 ## Part 1 — Defects in v0.2.1
 
-Severity is about consequence to a user, not about effort to fix.
+Severity is about consequence to a user, not about effort to fix. **A struck-through number
+means v0.2.2 fixed it**; the row stays so the record of what was wrong survives the fix.
 
 ### Data loss and correctness
 
 | # | Sev | Defect | Where | Lands |
 |---|---|---|---|---|
-| 1 | **CRITICAL** | **Opening a file discards unsaved changes with no prompt.** `open_path` replaces the editor unconditionally. `needs_close_confirmation` has exactly one caller — `request_quit` — so Ctrl+Q guards your work and Enter on a tree entry throws it away. | `typ-app/src/app.rs:148`, caller at `:109` | v0.2.2 |
-| 2 | HIGH | **Undo stack is unbounded.** `History.undo: Vec<Snapshot>` has no cap and no eviction. Ropey's structural sharing makes each step cheap, not free — every snapshot pins the nodes it replaced. A long session on a large file grows without limit. vim caps at 1000 steps; VS Code caps by total bytes. | `typ-buffer/src/undo.rs:55` | v0.2.2 |
-| 3 | HIGH | **`typ newfile.md` refuses to start** — `bail!("does not exist")`. There is no way to create a file. Every editor in the field opens an empty buffer at that path and creates it on save. | `typ/src/main.rs:59` | v0.2.2 |
-| 4 | LOW | Save temp file uses a fixed name, `.{name}.typ-tmp`. Two instances saving the same file race each other, and a kill mid-save leaves the file behind. Wants a pid or nonce. | `typ-buffer/src/buffer.rs:320` | v0.2.2 |
+| ~~1~~ | **CRITICAL** | **Opening a file discards unsaved changes with no prompt.** `open_path` replaces the editor unconditionally. `needs_close_confirmation` has exactly one caller — `request_quit` — so Ctrl+Q guards your work and Enter on a tree entry throws it away. | `typ-app/src/app.rs:148`, caller at `:109` | v0.2.2 |
+| ~~2~~ | HIGH | **Undo stack is unbounded.** `History.undo: Vec<Snapshot>` has no cap and no eviction. Ropey's structural sharing makes each step cheap, not free — every snapshot pins the nodes it replaced. A long session on a large file grows without limit. vim caps at 1000 steps; VS Code caps by total bytes. | `typ-buffer/src/undo.rs:55` | v0.2.2 |
+| ~~3~~ | HIGH | **`typ newfile.md` refuses to start** — `bail!("does not exist")`. There is no way to create a file. Every editor in the field opens an empty buffer at that path and creates it on save. | `typ/src/main.rs:59` | v0.2.2 |
+| ~~4~~ | LOW | Save temp file uses a fixed name, `.{name}.typ-tmp`. Two instances saving the same file race each other, and a kill mid-save leaves the file behind. Wants a pid or nonce. | `typ-buffer/src/buffer.rs:320` | v0.2.2 |
 | 5 | LOW | `typ a.rs b.rs` silently ignores everything after the first path. Honest until tabs exist, a real bug the moment they do. | `typ/src/main.rs:54` | v0.4.0 |
 | 6 | LOW | No tty check. `typ | cat` renders escape sequences into a pipe. | `typ/src/main.rs` | v0.6 polish |
 
@@ -44,9 +45,9 @@ no parent-dir fsync, non-UTF-8 files fail to open.
 
 | # | Sev | Defect | Evidence |
 |---|---|---|---|
-| 7 | **CRITICAL** | **No clipboard. At all.** No `Copy`, `Cut` or `Paste` in `Action`, no OS clipboard dependency, zero matches in the tree. `Ctrl+C` currently does nothing at all. | `typ-core/src/action.rs:59-75` |
-| 8 | **HIGH** | **Tab cannot indent.** `("tab", Action::FocusNext)` is the only Tab binding, and no `Indent`/`Outdent` action exists. A code editor where Tab does not indent is not yet a code editor. | `typ-core/src/keymap.rs:230` |
-| 9 | HIGH | **Bracketed paste is not enabled.** A terminal paste arrives as N separate key events: N loop passes, N repaints, and any chord inside the pasted text executes as a command rather than being inserted. `Event::Paste` is unhandled. | `typ-app/src/run.rs:59` |
+| ~~7~~ | **CRITICAL** | **No clipboard. At all.** No `Copy`, `Cut` or `Paste` in `Action`, no OS clipboard dependency, zero matches in the tree. `Ctrl+C` currently does nothing at all. | `typ-core/src/action.rs:59-75` |
+| ~~8~~ | **HIGH** | **Tab cannot indent.** `("tab", Action::FocusNext)` is the only Tab binding, and no `Indent`/`Outdent` action exists. A code editor where Tab does not indent is not yet a code editor. | `typ-core/src/keymap.rs:230` |
+| ~~9~~ | HIGH | **Bracketed paste is not enabled.** A terminal paste arrives as N separate key events: N loop passes, N repaints, and any chord inside the pasted text executes as a command rather than being inserted. `Event::Paste` is unhandled. | `typ-app/src/run.rs:59` |
 | 10 | MED | **`Event::Resize` is unhandled.** Harmless *today* only because the loop repaints unconditionally. The moment M2.5 makes redraw damage-driven this becomes a frozen screen on resize. Must be written into the M2.5 plan, not rediscovered. | `typ-app/src/run.rs:116` |
 | 11 | MED | Drag past the viewport edge does not autoscroll; the selection stops at the last visible row. | `typ-panel-editor/src/lib.rs:388` |
 | 12 | MED | No goto-line. No move-line / duplicate-line. No comment toggle. | — |

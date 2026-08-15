@@ -147,3 +147,46 @@ fn a_multi_caret_edit_stays_one_step() {
     buffer.undo(&selections);
     assert_eq!(text(&buffer), "a\na\na");
 }
+
+#[test]
+fn the_undo_stack_stops_growing_at_the_cap() {
+    let mut buffer = TextBuffer::from_str("");
+    let selections = caret(0, 0);
+
+    // Each iteration is its own step: Other never coalesces.
+    for i in 0..(typ_buffer::undo::MAX_UNDO_STEPS + 50) {
+        buffer.begin_edit_group(EditKind::Other, &selections);
+        buffer.insert_char(
+            Position { line: 0, col: 0 },
+            char::from(b'a' + (i % 26) as u8),
+        );
+        buffer.end_edit_group();
+    }
+
+    assert_eq!(
+        buffer.undo_depth(),
+        typ_buffer::undo::MAX_UNDO_STEPS,
+        "an unbounded stack pins every version of the file for the life of the session"
+    );
+}
+
+#[test]
+fn the_cap_drops_the_oldest_step_not_the_newest() {
+    let mut buffer = TextBuffer::from_str("");
+    let selections = caret(0, 0);
+
+    for _ in 0..(typ_buffer::undo::MAX_UNDO_STEPS + 1) {
+        buffer.begin_edit_group(EditKind::Other, &selections);
+        buffer.insert_char(Position { line: 0, col: 0 }, 'x');
+        buffer.end_edit_group();
+    }
+
+    // Undoing everything available must still walk back the most recent edits.
+    let before = buffer.line_text(0).len();
+    buffer.undo(&selections);
+    assert_eq!(
+        buffer.line_text(0).len(),
+        before - 1,
+        "the newest step must survive; only the oldest history is forgotten"
+    );
+}

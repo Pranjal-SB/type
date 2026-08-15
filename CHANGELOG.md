@@ -5,11 +5,39 @@ Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-08-15 — M2.2, usable
+
+The milestone that makes TYPE able to edit TYPE. Every item here closes a defect found by
+reading the tree rather than by planning — none was named by any earlier plan, which is the
+finding underneath the findings.
+
 ### Added
+- **Clipboard.** Copy, cut and paste, keyboard and mouse. `Ctrl+C`/`X`/`V`, the `Insert` trio,
+  right-click a selection to copy, middle-click to paste. Copying emits OSC 52, so a copy over
+  SSH reaches the machine you are sitting at rather than the one you are logged into.
+  Multi-cursor copy joins selections with newlines and pasting that many lines back gives one
+  to each cursor.
+- **Tab indents, Shift+Tab outdents.** At a caret Tab goes to the next tab stop; with a
+  selection it shifts every line the selection touches and leaves the selection standing.
+  Blank lines are skipped, and outdent takes a partial level to zero rather than to minus one.
+- **`typ newfile.md`** opens an empty buffer that `save` creates. A missing parent directory is
+  still an error, and still fails before the screen is taken.
+- **Bracketed paste.** A paste is one edit and one undo step rather than one per character, and
+  a chord inside pasted text is inserted rather than executed.
 - Gap analysis: a defect audit of the tree and a measurement of TYPE against VS Code, Zed,
   Sublime, Helix, TermIDE and oh-my-pi, plus the install and first-launch design.
 
+### Changed
+- **Focus cycling moves from `Tab` to `F6`**, with `Ctrl+Tab` bound alongside. Tab had to be
+  freed for indent. `F6` rather than `Ctrl+Tab` as the primary because without the kitty
+  keyboard protocol a terminal cannot tell `Ctrl+Tab` from `Tab`. Tab now does nothing in the
+  file tree until M4 names the tree's own actions; `F6` works from both panels.
+
 ### Fixed
+- **Opening a file no longer discards unsaved changes.** `needs_close_confirmation` had one
+  caller, so `Ctrl+Q` guarded your work and clicking a file in the tree threw it away.
+- **The undo stack is capped at 1000 steps.** It had no cap and no eviction, so every version
+  of the file was retained for as long as the editor was open.
 - Architecture §10 no longer lists the config format as an open question. It is TOML, decided
   when `keys.toml` shipped.
 
@@ -51,5 +79,6 @@ Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.2
 [0.2.1]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.1

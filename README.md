@@ -41,11 +41,16 @@ no editing primitives of its own and the core never depends on it.
 
 ## Status
 
-**v0.2.1 — pre-alpha.** Editing is real: selections, multiple cursors, word-wise motion, drag
-to select, horizontal scrolling, and literal search and replace, alongside the file tree,
-focus cycling, undo/redo, save and rebindable keys. Every editing primitive is a named action
-and every key is a table row, so a command palette and an opt-in vim layer are configuration
-rather than a rewrite.
+**v0.2.2 — pre-alpha.** Selections, multiple cursors, word-wise motion, drag to select,
+horizontal scrolling, literal search and replace, clipboard with OSC 52 so it works over SSH,
+Tab indent, and creating new files — alongside the file tree, focus cycling, undo/redo, save
+and rebindable keys. Every editing primitive is a named action and every key is a table row, so
+a command palette and an opt-in vim layer are configuration rather than a rewrite.
+
+This is the release at which TYPE should be able to edit its own source: the gaps that made a
+real editing session impossible — no clipboard, no indent, opening a file discarding unsaved
+work — are closed. Whether it is actually pleasant to use it all day is the next thing to find
+out, and the answer is expected to produce a defect list rather than a victory lap.
 
 No syntax highlighting, no LSP, no splits or tabs yet — see the roadmap.
 
@@ -57,7 +62,7 @@ the cursor back where the edit was made.
 
 - [Architecture and design rationale](docs/design/architecture.md)
 - [Gap analysis — known defects and how TYPE measures against the field](docs/design/gap-analysis.md)
-- [Current implementation plan](docs/plans/m2-editing.md)
+- [Current implementation plan](docs/plans/m2.2-usable.md)
 
 ## Build
 
@@ -70,7 +75,7 @@ cargo build --release
 
 | Key | Action |
 |---|---|
-| `Tab` | Cycle focus between tree and editor |
+| `F6` | Cycle focus between tree and editor (`Ctrl+Tab` too, where the terminal reports it) |
 | `Ctrl+S` | Save |
 | `Ctrl+Q` | Quit |
 
@@ -99,14 +104,36 @@ cargo build --release
 | `Enter` | Split the line |
 | `Backspace` `Delete` | Delete before / under the cursor |
 | `Ctrl+Backspace` `Ctrl+Delete` | Delete a word |
+| `Tab` `Shift+Tab` | Indent / outdent |
 | `Ctrl+Z` `Ctrl+Y` | Undo / redo |
 
 Every one of those works at every cursor at once, and holding `Shift` with any motion
 extends instead of moving.
 
+`Tab` with nothing selected moves to the next tab stop; with a selection it shifts every line
+the selection touches, and the selection survives so you can press it again.
+
+**Clipboard**
+
+| Key | Also | Mouse | Action |
+|---|---|---|---|
+| `Ctrl+C` | `Ctrl+Insert` | right-click a selection | Copy |
+| `Ctrl+X` | `Shift+Delete` | — | Cut |
+| `Ctrl+V` | `Shift+Insert` | middle-click | Paste |
+
+`Ctrl+Shift+C`/`X`/`V` are bound too, but most terminals claim them for their own copy and
+paste and never pass them on — and in the legacy key encoding a `Ctrl`+letter chord carries no
+shift bit for the terminal to report. They work on Windows today, and elsewhere once terminal
+capability detection lands.
+
+Copying emits OSC 52, so a copy over SSH reaches the clipboard on the machine you are sitting
+at rather than the one you are logged into. Multi-cursor copy joins the selections with
+newlines, and pasting that many lines back into that many cursors gives one line to each.
+
 Mouse: click to position the cursor, drag to select, click twice in the same place to select
-the word, `Alt`+click to stack another cursor, click a selected tree entry to open or toggle
-it, wheel to scroll whichever panel the pointer is over.
+the word, `Alt`+click to stack another cursor, right-click a selection to copy it, middle-click
+to paste, click a selected tree entry to open or toggle it, wheel to scroll whichever panel the
+pointer is over.
 
 **Search**
 
@@ -150,9 +177,9 @@ worse than one that plainly did nothing.
 | — | M0 | Feel spike — measure input latency, frame timing, unicode correctness | shipped |
 | v0.1.0 | M1 | Walking skeleton — event loop, panel contract, editor and file tree | shipped |
 | v0.2.0 | M2 | Editing — multi-cursor, selections, word motion, search and replace | shipped |
-| v0.2.1 | M2.1 | Correctness — keystroke budgets, undo coalescing, the shift map | **current** |
-| v0.2.2 | M2.2 | Usable — clipboard, indent, new files, guarded open. Self-hosting starts here | next |
-| v0.2.5 | M2.5 | Damage-driven redraw, wakeable event loop, tree-sitter highlighting, themes | |
+| v0.2.1 | M2.1 | Correctness — keystroke budgets, undo coalescing, the shift map | shipped |
+| v0.2.2 | M2.2 | Usable — clipboard, indent, new files, guarded open. Self-hosting starts here | **current** |
+| v0.2.5 | M2.5 | Damage-driven redraw, wakeable event loop, tree-sitter highlighting, themes | next |
 | v0.3.0 | M3 | Code intelligence — LSP client | |
 | v0.4.0 | M4 | Workspace — splits, tabs, sessions, command palette, project search | |
 | v0.5.0 | M5 | Terminal panel and git integration | |

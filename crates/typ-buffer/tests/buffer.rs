@@ -197,3 +197,36 @@ fn edits_outside_a_group_are_separate_undo_steps() {
     b.undo(&origin());
     assert_eq!(b.line_text(0), "xabc");
 }
+
+#[test]
+fn a_new_buffer_at_a_path_starts_empty_and_clean() {
+    let dir = std::env::temp_dir().join("typ-buffer-new-at");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("does-not-exist-yet.rs");
+    let _ = std::fs::remove_file(&path);
+
+    let buffer = TextBuffer::new_at(&path);
+
+    assert_eq!(buffer.line_count(), 1, "an empty buffer is one empty line");
+    assert_eq!(buffer.line_text(0), "");
+    assert_eq!(buffer.path(), Some(path.as_path()));
+    assert!(
+        !buffer.is_dirty(),
+        "nothing has been typed, so quitting must not challenge the user"
+    );
+    assert!(!path.exists(), "opening must not create the file");
+}
+
+#[test]
+fn saving_a_new_buffer_creates_the_file() {
+    let dir = std::env::temp_dir().join("typ-buffer-new-at-save");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("created-on-save.rs");
+    let _ = std::fs::remove_file(&path);
+
+    let mut buffer = TextBuffer::new_at(&path);
+    buffer.insert_char(Position { line: 0, col: 0 }, 'x');
+    buffer.save().expect("save creates the file");
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x");
+}

@@ -55,6 +55,11 @@ impl EditorPanel {
         Ok(Self::new(TextBuffer::from_path(path)?))
     }
 
+    /// An empty editor over a file that does not exist yet.
+    pub fn new_at(path: &Path) -> Self {
+        Self::new(TextBuffer::new_at(path))
+    }
+
     fn new(buffer: TextBuffer) -> Self {
         Self {
             buffer,
@@ -105,6 +110,10 @@ impl EditorPanel {
     /// Line contents without the trailing newline.
     pub fn line_text(&self, line: usize) -> String {
         self.buffer.line_text(line)
+    }
+
+    pub fn line_count(&self) -> usize {
+        self.buffer.line_count()
     }
 
     /// Collapse to a single caret at `at`, clearing the goal column.
@@ -400,6 +409,34 @@ impl Panel for EditorPanel {
             MouseEventKind::Up(MouseButton::Left) => {
                 self.drag_anchor = None;
                 Vec::new()
+            }
+
+            // Invariant 8 — mouse and keyboard are peers. A clipboard reachable
+            // only from the keyboard is half a feature.
+            //
+            // Right-click *inside* a selection copies it and leaves it standing.
+            // Outside one it does nothing: the alternative is copying whatever
+            // happens to be selected elsewhere, which silently replaces the
+            // clipboard on a misclick.
+            MouseEventKind::Down(MouseButton::Right) => {
+                let position = at(self, &event);
+                let inside = self
+                    .selections
+                    .iter()
+                    .any(|s| !s.is_empty() && s.range().0 <= position && position < s.range().1);
+                if !inside {
+                    return Vec::new();
+                }
+                self.perform(typ_core::Action::Copy).unwrap_or_default()
+            }
+
+            // Middle-click pastes at the pointer, the X11 convention every
+            // terminal user already has in their hands.
+            MouseEventKind::Down(MouseButton::Middle) => {
+                let position = at(self, &event);
+                self.set_caret(position);
+                self.last_click = Some(position);
+                self.perform(typ_core::Action::Paste).unwrap_or_default()
             }
 
             _ => Vec::new(),

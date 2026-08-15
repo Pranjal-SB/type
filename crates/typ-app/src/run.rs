@@ -4,7 +4,8 @@ use std::time::Duration;
 use anyhow::Result;
 use crossterm::ExecutableCommand;
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind, MouseEventKind,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyEventKind, MouseEventKind,
 };
 use ratatui::layout::Rect;
 use typ_core::{KeyChord, Panel, PanelEvent};
@@ -26,19 +27,25 @@ fn end_frame() {
 pub fn run(mut app: App) -> Result<()> {
     let mut terminal = ratatui::init();
     stdout().execute(EnableMouseCapture)?;
+    // Without this a paste arrives as N keypresses, and any chord inside the
+    // pasted text runs as a command rather than being inserted.
+    stdout().execute(EnableBracketedPaste)?;
 
     // ratatui's own panic hook leaves raw mode and the alternate screen, but it
-    // knows nothing about mouse capture — which this function turned on. Without
-    // this, a panic drops the user back to a shell that keeps emitting mouse
-    // escape sequences. FINDINGS §6.
+    // knows nothing about mouse capture or bracketed paste — which this function
+    // turned on. Without this, a panic drops the user back to a shell that keeps
+    // emitting mouse escape sequences and wrapping every paste in markers.
+    // FINDINGS §6.
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        let _ = stdout().execute(DisableBracketedPaste);
         let _ = stdout().execute(DisableMouseCapture);
         previous(info);
     }));
 
     let result = event_loop(&mut terminal, &mut app);
 
+    stdout().execute(DisableBracketedPaste)?;
     stdout().execute(DisableMouseCapture)?;
     ratatui::restore();
     result
@@ -62,6 +69,7 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
             Event::Key(key) if key.kind == KeyEventKind::Press => {
                 app.handle_chord(KeyChord::from_event(key))?;
             }
+            Event::Paste(text) => app.handle_paste(text)?,
             Event::Mouse(m) => {
                 if matches!(m.kind, MouseEventKind::Down(_)) {
                     app.clear_transient();

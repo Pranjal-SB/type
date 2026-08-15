@@ -34,6 +34,23 @@ impl TextBuffer {
         }
     }
 
+    /// An empty buffer that will be written to `path` when saved.
+    ///
+    /// A sibling of `from_path` rather than a flag on it, so "read this file"
+    /// keeps meaning exactly that and never quietly invents one.
+    ///
+    /// Not dirty: nothing has been typed. Marking it dirty would make Ctrl+Q
+    /// challenge the user over a file they never edited.
+    pub fn new_at(path: &Path) -> Self {
+        Self {
+            rope: Rope::new(),
+            path: Some(path.to_path_buf()),
+            dirty: false,
+            history: History::default(),
+            group_depth: 0,
+        }
+    }
+
     pub fn from_path(path: &Path) -> Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
@@ -147,6 +164,19 @@ impl TextBuffer {
         self.dirty = true;
     }
 
+    /// The text between two positions.
+    ///
+    /// Ordered by the caller — a selection's `range()` already answers which end
+    /// comes first, so this does not second-guess it.
+    pub fn text_in_range(&self, start: Position, end: Position) -> String {
+        let from = self.char_offset(start);
+        let to = self.char_offset(end);
+        if from >= to {
+            return String::new();
+        }
+        self.rope.slice(from..to).to_string()
+    }
+
     /// Every match in the buffer, in document order, as selections whose head
     /// sits at the end of the match — so jumping to one leaves the cursor
     /// where typing would naturally continue.
@@ -224,6 +254,11 @@ impl TextBuffer {
 
     pub fn end_edit_group(&mut self) {
         self.group_depth = self.group_depth.saturating_sub(1);
+    }
+
+    /// How many undo steps are currently held.
+    pub fn undo_depth(&self) -> usize {
+        self.history.depth()
     }
 
     /// End the current undo run. The next edit starts a new step.
@@ -310,14 +345,20 @@ fn trim_line_ending(s: &str) -> &str {
         .unwrap_or(s)
 }
 
-/// A sibling of `path` that will not collide with a real file.
+/// A sibling of `path` that will not collide with a real file, or with another
+/// instance of TYPE saving the same file.
+///
+/// The pid is what makes the second guarantee. Two editors saving one path with
+/// a fixed temp name race: one truncates the other's half-written file and
+/// renames whichever won, and the loser's content is gone. A kill mid-save also
+/// leaves the file behind, and a pid-suffixed one is at least attributable.
 fn temp_path_beside(path: &Path) -> PathBuf {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "buffer".to_string());
     let parent = path.parent().unwrap_or(Path::new("."));
-    parent.join(format!(".{name}.typ-tmp"))
+    parent.join(format!(".{name}.{}.typ-tmp", std::process::id()))
 }
 
 /// Write the rope out and flush it to the device before returning.
