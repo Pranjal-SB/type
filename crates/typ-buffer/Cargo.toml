@@ -2,6 +2,7 @@
 name = "typ-buffer"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "Rope-backed text buffer with selections, multi-cursor, undo and search, for the TYPE terminal IDE"
 repository.workspace = true

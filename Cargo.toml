@@ -5,6 +5,10 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.2.1"
 edition = "2024"
+# Matches rust-toolchain.toml. Without it, someone on an older compiler gets a
+# wall of syntax errors from edition-2024 code and let-chains instead of cargo
+# saying plainly which rustc this needs.
+rust-version = "1.96"
 license = "MIT"
 repository = "https://github.com/Pranjal-SB/type"
 homepage = "https://github.com/Pranjal-SB/type"

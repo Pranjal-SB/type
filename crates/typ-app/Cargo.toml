@@ -2,6 +2,7 @@
 name = "typ-app"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "Event loop, layout and dispatch for the TYPE terminal IDE"
 repository.workspace = true
