@@ -1,3 +1,11 @@
+---
+type: plan
+status: shipped
+area: milestone
+milestone: M0, M1
+version: v0.1.0
+---
+
 # M0 (Feel Spike) + M1 (Walking Skeleton) — Implementation Plan
 
 **How to use this plan:** tasks are ordered and each ends with a commit. Work them in

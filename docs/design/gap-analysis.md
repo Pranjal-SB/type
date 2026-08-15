@@ -1,3 +1,11 @@
+---
+type: design
+status: living
+area: audit
+verified: 2026-08-15
+verified-against: v0.2.1
+---
+
 # Gap analysis — TYPE against itself and against the field
 
 **Status:** living document · **Written at:** v0.2.1 (M2 + M2.1 complete) · **Date:** 2026-08-15

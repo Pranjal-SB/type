@@ -1,7 +1,15 @@
+---
+type: design
+status: living
+area: spec
+verified: 2026-08-15
+verified-against: v0.2.1
+---
+
 # TYPE — Terminal-Yoked Programming Environment
 
-**Status:** design approved, pre-implementation
-**Date:** 2026-08-10
+**Status:** approved; M0–M2.1 built against it
+**Date:** 2026-08-10, last verified against the tree 2026-08-15 at v0.2.1
 **Binary:** `typ` · **Crate:** `typ-editor` · **Repo:** `type`
 
 ---

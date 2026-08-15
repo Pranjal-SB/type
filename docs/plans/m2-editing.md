@@ -1,3 +1,11 @@
+---
+type: plan
+status: shipped
+area: milestone
+milestone: M2
+version: v0.2.0
+---
+
 # M2 (Editing) — Implementation Plan
 
 **How to use this plan:** tasks are ordered and each ends with a commit. Work them in
