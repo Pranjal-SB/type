@@ -541,8 +541,11 @@ using it daily, and the project stays alive because it is useful before it is fi
 - **Layout model.** TermIDE uses an accordion with smart stacking; VS Code uses fixed
   sidebar plus editor group splits; Zed uses tiled panes. Decide at M4, ideally against
   mockups rather than in prose.
-- **Config format.** TOML (TermIDE) or JSONC (Fresh, VS Code-compatible). JSONC eases
-  migration for people arriving from VS Code; TOML is more idiomatic in Rust.
+- ~~**Config format.**~~ **Closed at M2: TOML.** Decided by shipping rather than by argument —
+  `keys.toml` landed in Task 14 and the `toml` crate was already in the tree. JSONC's
+  advantage was easing migration from VS Code, which matters for a keybinding file someone
+  ports and for nothing else; TOML is idiomatic in Rust, comments cleanly, and is what the
+  theme files will use too. Not revisited without a concrete migration complaint.
 - **Keybinding defaults.** VS Code-compatible out of the box is the non-modal thesis, but a
   vim mode will be requested early. Ship the keymap layer with enough indirection that a vim
   mode is a config, not a fork.
@@ -552,6 +555,11 @@ using it daily, and the project stays alive because it is useful before it is fi
 ---
 
 ## 11. Prior art, measured
+
+Field re-measured at v0.2.1 against VS Code, Zed, Sublime, Helix and TermIDE, alongside a full
+defect audit of the tree: [`gap-analysis.md`](gap-analysis.md). Its findings that change this
+document are folded in above; the ones that change the schedule are in that document's Part 6.
+
 
 Measured from source, not from READMEs.
 
