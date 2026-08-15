@@ -3,6 +3,11 @@ name = "typ-app"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Event loop, layout and dispatch for the TYPE terminal IDE"
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 anyhow.workspace = true

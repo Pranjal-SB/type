@@ -24,8 +24,11 @@ Modern GUI editors are slow to start and heavy to run. Existing terminal editors
 the IDE surface entirely, or require deep configuration to approximate it, or are built
 keyboard-purist in a way that never made room for a mouse.
 
-TYPE targets the gap: **non-modal, full mouse parity, panel-rich, extensible.** Familiar
-immediately if you're arriving from a GUI editor, without giving up capability to get there.
+TYPE targets the gap: **non-modal by default, full mouse parity, panel-rich, extensible.**
+Familiar immediately if you're arriving from a GUI editor, without giving up capability to get
+there. Modal editing is a setting rather than a fork — an opt-in vim layer translates modes,
+counts and operators into the same named actions the non-modal path already calls, so it owns
+no editing primitives of its own and the core never depends on it.
 
 ## Design goals
 

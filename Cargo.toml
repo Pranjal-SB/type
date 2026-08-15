@@ -6,6 +6,10 @@ members = ["crates/*"]
 version = "0.2.1"
 edition = "2024"
 license = "MIT"
+repository = "https://github.com/Pranjal-SB/type"
+homepage = "https://github.com/Pranjal-SB/type"
+keywords = ["editor", "terminal", "tui", "ide"]
+categories = ["text-editors", "command-line-utilities"]
 
 [workspace.dependencies]
 anyhow = "1.0"
@@ -16,12 +20,14 @@ toml = "1.1"
 unicode-segmentation = "1.11"
 unicode-width = "0.2"
 
-typ-core = { path = "crates/typ-core" }
-typ-buffer = { path = "crates/typ-buffer" }
-typ-registry = { path = "crates/typ-registry" }
-typ-panel-editor = { path = "crates/typ-panel-editor" }
-typ-panel-tree = { path = "crates/typ-panel-tree" }
-typ-app = { path = "crates/typ-app" }
+# Version alongside path: cargo resolves the path locally and publishes the
+# version, and refuses to publish a crate whose dependencies carry only a path.
+typ-core = { path = "crates/typ-core", version = "0.2.1" }
+typ-buffer = { path = "crates/typ-buffer", version = "0.2.1" }
+typ-registry = { path = "crates/typ-registry", version = "0.2.1" }
+typ-panel-editor = { path = "crates/typ-panel-editor", version = "0.2.1" }
+typ-panel-tree = { path = "crates/typ-panel-tree", version = "0.2.1" }
+typ-app = { path = "crates/typ-app", version = "0.2.1" }
 
 [profile.release]
 opt-level = 3

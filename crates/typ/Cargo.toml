@@ -3,7 +3,12 @@ name = "typ-editor"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "TYPE — Terminal-Yoked Programming Environment"
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "A full IDE in your terminal — non-modal by default with an opt-in vim layer, mouse and keyboard as peers"
+readme = "README.md"
 
 [[bin]]
 name = "typ"
