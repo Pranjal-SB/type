@@ -5,8 +5,8 @@
 //! command palette, and the future vim layer able to reach the same behavior.
 
 use typ_buffer::{
-    Position, Selection, display_to_grapheme_col, grapheme_to_display_col, next_word_boundary,
-    previous_word_boundary,
+    Position, Selection, TextBuffer, display_to_grapheme_col, grapheme_to_display_col,
+    next_word_boundary, previous_word_boundary,
 };
 use typ_core::{Action, Direction, Motion, PanelEvent};
 use unicode_segmentation::UnicodeSegmentation;
@@ -168,17 +168,17 @@ impl EditorPanel {
     /// and is not something each action should reimplement.
     fn edit_at_each_selection(
         &mut self,
-        describe: impl Fn(Selection, &[String]) -> Edit,
+        describe: impl Fn(Selection, &TextBuffer) -> Edit,
     ) -> Option<Vec<PanelEvent>> {
-        // Line text is read up front: the closure cannot borrow the buffer
-        // while the buffer is being mutated.
-        let lines: Vec<String> = (0..self.buffer.line_count())
-            .map(|i| self.buffer.line_text(i))
-            .collect();
+        // Describing happens entirely before the first mutation, so the closure
+        // can borrow the buffer directly. The previous version copied every line
+        // in the file into a Vec<String> to dodge a borrow that was never a
+        // conflict — 50k allocations per keystroke to avoid a compile error that
+        // does not occur.
         let described: Vec<Edit> = self
             .selections
             .iter()
-            .map(|s| describe(*s, &lines))
+            .map(|s| describe(*s, &self.buffer))
             .collect();
 
         // One snapshot for the whole group, so a thirty-caret edit is one undo
@@ -251,7 +251,7 @@ impl EditorPanel {
             }
             Action::InsertChar(c) => {
                 let text = c.to_string();
-                self.edit_at_each_selection(move |selection, _lines| {
+                self.edit_at_each_selection(move |selection, _buffer| {
                     let (start, end) = selection.range();
                     Edit {
                         start,
@@ -261,7 +261,7 @@ impl EditorPanel {
                 })
             }
 
-            Action::InsertNewline => self.edit_at_each_selection(|selection, _lines| {
+            Action::InsertNewline => self.edit_at_each_selection(|selection, _buffer| {
                 let (start, end) = selection.range();
                 Edit {
                     start,
@@ -271,7 +271,7 @@ impl EditorPanel {
             }),
 
             Action::Delete { direction, by_word } => {
-                self.edit_at_each_selection(move |selection, lines| {
+                self.edit_at_each_selection(move |selection, buffer| {
                     // A non-empty selection is the target, whichever key was
                     // pressed.
                     if !selection.is_empty() {
@@ -280,14 +280,17 @@ impl EditorPanel {
                     }
 
                     let head = selection.head;
-                    let line = lines.get(head.line).map(String::as_str).unwrap_or("");
-                    let line_len = line.graphemes(true).count();
+                    // One line, not every line: a word boundary never reaches
+                    // past the line it is on.
+                    let line_len = buffer.line_grapheme_count(head.line);
 
                     match direction {
                         Direction::Backward => {
                             if head.col > 0 {
                                 let target = if by_word {
-                                    previous_word_boundary(line, head.col)
+                                    buffer.with_line_str(head.line, |line| {
+                                        previous_word_boundary(line, head.col)
+                                    })
                                 } else {
                                     head.col - 1
                                 };
@@ -302,8 +305,7 @@ impl EditorPanel {
                                 // Join with the previous line: delete the
                                 // newline between them.
                                 let previous = head.line - 1;
-                                let col =
-                                    lines.get(previous).map_or(0, |l| l.graphemes(true).count());
+                                let col = buffer.line_grapheme_count(previous);
                                 Edit::delete(
                                     Position {
                                         line: previous,
@@ -318,7 +320,9 @@ impl EditorPanel {
                         Direction::Forward => {
                             if head.col < line_len {
                                 let target = if by_word {
-                                    next_word_boundary(line, head.col)
+                                    buffer.with_line_str(head.line, |line| {
+                                        next_word_boundary(line, head.col)
+                                    })
                                 } else {
                                     head.col + 1
                                 };
@@ -329,7 +333,7 @@ impl EditorPanel {
                                         col: target,
                                     },
                                 )
-                            } else if head.line + 1 < lines.len() {
+                            } else if head.line + 1 < buffer.line_count() {
                                 // At the end of a line, pull the next one up.
                                 Edit::delete(
                                     head,

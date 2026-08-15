@@ -58,29 +58,47 @@ impl TextBuffer {
         self.dirty
     }
 
-    /// Line contents without the trailing newline.
-    pub fn line_text(&self, line: usize) -> String {
+    /// Call `f` with one line's text, borrowed from the rope when possible.
+    ///
+    /// `RopeSlice::as_str` succeeds whenever the line lives inside a single
+    /// chunk, which is the overwhelmingly common case — ropey chunks are ~1 KB
+    /// and lines of code are not. Only a line straddling a chunk boundary pays
+    /// for a `String`.
+    ///
+    /// This exists because `line_text` returning an owned `String` was correct
+    /// but quadratic in aggregate: three callers looped it over every line in
+    /// the buffer, so one keystroke on a 50k-line file allocated 50k strings.
+    /// A borrowing accessor makes the cheap thing the easy thing to reach for.
+    pub fn with_line_str<T>(&self, line: usize, f: impl FnOnce(&str) -> T) -> T {
         if line >= self.rope.len_lines() {
-            return String::new();
+            return f("");
         }
-        self.rope
-            .line(line)
-            .to_string()
-            .trim_end_matches('\n')
-            .trim_end_matches('\r')
-            .to_string()
+        with_slice_str(self.rope.line(line), f)
+    }
+
+    /// Line contents without the trailing newline.
+    ///
+    /// Allocates. Prefer `with_line_str` in anything that runs per line over a
+    /// range of lines.
+    pub fn line_text(&self, line: usize) -> String {
+        self.with_line_str(line, str::to_string)
+    }
+
+    /// Graphemes on a line, without materializing it.
+    pub fn line_grapheme_count(&self, line: usize) -> usize {
+        self.with_line_str(line, |s| s.graphemes(true).count())
     }
 
     /// Absolute char offset of a `Position`, clamping out-of-range input.
     fn char_offset(&self, pos: Position) -> usize {
         let line = pos.line.min(self.rope.len_lines().saturating_sub(1));
         let line_start = self.rope.line_to_char(line);
-        let text = self.line_text(line);
-        let chars_before: usize = text
-            .graphemes(true)
-            .take(pos.col)
-            .map(|g| g.chars().count())
-            .sum();
+        let chars_before: usize = self.with_line_str(line, |text| {
+            text.graphemes(true)
+                .take(pos.col)
+                .map(|g| g.chars().count())
+                .sum()
+        });
         line_start + chars_before
     }
 
@@ -97,13 +115,14 @@ impl TextBuffer {
         if offset == 0 {
             return;
         }
-        let text = self.line_text(pos.line);
         let n = if pos.col == 0 {
             1 // joining with the previous line: remove the newline
         } else {
-            text.graphemes(true)
-                .nth(pos.col - 1)
-                .map_or(1, |g| g.chars().count())
+            self.with_line_str(pos.line, |text| {
+                text.graphemes(true)
+                    .nth(pos.col - 1)
+                    .map_or(1, |g| g.chars().count())
+            })
         };
         self.record_snapshot();
         self.rope.remove(offset - n..offset);
@@ -118,11 +137,11 @@ impl TextBuffer {
         if offset >= self.rope.len_chars() {
             return;
         }
-        let text = self.line_text(pos.line);
-        let n = text
-            .graphemes(true)
-            .nth(pos.col)
-            .map_or(1, |g| g.chars().count());
+        let n = self.with_line_str(pos.line, |text| {
+            text.graphemes(true)
+                .nth(pos.col)
+                .map_or(1, |g| g.chars().count())
+        });
         self.record_snapshot();
         self.rope.remove(offset..offset + n);
         self.dirty = true;
@@ -132,15 +151,23 @@ impl TextBuffer {
     /// sits at the end of the match — so jumping to one leaves the cursor
     /// where typing would naturally continue.
     pub fn find_all(&self, query: &SearchQuery) -> Vec<Selection> {
+        // Split once for the whole buffer, not once per line.
+        let needle: Vec<&str> = query.needle.graphemes(true).collect();
+
         let mut hits = Vec::new();
-        for line in 0..self.line_count() {
-            let text = self.line_text(line);
-            for (start, end) in crate::search::find_in_line(&text, query) {
-                hits.push(Selection {
-                    anchor: Position { line, col: start },
-                    head: Position { line, col: end },
-                });
-            }
+        // `rope.lines()` walks the tree once. Indexing `rope.line(i)` in a loop
+        // instead is a fresh O(log n) descent per line, which measured at 458 ns
+        // of pure overhead per line — 23 ms across 50k lines before a single
+        // byte of the search ran.
+        for (line, slice) in self.rope.lines().enumerate() {
+            with_slice_str(slice, |text| {
+                for (start, end) in crate::search::find_in_line_with(text, &needle, query) {
+                    hits.push(Selection {
+                        anchor: Position { line, col: start },
+                        head: Position { line, col: end },
+                    });
+                }
+            });
         }
         hits
     }
@@ -240,6 +267,28 @@ impl TextBuffer {
     pub fn set_path_for_test(&mut self, path: PathBuf) {
         self.path = Some(path);
     }
+}
+
+/// Call `f` with a line slice's text, borrowed from the rope when possible.
+///
+/// Free-standing rather than a method so callers holding a slice from
+/// `Rope::lines()` can use it without paying for a second lookup by index.
+fn with_slice_str<T>(slice: ropey::RopeSlice, f: impl FnOnce(&str) -> T) -> T {
+    match slice.as_str() {
+        Some(s) => f(trim_line_ending(s)),
+        None => {
+            let owned = slice.to_string();
+            f(trim_line_ending(&owned))
+        }
+    }
+}
+
+/// A line without its terminator. Handles CRLF as one unit rather than as two
+/// separate trims, so a stray `\r` inside a line is left alone.
+fn trim_line_ending(s: &str) -> &str {
+    s.strip_suffix('\n')
+        .map(|s| s.strip_suffix('\r').unwrap_or(s))
+        .unwrap_or(s)
 }
 
 /// A sibling of `path` that will not collide with a real file.

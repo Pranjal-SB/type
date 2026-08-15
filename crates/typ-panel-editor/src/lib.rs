@@ -12,7 +12,6 @@ use typ_buffer::{
     Position, Selection, Selections, TextBuffer, display_to_grapheme_col, grapheme_to_display_col,
 };
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
-use unicode_segmentation::UnicodeSegmentation;
 
 pub mod actions;
 pub mod render;
@@ -111,7 +110,7 @@ impl EditorPanel {
     }
 
     pub(crate) fn line_grapheme_count(&self, line: usize) -> usize {
-        self.buffer.line_text(line).graphemes(true).count()
+        self.buffer.line_grapheme_count(line)
     }
 
     pub(crate) fn last_line(&self) -> usize {
@@ -141,20 +140,26 @@ impl EditorPanel {
     /// it — undo and redo can shrink the content the cursor was sitting in.
     pub(crate) fn clamp_cursor(&mut self) {
         let last_line = self.last_line();
-        let line_len: Vec<usize> = (0..=last_line)
-            .map(|i| self.line_grapheme_count(i))
-            .collect();
+        // Was a Vec of every line's length. On a 50k-line file that is 50k
+        // lookups to clamp a handful of positions, and undo called it on every
+        // press.
+        let buffer = &self.buffer;
         let clamp = |p: Position| {
             let line = p.line.min(last_line);
             Position {
                 line,
-                col: p.col.min(line_len[line]),
+                col: p.col.min(buffer.line_grapheme_count(line)),
             }
         };
-        self.selections.map_in_place(|s| Selection {
-            anchor: clamp(s.anchor),
-            head: clamp(s.head),
-        });
+        let clamped: Vec<Selection> = self
+            .selections
+            .iter()
+            .map(|s| Selection {
+                anchor: clamp(s.anchor),
+                head: clamp(s.head),
+            })
+            .collect();
+        self.set_selections(clamped);
         self.goal_col = None;
     }
 
