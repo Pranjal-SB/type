@@ -227,7 +227,19 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("ctrl+alt+down", Action::AddCursor(Direction::Forward)),
     ("ctrl+s", Action::Save),
     ("ctrl+q", Action::Quit),
-    ("tab", Action::FocusNext),
+    // Tab indents, because no code editor is usable otherwise. Focus moves to
+    // F6, which browsers and IDEs already use for pane cycling and which
+    // survives every terminal — Ctrl+Tab is bound too, but a terminal without
+    // the kitty keyboard protocol cannot tell it apart from a bare Tab.
+    //
+    // Consequence, accepted: Tab does nothing in the file tree, which has no
+    // indent concept and no named actions of its own yet. F6 works from both
+    // panels, so nothing became unreachable. Architecture §5 already records
+    // naming the tree's primitives as M4 work.
+    ("tab", Action::Indent),
+    ("shift+tab", Action::Outdent),
+    ("f6", Action::FocusNext),
+    ("ctrl+tab", Action::FocusNext),
     ("ctrl+f", Action::SearchOpen),
     ("f3", Action::SearchNext),
     ("shift+f3", Action::SearchPrevious),

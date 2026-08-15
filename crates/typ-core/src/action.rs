@@ -78,6 +78,8 @@ pub enum Action {
     Copy,
     Cut,
     Paste,
+    Indent,
+    Outdent,
 }
 
 impl Action {
@@ -213,6 +215,8 @@ impl Action {
         Action::Copy,
         Action::Cut,
         Action::Paste,
+        Action::Indent,
+        Action::Outdent,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -282,6 +286,8 @@ impl Action {
             Action::Copy => "copy",
             Action::Cut => "cut",
             Action::Paste => "paste",
+            Action::Indent => "indent",
+            Action::Outdent => "outdent",
         }
     }
 

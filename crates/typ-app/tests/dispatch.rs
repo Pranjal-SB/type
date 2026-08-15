@@ -52,12 +52,31 @@ fn a_control_chord_with_no_binding_types_nothing() {
 }
 
 #[test]
-fn tab_cycles_focus_rather_than_reaching_the_panel() {
+fn f6_cycles_focus() {
+    // Tab used to do this and now indents — no code editor is usable otherwise.
+    // F6 is what browsers and IDEs use for pane cycling and, unlike Ctrl+Tab, a
+    // terminal can always report it.
     let mut app = app_with_file("focus");
     assert_eq!(app.focused_name(), "editor");
-    app.handle_chord(chord(KeyCode::Tab, KeyModifiers::NONE))
+    app.handle_chord(chord(KeyCode::F(6), KeyModifiers::NONE))
         .unwrap();
     assert_eq!(app.focused_name(), "tree");
+}
+
+#[test]
+fn tab_indents_in_the_editor_rather_than_moving_focus() {
+    let mut app = app_with_file("tab-indents");
+    assert_eq!(app.focused_name(), "editor");
+
+    app.handle_chord(chord(KeyCode::Tab, KeyModifiers::NONE))
+        .unwrap();
+
+    assert_eq!(app.editor_mut().line_text(0), "    fn main() {}");
+    assert_eq!(
+        app.focused_name(),
+        "editor",
+        "Tab must not also move focus, or the indent lands and the panel changes underneath it"
+    );
 }
 
 #[test]
