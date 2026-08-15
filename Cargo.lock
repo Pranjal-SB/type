@@ -1495,10 +1495,12 @@ dependencies = [
  "anyhow",
  "crossterm",
  "ratatui",
+ "typ-buffer",
  "typ-core",
  "typ-panel-editor",
  "typ-panel-tree",
  "typ-registry",
+ "unicode-segmentation",
 ]
 
 [[package]]

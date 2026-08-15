@@ -3632,7 +3632,7 @@ git commit -m "feat(app): dispatch keys through the keymap into named actions"
     is_replace_flow}`
   - `App::prompt(&self) -> Option<&Prompt>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-app/tests/prompt.rs`:
 
@@ -3817,13 +3817,13 @@ fn the_status_bar_shows_the_prompt_while_it_is_open() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-app --test prompt --test search_flow`
 
 Expected: FAIL — `typ_app::prompt` does not exist.
 
-- [ ] **Step 3: Write the prompt**
+- [x] **Step 3: Write the prompt**
 
 `crates/typ-app/src/prompt.rs`:
 
@@ -3921,7 +3921,7 @@ impl Prompt {
 }
 ```
 
-- [ ] **Step 4: Wire it into the app**
+- [x] **Step 4: Wire it into the app**
 
 Add to `App`: `prompt: Option<Prompt>`, `last_query: Option<SearchQuery>`. Add the accessor
 `pub fn prompt(&self) -> Option<&Prompt>`.
@@ -4090,7 +4090,7 @@ Add to `App`: `prompt: Option<Prompt>`, `last_query: Option<SearchQuery>`. Add t
     }
 ```
 
-- [ ] **Step 5: Add the editor methods the app needs**
+- [x] **Step 5: Add the editor methods the app needs**
 
 The app must not reach into `EditorPanel`'s buffer directly — that is the `RenderContext`
 rule pointing the other way. Add to `EditorPanel`:
@@ -4131,7 +4131,7 @@ flag, and the `PromptKind::Search if prompt.is_replace_flow()` arm above banks t
 switches the label to `Replace with:`, and leaves the prompt open. A separate prompt type per
 question would double the state for no gain.
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-app`
 
@@ -4140,7 +4140,49 @@ Expected: PASS — 7 prompt tests, 8 search-flow tests, and everything before.
 If `typing_in_the_prompt_does_not_reach_the_buffer` fails with the text in the file, the
 prompt branch is below the keymap lookup in `handle_chord` instead of above it.
 
-- [ ] **Step 7: Commit**
+Actual: PASS, 273 across the workspace, clippy clean.
+
+**Five deviations. One is a bug the plan's own tests catch; three are M2.1 rot.**
+
+1. **`jump_to_match` used `>` where the plan's own test demands `>=`.** With a strict
+   comparison, opening a search at the top of a file skips a match that starts at the cursor:
+   `enter_jumps_to_the_first_match_after_the_cursor` expects line 0 and gets line 1, and
+   `search_next_walks_through_the_matches_and_wraps` inverts. Verified by flipping the
+   operator back and re-running rather than asserted — both fail, both pass with `>=`. Safe
+   because a jump leaves the cursor at the match's *end*, so repeating never re-finds the
+   match it is sitting on.
+
+2. **`replace_all` called two APIs M2.1 removed.** `begin_edit_group()` now takes an
+   `EditKind` and the selections — it passes `Other`, so a replace-all is always its own undo
+   step and never folds into typing either side of it. And `clamp_selections` was deleted in
+   M2.1 when undo stopped needing it; reinstated as a private method with one caller, because
+   a replace really does rewrite text under selections that were never recorded anywhere.
+   Undo and redo still need no clamp: their selections were recorded against the very rope
+   being restored.
+
+3. **`typ-app` did not depend on `typ-buffer`.** `SearchQuery` and `Selection` cross that
+   boundary now. Added, along with `unicode-segmentation` for the prompt's grapheme-wise
+   backspace.
+
+4. **`perform_app_action` returns `bool` since Task 12**, so the `SearchNext` early return is
+   `return true` — `return Ok(())` no longer type-checks. Worth noting because the wrong one
+   would have fallen through to the raw-key tier.
+
+5. **The plan's own prompt test did not compile.**
+   `prompt.set_pending_needle(prompt.take_input())` needs a mutable borrow inside a mutable
+   borrow; two-phase borrows do not stretch that far. Split into two statements.
+
+**Two tests added**, both for holes in the plan's dispatcher rather than in its prose:
+`a_chord_typed_into_the_prompt_is_not_treated_as_text` (the plan's `KeyCode::Char(c)` arm has
+no modifier guard, so Ctrl+F while searching would type an `f` into the needle) and
+`search_next_before_any_search_says_so`.
+
+**Recorded, not fixed:** `buffer_find_all` scans the whole buffer, ~10 ms on a 50k-line file.
+That is fine for answering Enter and too slow for a search box that highlights as you type.
+The ceiling is a `ponytail:` comment on the method pointing at `typ-buffer/tests/perf.rs`.
+Incremental highlight-as-you-type is not in M2.
+
+- [x] **Step 7: Commit**
 
 ```bash
 git add crates/typ-app/src crates/typ-app/tests/prompt.rs crates/typ-app/tests/search_flow.rs crates/typ-panel-editor/src

@@ -9,7 +9,8 @@ use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Paragraph, Widget};
 use typ_buffer::{
-    Position, Selection, Selections, TextBuffer, display_to_grapheme_col, grapheme_to_display_col,
+    EditKind, Position, SearchQuery, Selection, Selections, TextBuffer, display_to_grapheme_col,
+    grapheme_to_display_col,
 };
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
 
@@ -169,6 +170,78 @@ impl EditorPanel {
     /// so fall back to a screenful rather than moving nowhere.
     pub(crate) fn page(&self) -> usize {
         self.height.max(1)
+    }
+
+    /// Every match in the buffer.
+    ///
+    /// The app asks through here rather than reaching into `self.buffer`: a
+    /// panel's internals are not application state, which is the same rule
+    /// `RenderContext` enforces pointing the other way.
+    ///
+    /// ponytail: this scans the whole buffer, which is ~10 ms on a 50k-line
+    /// file — fine for answering Enter, too slow to run on every keystroke.
+    /// An incremental search box scans the viewport first and completes off
+    /// the render thread; see `typ-buffer/tests/perf.rs`.
+    pub fn buffer_find_all(&self, query: &SearchQuery) -> Vec<Selection> {
+        self.buffer.find_all(query)
+    }
+
+    /// Select a range and scroll it into view.
+    pub fn select_range(&mut self, selection: Selection) {
+        self.selections.set_single(selection);
+        self.goal_col = None;
+        self.scroll_to_cursor();
+    }
+
+    /// Replace every match, as one undo step. Returns how many.
+    pub fn replace_all(&mut self, query: &SearchQuery, replacement: &str) -> usize {
+        let hits = self.buffer.find_all(query);
+        if hits.is_empty() {
+            return 0;
+        }
+
+        // `Other`, so a replace-all is always its own undo step and never folds
+        // into a run of typing that happened either side of it.
+        self.buffer
+            .begin_edit_group(EditKind::Other, &self.selections);
+        // Backwards, so each replacement leaves the earlier hits' positions
+        // untouched — the same reason multi-caret edits run in reverse.
+        for hit in hits.iter().rev() {
+            let (start, end) = hit.range();
+            self.buffer.replace_range(start, end, replacement);
+        }
+        self.buffer.end_edit_group();
+
+        self.clamp_selections();
+        hits.len()
+    }
+
+    /// Pull every selection back inside the text.
+    ///
+    /// Only replace-all needs this. Undo and redo restore selections that were
+    /// recorded against the very rope being restored, so they are in range by
+    /// construction; a replace rewrites text underneath selections that were
+    /// never recorded anywhere.
+    fn clamp_selections(&mut self) {
+        let last_line = self.last_line();
+        let buffer = &self.buffer;
+        let clamp = |p: Position| {
+            let line = p.line.min(last_line);
+            Position {
+                line,
+                col: p.col.min(buffer.line_grapheme_count(line)),
+            }
+        };
+        let clamped: Vec<Selection> = self
+            .selections
+            .iter()
+            .map(|s| Selection {
+                anchor: clamp(s.anchor),
+                head: clamp(s.head),
+            })
+            .collect();
+        self.set_selections(clamped);
+        self.goal_col = None;
     }
 }
 

@@ -6,10 +6,15 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
-use typ_core::{Action, KeyChord, Keymap, Panel, PanelEvent, RenderContext, ThemeColors};
+use typ_buffer::SearchQuery;
+use typ_core::{
+    Action, Direction, KeyChord, Keymap, Panel, PanelEvent, RenderContext, ThemeColors,
+};
 use typ_panel_editor::EditorPanel;
 use typ_panel_tree::TreePanel;
 use typ_registry::Registry;
+
+use crate::prompt::{Prompt, PromptKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -30,6 +35,11 @@ pub struct App {
     /// A quit was refused because a panel had something to confirm. The next
     /// quit goes through.
     quit_pending: bool,
+    /// The status-bar prompt, when one is open. It owns the keyboard while it
+    /// is.
+    prompt: Option<Prompt>,
+    /// What F3 repeats.
+    last_query: Option<SearchQuery>,
 }
 
 /// Shown when there is nothing more urgent to say. Discoverability is part of
@@ -48,6 +58,8 @@ impl App {
             quit: false,
             status: None,
             quit_pending: false,
+            prompt: None,
+            last_query: None,
         })
     }
 
@@ -57,6 +69,11 @@ impl App {
 
     /// Left half of the status bar: whatever needs saying, else the hint.
     pub fn status_left(&self) -> String {
+        // The prompt outranks any message: while it is open it is the only
+        // thing the user is looking at.
+        if let Some(prompt) = &self.prompt {
+            return format!("{} {}", prompt.label(), prompt.input());
+        }
         self.status.clone().unwrap_or_else(|| HINT.to_string())
     }
 
@@ -169,6 +186,13 @@ impl App {
     /// until then the raw-key fallback is four lines and invents no vocabulary
     /// that would have to be guessed at now and lived with later.
     pub fn handle_chord(&mut self, chord: KeyChord) -> Result<()> {
+        // An open prompt owns the keyboard, ahead of everything. Routing
+        // through the keymap first would let a chord bound to an editing action
+        // fire while the user is typing a search term.
+        if self.prompt.is_some() {
+            return self.handle_prompt_chord(chord);
+        }
+
         // Every key except Ctrl+Q retires the current status message and any
         // quit it left pending, so a confirmation is answered by the very next
         // keystroke or not at all.
@@ -203,6 +227,142 @@ impl App {
         self.apply(events)
     }
 
+    pub fn prompt(&self) -> Option<&Prompt> {
+        self.prompt.as_ref()
+    }
+
+    /// Keys while a prompt is open.
+    fn handle_prompt_chord(&mut self, chord: KeyChord) -> Result<()> {
+        // Decide first, mutate second. Holding `self.prompt.as_mut()` across an
+        // assignment to `self.prompt` does not compile, and threading the
+        // borrow through every arm is worse than naming the outcome.
+        enum Outcome {
+            Stay,
+            Close,
+            Search(String),
+            AskReplacement(String),
+            Replace { needle: String, replacement: String },
+        }
+
+        // A chord is never text, in the prompt exactly as in the buffer —
+        // otherwise Ctrl+F while searching types an "f" into the needle.
+        let is_chorded = chord
+            .raw
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
+
+        let Some(prompt) = self.prompt.as_mut() else {
+            return Ok(());
+        };
+
+        let outcome = match chord.raw.code {
+            KeyCode::Esc => Outcome::Close,
+            KeyCode::Backspace if !is_chorded => {
+                prompt.delete_backward();
+                Outcome::Stay
+            }
+            KeyCode::Char(c) if !is_chorded => {
+                prompt.insert_char(c);
+                Outcome::Stay
+            }
+            KeyCode::Enter => {
+                let input = prompt.take_input();
+                match prompt.kind() {
+                    // Ctrl+H's first Enter banks the needle and asks the second
+                    // question; the prompt stays open across both.
+                    PromptKind::Search if prompt.is_replace_flow() => {
+                        Outcome::AskReplacement(input)
+                    }
+                    PromptKind::Search => Outcome::Search(input),
+                    PromptKind::Replace => Outcome::Replace {
+                        needle: prompt.pending_needle().unwrap_or_default().to_string(),
+                        replacement: input,
+                    },
+                }
+            }
+            _ => Outcome::Stay,
+        };
+
+        match outcome {
+            Outcome::Stay => {}
+            Outcome::Close => self.prompt = None,
+            Outcome::Search(needle) => {
+                self.prompt = None;
+                self.run_search(needle);
+            }
+            Outcome::AskReplacement(needle) => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.set_pending_needle(needle);
+                    prompt.become_replace();
+                }
+            }
+            Outcome::Replace {
+                needle,
+                replacement,
+            } => {
+                self.prompt = None;
+                self.run_replace_all(&needle, &replacement);
+            }
+        }
+        Ok(())
+    }
+
+    /// Select the first match at or after the cursor, wrapping.
+    fn run_search(&mut self, needle: String) {
+        if needle.is_empty() {
+            return;
+        }
+        // Case-insensitive unless the user typed a capital — "smart case",
+        // which is what makes a lowercase search find everything without a
+        // setting, and a capitalised one mean it.
+        let case_sensitive = needle.chars().any(char::is_uppercase);
+        let query = SearchQuery::new(needle, case_sensitive);
+        self.last_query = Some(query.clone());
+        self.jump_to_match(&query, Direction::Forward);
+    }
+
+    fn jump_to_match(&mut self, query: &SearchQuery, direction: Direction) {
+        let hits = self.editor.buffer_find_all(query);
+        if hits.is_empty() {
+            self.status = Some(format!("No matches for {}", query.needle));
+            return;
+        }
+        let from = self.editor.cursor();
+        let next = match direction {
+            // `>=`, not `>`: opening a search with the cursor at the top of the
+            // file must find a match that starts there. Jumping leaves the
+            // cursor at the match's *end*, so repeating never re-finds the one
+            // it is sitting on.
+            Direction::Forward => hits
+                .iter()
+                .find(|hit| hit.range().0 >= from)
+                .or_else(|| hits.first()),
+            Direction::Backward => hits
+                .iter()
+                .rev()
+                .find(|hit| hit.range().1 < from)
+                .or_else(|| hits.last()),
+        };
+        if let Some(hit) = next.copied() {
+            self.editor.select_range(hit);
+            self.status = Some(format!("{} matches", hits.len()));
+        }
+    }
+
+    fn run_replace_all(&mut self, needle: &str, replacement: &str) {
+        if needle.is_empty() {
+            return;
+        }
+        let case_sensitive = needle.chars().any(char::is_uppercase);
+        let query = SearchQuery::new(needle.to_string(), case_sensitive);
+        let count = self.editor.replace_all(&query, replacement);
+        self.status = Some(match count {
+            0 => format!("No matches for {needle}"),
+            1 => "1 replacement".to_string(),
+            n => format!("{n} replacements"),
+        });
+    }
+
     /// Actions no panel claimed. Returns whether the app handled it.
     ///
     /// The bool is what lets an unclaimed action fall through to the raw key
@@ -217,6 +377,24 @@ impl App {
                 // A save that fails silently is how work gets lost.
                 Err(e) => self.status = Some(format!("Save failed: {e:#}")),
             },
+            Action::SearchOpen => self.prompt = Some(Prompt::new(PromptKind::Search)),
+            Action::ReplaceOpen => {
+                let mut prompt = Prompt::new(PromptKind::Search);
+                prompt.become_replace_after_needle();
+                self.prompt = Some(prompt);
+            }
+            Action::SearchNext | Action::SearchPrevious => {
+                let Some(query) = self.last_query.clone() else {
+                    self.status = Some("Nothing to search for yet".to_string());
+                    return true;
+                };
+                let direction = if action == Action::SearchNext {
+                    Direction::Forward
+                } else {
+                    Direction::Backward
+                };
+                self.jump_to_match(&query, direction);
+            }
             _ => return false,
         }
         true
