@@ -46,8 +46,11 @@ roadmap.
 A status bar carries messages, the open file, and the cursor position. Quitting with unsaved
 changes asks before discarding them.
 
+Undo takes back a run of typing in one press rather than one character at a time, and puts
+the cursor back where the edit was made.
+
 - [Architecture and design rationale](docs/design/architecture.md)
-- [Current implementation plan](docs/plans/m0-m1-foundation.md)
+- [Current implementation plan](docs/plans/m2-editing.md)
 
 ## Build
 
