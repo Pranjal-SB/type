@@ -68,6 +68,16 @@ fn real_main() -> Result<()> {
     };
 
     let mut app = App::new(&root)?;
+
+    // A broken keys.toml warns and starts on the defaults rather than refusing
+    // to open — otherwise the one tool that could fix the typo is the one the
+    // typo locked you out of.
+    let (keymap, warning) = typ_app::config::load_keymap(typ_app::config::config_path().as_deref());
+    app.set_keymap(keymap);
+    if let Some(warning) = warning {
+        app.notify(warning);
+    }
+
     if let Some(f) = file {
         app.open_path(&f)?;
     }

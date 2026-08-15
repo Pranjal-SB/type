@@ -231,6 +231,15 @@ impl App {
         self.prompt.as_ref()
     }
 
+    /// Say something in the status bar.
+    ///
+    /// Startup warnings go here rather than to stderr: stderr is invisible once
+    /// the alternate screen is up, so a config complaint printed there is a
+    /// complaint nobody reads.
+    pub fn notify(&mut self, message: String) {
+        self.status = Some(message);
+    }
+
     /// Keys while a prompt is open.
     fn handle_prompt_chord(&mut self, chord: KeyChord) -> Result<()> {
         // Decide first, mutate second. Holding `self.prompt.as_mut()` across an

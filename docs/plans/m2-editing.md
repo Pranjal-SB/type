@@ -4203,7 +4203,7 @@ git commit -m "feat(app): search and replace through a status-bar prompt"
   - `typ_app::config::config_path() -> Option<PathBuf>`
   - `typ_app::config::load_keymap(path: Option<&Path>) -> (Keymap, Option<String>)`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-app/tests/config.rs`:
 
@@ -4283,13 +4283,13 @@ fn an_unreadable_config_warns_with_the_path_in_the_message() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-app --test config`
 
 Expected: FAIL — `typ_app::config` does not exist.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 `crates/typ-app/src/config.rs`:
 
@@ -4344,7 +4344,7 @@ pub fn load_keymap(path: Option<&Path>) -> (Keymap, Option<String>) {
 }
 ```
 
-- [ ] **Step 4: Load it at startup**
+- [x] **Step 4: Load it at startup**
 
 In `crates/typ/src/main.rs`, after building the `App`:
 
@@ -4362,13 +4362,27 @@ In `crates/typ/src/main.rs`, after building the `App`:
 
 Add `App::notify(&mut self, message: String)` setting `self.status`.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-app --test config`
 
 Expected: PASS, 5 tests.
 
-- [ ] **Step 6: Document the file format**
+Actual: PASS, 7 tests, 280 across the workspace, clippy clean. The plan's code compiled as
+written — the first task this milestone where that was true.
+
+Two tests added beyond the plan's five, both covering guarantees the config's own doc
+comments claim but nothing was checking:
+
+- `a_config_that_only_unbinds_leaves_everything_else_alone` — freeing a chord the terminal
+  or window manager wants is the reason unbinding exists, and it must not take the rest of
+  the keymap with it.
+- `one_bad_line_rejects_the_whole_file_rather_than_half_applying_it` — `merge_toml` stages
+  before it applies precisely so a broken file changes nothing, and that is the property
+  worth pinning: a half-applied keymap is worse than a rejected one because the user cannot
+  tell which half took effect.
+
+- [x] **Step 6: Document the file format**
 
 Add to `README.md`, after the key tables:
 
@@ -4392,7 +4406,7 @@ A binding whose action name is unknown is reported in the status bar at startup,
 defaults are kept — a typo here never stops the editor opening.
 ````
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add crates/typ-app/src/config.rs crates/typ-app/src/lib.rs crates/typ-app/tests/config.rs crates/typ/src/main.rs README.md
