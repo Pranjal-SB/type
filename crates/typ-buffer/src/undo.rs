@@ -50,6 +50,15 @@ pub struct Snapshot {
 ///
 /// ponytail: pausing mid-word for ten minutes without moving still coalesces.
 /// If that ever bites, a timer goes beside this rule, not instead of it.
+/// How many undo steps are kept.
+///
+/// vim's `undolevels` default, and there is no reason to be cleverer until
+/// someone measures a session where it bites. Structural sharing makes each
+/// snapshot cheap but not free — every one pins the rope nodes it replaced, so
+/// an uncapped stack is an uncapped retention of every version of the file for
+/// as long as the editor is open.
+pub const MAX_UNDO_STEPS: usize = 1000;
+
 #[derive(Default)]
 pub struct History {
     undo: Vec<Snapshot>,
@@ -73,7 +82,20 @@ impl History {
             rope: before,
             selections: selections.clone(),
         });
+        // Forget the oldest step, never the newest. `remove(0)` is O(n) on a
+        // 1000-element Vec of cheap clones and runs once per *step*, not per
+        // keystroke — a VecDeque would trade that for a less obvious type on
+        // every other line of this file.
+        if self.undo.len() > MAX_UNDO_STEPS {
+            self.undo.remove(0);
+        }
         self.open_run = Some(kind);
+    }
+
+    /// How many steps are on the undo stack. For tests and for a future status
+    /// segment; nothing in the editor branches on it.
+    pub fn depth(&self) -> usize {
+        self.undo.len()
     }
 
     /// End the open run, so the next edit starts a new undo step.

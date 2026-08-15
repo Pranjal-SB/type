@@ -256,6 +256,11 @@ impl TextBuffer {
         self.group_depth = self.group_depth.saturating_sub(1);
     }
 
+    /// How many undo steps are currently held.
+    pub fn undo_depth(&self) -> usize {
+        self.history.depth()
+    }
+
     /// End the current undo run. The next edit starts a new step.
     pub fn undo_boundary(&mut self) {
         self.history.boundary();
