@@ -55,6 +55,11 @@ impl EditorPanel {
         Ok(Self::new(TextBuffer::from_path(path)?))
     }
 
+    /// An empty editor over a file that does not exist yet.
+    pub fn new_at(path: &Path) -> Self {
+        Self::new(TextBuffer::new_at(path))
+    }
+
     fn new(buffer: TextBuffer) -> Self {
         Self {
             buffer,

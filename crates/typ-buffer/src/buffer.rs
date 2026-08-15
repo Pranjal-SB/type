@@ -34,6 +34,23 @@ impl TextBuffer {
         }
     }
 
+    /// An empty buffer that will be written to `path` when saved.
+    ///
+    /// A sibling of `from_path` rather than a flag on it, so "read this file"
+    /// keeps meaning exactly that and never quietly invents one.
+    ///
+    /// Not dirty: nothing has been typed. Marking it dirty would make Ctrl+Q
+    /// challenge the user over a file they never edited.
+    pub fn new_at(path: &Path) -> Self {
+        Self {
+            rope: Rope::new(),
+            path: Some(path.to_path_buf()),
+            dirty: false,
+            history: History::default(),
+            group_depth: 0,
+        }
+    }
+
     pub fn from_path(path: &Path) -> Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;

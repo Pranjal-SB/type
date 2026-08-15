@@ -191,7 +191,14 @@ impl App {
         // The registry decides the handler. There is one content panel today,
         // but the lookup runs from day one so adding viewers never touches this.
         let _handler = self.registry.handler_for(path);
-        self.editor = EditorPanel::from_path(path)?;
+        // A path with no file behind it is one to create, not an error. `typ
+        // notes.md` and opening a not-yet-existing file from the tree are the
+        // same operation, so they take the same branch.
+        self.editor = if path.exists() {
+            EditorPanel::from_path(path)?
+        } else {
+            EditorPanel::new_at(path)
+        };
         self.focus = Focus::Editor;
         self.open_pending = None;
         Ok(())

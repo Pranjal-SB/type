@@ -128,3 +128,16 @@ fn saving_clears_the_guard() {
         "saving answers the question, so the open proceeds"
     );
 }
+
+#[test]
+fn opening_a_path_that_does_not_exist_yet_starts_an_empty_buffer() {
+    let dir = fixture("new-file");
+    let mut app = App::new(&dir).unwrap();
+
+    let path = dir.join("not-yet.rs");
+    app.open_path(&path).unwrap();
+
+    assert_eq!(app.editor_title(), "not-yet.rs");
+    assert_eq!(app.editor_mut().line_text(0), "");
+    assert!(!path.exists(), "opening must not create the file");
+}
