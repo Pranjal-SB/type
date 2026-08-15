@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Rect;
 use typ_app::App;
 use typ_app::layout::split_frame;
-use typ_core::{KeyChord, NotifyLevel, Panel, PanelEvent};
+use typ_core::{KeyChord, NotifyLevel, PanelEvent};
 
 fn fixture(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join("typ-status-test").join(name);
@@ -21,11 +21,13 @@ fn app_with_edits(name: &str) -> App {
     let dir = fixture(name);
     let mut app = App::new(&dir).unwrap();
     app.open_path(&dir.join("hello.rs")).unwrap();
-    app.editor_mut()
-        .handle_key(KeyChord::from_event(KeyEvent::new(
-            KeyCode::Char('x'),
-            KeyModifiers::NONE,
-        )));
+    // Through the dispatcher, the way a real keypress arrives — the editor has
+    // no raw-key behavior of its own any more.
+    app.handle_chord(KeyChord::from_event(KeyEvent::new(
+        KeyCode::Char('x'),
+        KeyModifiers::NONE,
+    )))
+    .unwrap();
     app
 }
 
@@ -104,11 +106,11 @@ fn the_status_bar_reports_the_cursor_position_one_based() {
     let dir = fixture("position");
     let mut app = App::new(&dir).unwrap();
     app.open_path(&dir.join("hello.rs")).unwrap();
-    app.editor_mut()
-        .handle_key(KeyChord::from_event(KeyEvent::new(
-            KeyCode::Right,
-            KeyModifiers::NONE,
-        )));
+    app.handle_chord(KeyChord::from_event(KeyEvent::new(
+        KeyCode::Right,
+        KeyModifiers::NONE,
+    )))
+    .unwrap();
     assert_eq!(app.status_right(), "hello.rs  1:2");
 }
 

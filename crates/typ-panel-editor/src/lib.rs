@@ -2,7 +2,7 @@ use std::any::Any;
 use std::path::Path;
 
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -170,19 +170,6 @@ impl EditorPanel {
     pub(crate) fn page(&self) -> usize {
         self.height.max(1)
     }
-
-    fn move_vertical(&mut self, delta: i32) {
-        let cursor = self.cursor();
-        let goal = self.goal_col.unwrap_or_else(|| {
-            grapheme_to_display_col(&self.buffer.line_text(cursor.line), cursor.col, TAB_WIDTH)
-        });
-        let next = (cursor.line as i64 + delta as i64).clamp(0, self.last_line() as i64) as usize;
-        let col = display_to_grapheme_col(&self.buffer.line_text(next), goal, TAB_WIDTH);
-        self.selections
-            .set_single(Selection::caret(Position { line: next, col }));
-        self.goal_col = Some(goal);
-        self.scroll_to_cursor();
-    }
 }
 
 impl Panel for EditorPanel {
@@ -255,127 +242,15 @@ impl Panel for EditorPanel {
         Some((inner.x + col as u16, inner.y + row as u16))
     }
 
-    fn handle_key(&mut self, chord: KeyChord) -> Vec<PanelEvent> {
-        // Chorded bindings are matched first: without this, Ctrl+Z arrives as
-        // KeyCode::Char('z') and gets typed into the buffer.
-        match chord.canonical.as_str() {
-            "ctrl+z" => {
-                if let Some(restored) = self.buffer.undo(&self.selections) {
-                    self.selections = restored;
-                    self.goal_col = None;
-                }
-                return vec![PanelEvent::NeedsRedraw];
-            }
-            "ctrl+y" => {
-                if let Some(restored) = self.buffer.redo(&self.selections) {
-                    self.selections = restored;
-                    self.goal_col = None;
-                }
-                return vec![PanelEvent::NeedsRedraw];
-            }
-            _ => {}
-        }
-        if chord
-            .raw
-            .modifiers
-            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
-        {
-            return Vec::new();
-        }
-
-        match chord.raw.code {
-            KeyCode::Enter => {
-                let at = self.cursor();
-                self.buffer.insert_char(at, '\n');
-                self.set_caret(Position {
-                    line: at.line + 1,
-                    col: 0,
-                });
-            }
-            KeyCode::Delete => {
-                self.buffer.delete_after(self.cursor());
-                self.goal_col = None;
-            }
-            KeyCode::Home => {
-                let at = self.cursor();
-                self.set_caret(Position {
-                    line: at.line,
-                    col: 0,
-                });
-            }
-            KeyCode::End => {
-                let at = self.cursor();
-                let col = self.line_grapheme_count(at.line);
-                self.set_caret(Position { line: at.line, col });
-            }
-            KeyCode::PageDown => self.move_vertical(self.page() as i32),
-            KeyCode::PageUp => self.move_vertical(-(self.page() as i32)),
-            KeyCode::Char(c) => {
-                let at = self.cursor();
-                self.buffer.insert_char(at, c);
-                self.set_caret(Position {
-                    line: at.line,
-                    col: at.col + 1,
-                });
-            }
-            KeyCode::Backspace => {
-                let at = self.cursor();
-                if at.col > 0 {
-                    self.buffer.delete_before(at);
-                    self.set_caret(Position {
-                        line: at.line,
-                        col: at.col - 1,
-                    });
-                } else if at.line > 0 {
-                    // Joining lines: the cursor lands where the two now meet.
-                    let joined_at = self.line_grapheme_count(at.line - 1);
-                    self.buffer.delete_before(at);
-                    self.set_caret(Position {
-                        line: at.line - 1,
-                        col: joined_at,
-                    });
-                }
-            }
-            KeyCode::Left => {
-                let at = self.cursor();
-                let next = if at.col > 0 {
-                    Position {
-                        line: at.line,
-                        col: at.col - 1,
-                    }
-                } else if at.line > 0 {
-                    Position {
-                        line: at.line - 1,
-                        col: self.line_grapheme_count(at.line - 1),
-                    }
-                } else {
-                    at
-                };
-                self.set_caret(next);
-            }
-            KeyCode::Right => {
-                let at = self.cursor();
-                let next = if at.col < self.line_grapheme_count(at.line) {
-                    Position {
-                        line: at.line,
-                        col: at.col + 1,
-                    }
-                } else if at.line < self.last_line() {
-                    Position {
-                        line: at.line + 1,
-                        col: 0,
-                    }
-                } else {
-                    at
-                };
-                self.set_caret(next);
-            }
-            KeyCode::Up => self.move_vertical(-1),
-            KeyCode::Down => self.move_vertical(1),
-            _ => {}
-        }
-        self.scroll_to_cursor();
-        vec![PanelEvent::NeedsRedraw]
+    /// The editor has no raw-key behavior left.
+    ///
+    /// Every key that does anything here is a keymap row resolving to an
+    /// `Action`, which is the invariant the whole milestone exists to establish:
+    /// a primitive reachable only from a key handler is invisible to the
+    /// command palette and to the vim layer. The M1-era arms that used to live
+    /// here were the last thing violating it.
+    fn handle_key(&mut self, _chord: KeyChord) -> Vec<PanelEvent> {
+        Vec::new()
     }
 
     fn handle_mouse(&mut self, event: MouseEvent, panel_area: Rect) -> Vec<PanelEvent> {

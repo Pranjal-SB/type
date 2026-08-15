@@ -3380,7 +3380,7 @@ git commit -m "feat(editor): horizontal scrolling that never splits a wide graph
   - `App::keymap(&self) -> &Keymap`, `App::set_keymap(&mut self, keymap: Keymap)`
   - `App::handle_chord(&mut self, chord: KeyChord) -> anyhow::Result<()>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-app/tests/dispatch.rs`:
 
@@ -3489,13 +3489,13 @@ fn the_keymap_is_readable_for_help_text() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-app --test dispatch`
 
 Expected: FAIL — no method `handle_chord`, `set_keymap`, or `keymap`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add `keymap: Keymap` to `App`, initialised with `Keymap::default_bindings()`, plus the
 accessors. Then the dispatcher, which is the piece that replaces the `match key.code` block
@@ -3567,7 +3567,7 @@ In `run.rs`, the key branch collapses to:
             }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-app`
 
@@ -3577,7 +3577,38 @@ The frame tests may need their expected status hint updated if `HINT` changed; i
 have. If `save_reports_through_the_status_bar` fails with `None`, the editor panel is
 claiming `Action::Save` — it must not implement that arm.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 256 across the workspace, clippy clean, release binary runs and still exits
+non-zero on a bad path.
+
+**One plan defect, caught before writing the dispatcher, and it would have killed the file
+tree.** The plan's `handle_chord` ends at "the app did not want it either", and `_ => {}` in
+`perform_app_action` swallows the action silently. But the tree navigates entirely on raw
+`Up`/`Down`/`Enter`/`Left`/`Right`, and the keymap binds all five to editor actions. Every
+one would have been eaten and the tree would have gone completely dead — with the plan's nine
+tests all passing, because not one of them presses an arrow key with the tree focused.
+
+The fix is a fourth tier: keymap action → panel `apply_action` → app → panel raw
+`handle_key`. `perform_app_action` returns `bool` rather than `Result<()>` so "nobody claimed
+this" is a value the dispatcher can branch on instead of a case that looks identical to
+success. Two regression tests added — arrows moving the tree selection, and Enter opening a
+file from it.
+
+The honest fix is naming the tree's primitives as actions the way the editor's are;
+"activate the selected entry" has no name today. That is a command-surface question and it
+belongs with the palette at M4. Recorded as a ceiling in the code rather than guessed at now.
+
+**Two further deviations.**
+
+1. **Three test files had to move off `handle_key`** — `editor.rs`, `keys.rs`, and helpers in
+   `frame.rs` and `status.rs` drove the editor through the legacy arms, so they went green
+   against a method that now returns an empty vector. Restated as actions, which is the path
+   a real keypress takes. `keys.rs` is now about what an action does once it arrives; which
+   chord reaches it is `typ-app`'s dispatch tests.
+2. **Two tests added for the thing the milestone is for** — `multi_cursor_reaches_the_keyboard`
+   and `shift_arrow_extends_a_selection_from_the_keyboard`. Ten tasks of multi-cursor work
+   existed with nothing asserting a keypress could reach any of it.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-app/src crates/typ-app/tests/dispatch.rs
