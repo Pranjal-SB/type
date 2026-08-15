@@ -8,6 +8,8 @@
 
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::layout::Rect;
 use typ_buffer::{Position, Selection, clipboard};
 use typ_core::{Action, Panel};
 use typ_panel_editor::EditorPanel;
@@ -191,6 +193,94 @@ fn copy_with_an_empty_selection_leaves_the_register_alone() {
         clipboard::register(),
         "previous",
         "copying nothing must not wipe what was already there"
+    );
+}
+
+// Invariant 8: mouse and keyboard are peers, and every interaction gets a test
+// both ways. A keyboard-only clipboard breaks it — right-click to copy and
+// middle-click to paste are the mouse half.
+
+const AREA: Rect = Rect {
+    x: 0,
+    y: 0,
+    width: 40,
+    height: 10,
+};
+
+fn click(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+    MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    }
+}
+
+/// The text area sits inside the panel border, so a click at text (0,0) is a
+/// screen cell at (1,1).
+fn text_cell(col: u16, line: u16) -> (u16, u16) {
+    (col + 1, line + 1)
+}
+
+#[test]
+fn right_clicking_inside_a_selection_copies_it() {
+    let _guard = exclusive();
+    let mut p = EditorPanel::from_str("hello world\n");
+    p.set_selections_for_test(vec![sel((0, 0), (0, 5))]);
+    clipboard::set_register("previous");
+
+    let (x, y) = text_cell(2, 0);
+    p.handle_mouse(click(MouseEventKind::Down(MouseButton::Right), x, y), AREA);
+
+    assert_eq!(clipboard::register(), "hello");
+}
+
+#[test]
+fn right_clicking_inside_a_selection_keeps_it() {
+    let _guard = exclusive();
+    let mut p = EditorPanel::from_str("hello world\n");
+    p.set_selections_for_test(vec![sel((0, 0), (0, 5))]);
+
+    let (x, y) = text_cell(2, 0);
+    p.handle_mouse(click(MouseEventKind::Down(MouseButton::Right), x, y), AREA);
+
+    assert_eq!(
+        p.selections().primary().range(),
+        (pos(0, 0), pos(0, 5)),
+        "copying must not collapse what was copied"
+    );
+}
+
+#[test]
+fn right_clicking_outside_a_selection_copies_nothing() {
+    let _guard = exclusive();
+    let mut p = EditorPanel::from_str("hello world\n");
+    p.set_selections_for_test(vec![sel((0, 0), (0, 5))]);
+    clipboard::set_register("previous");
+
+    let (x, y) = text_cell(8, 0);
+    p.handle_mouse(click(MouseEventKind::Down(MouseButton::Right), x, y), AREA);
+
+    assert_eq!(
+        clipboard::register(),
+        "previous",
+        "a right-click away from the selection is not a copy of it"
+    );
+}
+
+#[test]
+fn middle_clicking_pastes_at_the_pointer() {
+    let _guard = exclusive();
+    let mut p = EditorPanel::from_str("ac\n");
+    clipboard::set_register("b");
+
+    let (x, y) = text_cell(1, 0);
+    p.handle_mouse(click(MouseEventKind::Down(MouseButton::Middle), x, y), AREA);
+
+    assert_eq!(
+        text(&p),
+        "abc\n",
+        "middle-click pastes where the pointer is"
     );
 }
 

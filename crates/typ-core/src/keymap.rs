@@ -240,6 +240,20 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("ctrl+insert", Action::Copy),
     ("shift+delete", Action::Cut),
     ("shift+insert", Action::Paste),
+    // Bound because people reach for them, though whether they ever arrive is
+    // the terminal's decision on two counts. Most emulators bind Ctrl+Shift+C/V
+    // to their *own* copy and paste and never forward the key. And in the legacy
+    // encoding a Ctrl+letter chord collapses to one control byte that carries no
+    // shift bit at all, so the terminal could not report the difference even if
+    // it wanted to — that needs the kitty keyboard protocol, which arrives with
+    // capability detection at M2.5. Windows is the exception: its console API
+    // reports full modifier state, so these work there today.
+    //
+    // Harmless where they are swallowed: the chord that does arrive is plain
+    // ctrl+c, which is already bound to the same action.
+    ("ctrl+shift+c", Action::Copy),
+    ("ctrl+shift+x", Action::Cut),
+    ("ctrl+shift+v", Action::Paste),
 ];
 
 impl Keymap {
