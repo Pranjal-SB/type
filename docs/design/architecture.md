@@ -250,6 +250,51 @@ Two of TermIDE's methods are worth adopting when their milestone arrives, not be
 by id via `handle_status_action`) at M4 with the status bar, and `to_session()` (session
 persistence as a per-panel concern rather than a central one) at M4 with sessions.
 
+**M2 added `apply_action`**, and it is the load-bearing one. It is the single entry point
+through which the keymap, the future command palette, and the future vim layer all reach a
+panel's behavior — which is why no `handle_key` arm may mutate a buffer. A primitive
+reachable only from a key handler is invisible to all three consumers. `EditorPanel` now has
+no raw-key behavior at all; every key that does anything is a keymap row.
+
+Its return type is `Option<Vec<PanelEvent>>`, not `Vec<PanelEvent>`, because "I do not handle
+this action" and "handled, nothing to report" are different answers and conflating them is a
+silent bug. Adding a cursor at the edge of the document is a real instance of the second.
+
+The app's dispatch order follows from that: action → panel → app → **panel's raw
+`handle_key`**. The last tier exists because the file tree navigates on raw arrows and Enter,
+all of which the keymap binds to editor actions; without it the tree goes dead while every
+test still passes. Naming the tree's own primitives as actions is the honest fix and lands
+with the command palette at M4.
+
+### The selection model
+
+There is no single-cursor type, and there never was one to remove. A caret is an empty
+selection, and the editor always holds a `Selections` — non-empty, document-ordered,
+non-overlapping, with one entry designated primary. Every mutating method restores those
+invariants, so no editing path defends against an out-of-order or overlapping set.
+
+This was decided before the first editing code was written, on the grounds that adding
+multi-cursor later means rewriting every editing path twice: once to add the concept, once to
+undo what the single-cursor assumption baked in. It held — every action written since works
+for one cursor or thirty without branching on which.
+
+**Edits are described, not performed.** A multi-cursor action produces one `Edit { start, end,
+text }` per selection, and a single pass applies them while carrying an accumulated `Shift`.
+This is not a stylistic choice: an edit moves every position after it, so a caret returned by
+an earlier closure is stale the moment a later edit lands to its left. The first attempt had
+each closure perform its own edit and return a caret, running selections last-to-first so
+offsets stayed valid; three cursors typing on one line produced the correct text and put two
+of three carets in the wrong column. `Shift` lives in `typ-buffer` because search results,
+diagnostics and git hunks will each need to map a position across an edit. It is a shift map
+over one batch, not an anchor system — anchors are a separate decision.
+
+**Undo groups by edit kind, not by time.** Consecutive edits of the same kind fold into the
+open run; a motion, a click, or a save ends it. VS Code and Zed break runs on an idle timer,
+which would mean the buffer needs a clock and tests need to inject one. The structural rule is
+deterministic and matches what a user means by "undo what I just typed": the run ends when
+they moved. Snapshots carry the selections the edit was made from, so undo restores the cursor
+to where the edit happened rather than wherever clamping left it.
+
 ### Event model — the one deliberate fix
 
 TermIDE's `PanelEvent` grew to **61 variants** because every viewer added its own

@@ -4566,13 +4566,13 @@ git commit -m "test(app): golden frames for selections, cursors and the prompt"
 **Files:**
 - Modify: `README.md`, `docs/design/architecture.md`, `docs/plans/m2-editing.md`
 
-- [ ] **Step 1: Update the README key tables**
+- [x] **Step 1: Update the README key tables**
 
 Add the new editor bindings — word motion, selection, multi-cursor, search and replace — and
 update Status to say what the editor now does. Keep the `⚠️` line only if something in it is
 still true.
 
-- [ ] **Step 2: Record the architecture decisions**
+- [x] **Step 2: Record the architecture decisions**
 
 In `docs/design/architecture.md` §5, note that the `Panel` trait grew `apply_action`, and why:
 it is the single entry point through which the keymap, the command palette and the vim layer
@@ -4582,7 +4582,18 @@ Add a short subsection on the selection model: a caret is an empty selection, `S
 always non-empty and non-overlapping, and edits run last-to-first so earlier positions stay
 valid.
 
-- [ ] **Step 3: Verify the milestone by hand**
+- [x] **Step 3: Verify the milestone by hand**
+
+Done as `crates/typ-app/tests/milestone.rs` instead, eight tests driving `handle_chord` end
+to end. A human checking these once on one platform is worth less than the same assertions
+running on three on every push, and unlike the human they say which one broke. The release
+binary was still built and run — `--version`, `--help`, and a non-zero exit on a bad path.
+
+One test beyond the checklist: `every_default_binding_resolves_to_something_that_handles_it`
+walks `Action::ALL` and fails on any action that reaches neither the editor nor the app. A
+binding nobody handles is a key that does nothing when pressed, and it is indistinguishable
+from a bug — this milestone shipped four such bindings for two tasks (`ctrl+f`, `f3`,
+`shift+f3`, `ctrl+h`, bound in Task 2 and unhandled until Task 13) with nothing noticing.
 
 ```bash
 cargo build --release
@@ -4599,13 +4610,13 @@ Check all of:
 - A long line scrolls horizontally without breaking the right border.
 - `Ctrl+Q` still guards unsaved work, and the terminal is left working on exit.
 
-- [ ] **Step 4: Tick this plan's checkboxes and record deviations**
+- [x] **Step 4: Tick this plan's checkboxes and record deviations**
 
 Every task above records what actually happened next to what was expected, the way
 `m0-m1-foundation.md` does. Any deviation gets a sentence explaining why — that record is what
 made the M1.1 and M1.2 patches diagnosable rather than archaeological.
 
-- [ ] **Step 5: Commit and open the PR**
+- [x] **Step 5: Commit and open the PR**
 
 ```bash
 git add README.md docs
@@ -4652,11 +4663,16 @@ Task 13. `line_text` exists on both `TextBuffer` and `EditorPanel` (the panel de
 is deliberate and used in tests of both. `page()`, `last_line()`, `line_grapheme_count()` and
 `scroll_to_cursor()` all predate this plan and are made `pub(crate)` in Task 7.
 
-**Known gaps, deliberate.** Tree-sitter highlighting and the command palette are M2.5. Undo is
-per-action with no time grouping — typing ten characters is ten undo steps, which is worse
-than most editors and needs a timer on the edit path; M2.5 alongside highlighting. Search is
-literal, behind a `SearchQuery` type shaped to admit regex later. There is no replace-one,
+**Known gaps, deliberate.** Tree-sitter highlighting and the command palette are M2.5. Search
+is literal, behind a `SearchQuery` type shaped to admit regex later. There is no replace-one,
 only replace-all.
+
+~~Undo is per-action with no time grouping — typing ten characters is ten undo steps.~~
+Fixed in M2.1, and not with a timer: consecutive edits of the same `EditKind` coalesce and
+anything that is not an edit ends the run. See `m2.1-correctness.md` Task 2 for why a clock
+was the wrong mechanism. M2.1 also closed two keystroke-budget violations this self-review
+did not think to look for — `InsertChar` at 33.8 ms against a 16 ms budget — because the
+budgets in architecture §4 had no tests behind them. They do now.
 
 **Fixed on a fourth pass, before Task 6 was written.** `apply_action` originally returned
 `Vec<PanelEvent>`, with an empty vector meaning "the panel declined". `AddCursor` at the edge
