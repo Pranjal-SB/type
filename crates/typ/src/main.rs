@@ -132,9 +132,14 @@ fn real_main() -> Result<()> {
 mod tests {
     use super::*;
 
+    /// A directory of this test's own.
+    ///
+    /// Created, never deleted first. On Windows `remove_dir_all` can return
+    /// before the directory is actually gone, so removing and immediately
+    /// recreating fails intermittently — which is exactly how it failed once
+    /// here. The name is unique per test, so there is nothing stale to clear.
     fn temp(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join("typ-resolve").join(name);
-        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -163,6 +168,7 @@ mod tests {
     fn a_missing_file_in_a_real_directory_is_a_file_to_create() {
         let dir = temp("to-create");
         let file = dir.join("new.rs");
+        let _ = std::fs::remove_file(&file);
 
         let target = resolve(&file).unwrap();
 

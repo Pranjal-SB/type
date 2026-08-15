@@ -345,14 +345,20 @@ fn trim_line_ending(s: &str) -> &str {
         .unwrap_or(s)
 }
 
-/// A sibling of `path` that will not collide with a real file.
+/// A sibling of `path` that will not collide with a real file, or with another
+/// instance of TYPE saving the same file.
+///
+/// The pid is what makes the second guarantee. Two editors saving one path with
+/// a fixed temp name race: one truncates the other's half-written file and
+/// renames whichever won, and the loser's content is gone. A kill mid-save also
+/// leaves the file behind, and a pid-suffixed one is at least attributable.
 fn temp_path_beside(path: &Path) -> PathBuf {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "buffer".to_string());
     let parent = path.parent().unwrap_or(Path::new("."));
-    parent.join(format!(".{name}.typ-tmp"))
+    parent.join(format!(".{name}.{}.typ-tmp", std::process::id()))
 }
 
 /// Write the rope out and flush it to the device before returning.

@@ -41,11 +41,16 @@ no editing primitives of its own and the core never depends on it.
 
 ## Status
 
-**v0.2.1 — pre-alpha.** Editing is real: selections, multiple cursors, word-wise motion, drag
-to select, horizontal scrolling, and literal search and replace, alongside the file tree,
-focus cycling, undo/redo, save and rebindable keys. Every editing primitive is a named action
-and every key is a table row, so a command palette and an opt-in vim layer are configuration
-rather than a rewrite.
+**v0.2.2 — pre-alpha.** Selections, multiple cursors, word-wise motion, drag to select,
+horizontal scrolling, literal search and replace, clipboard with OSC 52 so it works over SSH,
+Tab indent, and creating new files — alongside the file tree, focus cycling, undo/redo, save
+and rebindable keys. Every editing primitive is a named action and every key is a table row, so
+a command palette and an opt-in vim layer are configuration rather than a rewrite.
+
+This is the release at which TYPE should be able to edit its own source: the gaps that made a
+real editing session impossible — no clipboard, no indent, opening a file discarding unsaved
+work — are closed. Whether it is actually pleasant to use it all day is the next thing to find
+out, and the answer is expected to produce a defect list rather than a victory lap.
 
 No syntax highlighting, no LSP, no splits or tabs yet — see the roadmap.
 
@@ -57,7 +62,7 @@ the cursor back where the edit was made.
 
 - [Architecture and design rationale](docs/design/architecture.md)
 - [Gap analysis — known defects and how TYPE measures against the field](docs/design/gap-analysis.md)
-- [Current implementation plan](docs/plans/m2-editing.md)
+- [Current implementation plan](docs/plans/m2.2-usable.md)
 
 ## Build
 
@@ -172,9 +177,9 @@ worse than one that plainly did nothing.
 | — | M0 | Feel spike — measure input latency, frame timing, unicode correctness | shipped |
 | v0.1.0 | M1 | Walking skeleton — event loop, panel contract, editor and file tree | shipped |
 | v0.2.0 | M2 | Editing — multi-cursor, selections, word motion, search and replace | shipped |
-| v0.2.1 | M2.1 | Correctness — keystroke budgets, undo coalescing, the shift map | **current** |
-| v0.2.2 | M2.2 | Usable — clipboard, indent, new files, guarded open. Self-hosting starts here | next |
-| v0.2.5 | M2.5 | Damage-driven redraw, wakeable event loop, tree-sitter highlighting, themes | |
+| v0.2.1 | M2.1 | Correctness — keystroke budgets, undo coalescing, the shift map | shipped |
+| v0.2.2 | M2.2 | Usable — clipboard, indent, new files, guarded open. Self-hosting starts here | **current** |
+| v0.2.5 | M2.5 | Damage-driven redraw, wakeable event loop, tree-sitter highlighting, themes | next |
 | v0.3.0 | M3 | Code intelligence — LSP client | |
 | v0.4.0 | M4 | Workspace — splits, tabs, sessions, command palette, project search | |
 | v0.5.0 | M5 | Terminal panel and git integration | |
