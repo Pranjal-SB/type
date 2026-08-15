@@ -70,7 +70,7 @@ cargo build --release
 
 | Key | Action |
 |---|---|
-| `Tab` | Cycle focus between tree and editor |
+| `F6` | Cycle focus between tree and editor (`Ctrl+Tab` too, where the terminal reports it) |
 | `Ctrl+S` | Save |
 | `Ctrl+Q` | Quit |
 
@@ -99,14 +99,36 @@ cargo build --release
 | `Enter` | Split the line |
 | `Backspace` `Delete` | Delete before / under the cursor |
 | `Ctrl+Backspace` `Ctrl+Delete` | Delete a word |
+| `Tab` `Shift+Tab` | Indent / outdent |
 | `Ctrl+Z` `Ctrl+Y` | Undo / redo |
 
 Every one of those works at every cursor at once, and holding `Shift` with any motion
 extends instead of moving.
 
+`Tab` with nothing selected moves to the next tab stop; with a selection it shifts every line
+the selection touches, and the selection survives so you can press it again.
+
+**Clipboard**
+
+| Key | Also | Mouse | Action |
+|---|---|---|---|
+| `Ctrl+C` | `Ctrl+Insert` | right-click a selection | Copy |
+| `Ctrl+X` | `Shift+Delete` | — | Cut |
+| `Ctrl+V` | `Shift+Insert` | middle-click | Paste |
+
+`Ctrl+Shift+C`/`X`/`V` are bound too, but most terminals claim them for their own copy and
+paste and never pass them on — and in the legacy key encoding a `Ctrl`+letter chord carries no
+shift bit for the terminal to report. They work on Windows today, and elsewhere once terminal
+capability detection lands.
+
+Copying emits OSC 52, so a copy over SSH reaches the clipboard on the machine you are sitting
+at rather than the one you are logged into. Multi-cursor copy joins the selections with
+newlines, and pasting that many lines back into that many cursors gives one line to each.
+
 Mouse: click to position the cursor, drag to select, click twice in the same place to select
-the word, `Alt`+click to stack another cursor, click a selected tree entry to open or toggle
-it, wheel to scroll whichever panel the pointer is over.
+the word, `Alt`+click to stack another cursor, right-click a selection to copy it, middle-click
+to paste, click a selected tree entry to open or toggle it, wheel to scroll whichever panel the
+pointer is over.
 
 **Search**
 
