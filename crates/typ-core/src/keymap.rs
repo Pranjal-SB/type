@@ -232,6 +232,14 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("f3", Action::SearchNext),
     ("shift+f3", Action::SearchPrevious),
     ("ctrl+h", Action::ReplaceOpen),
+    ("ctrl+c", Action::Copy),
+    ("ctrl+x", Action::Cut),
+    ("ctrl+v", Action::Paste),
+    // The Insert trio, because a terminal may swallow Ctrl+C before TYPE ever
+    // sees it and a user who cannot copy has no way to discover why.
+    ("ctrl+insert", Action::Copy),
+    ("shift+delete", Action::Cut),
+    ("shift+insert", Action::Paste),
 ];
 
 impl Keymap {

@@ -5,7 +5,7 @@
 //! command palette, and the future vim layer able to reach the same behavior.
 
 use typ_buffer::{
-    EditKind, Position, Selection, Shift, TextBuffer, display_to_grapheme_col,
+    EditKind, Position, Selection, Shift, TextBuffer, clipboard, display_to_grapheme_col,
     grapheme_to_display_col, next_word_boundary, previous_word_boundary,
 };
 use typ_core::{Action, Direction, Motion, PanelEvent};
@@ -144,6 +144,23 @@ impl EditorPanel {
         let line = (from.line as i64 + delta).clamp(0, self.last_line() as i64) as usize;
         let col = display_to_grapheme_col(&self.buffer.line_text(line), goal, TAB_WIDTH);
         Position { line, col }
+    }
+
+    /// Every selection's text, joined by newlines.
+    ///
+    /// Newlines rather than nothing, because the counterpart paste splits on
+    /// them to hand one line back to each cursor. Joining with the empty string
+    /// would make a three-cursor copy indistinguishable from one long word.
+    fn selected_text(&self) -> String {
+        self.selections
+            .iter()
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                let (start, end) = s.range();
+                self.buffer.text_in_range(start, end)
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Replace the selection set, preserving order and the primary.
@@ -440,6 +457,62 @@ impl EditorPanel {
                     .push(Selection::caret(Position { line, col }));
                 self.scroll_to_cursor();
                 Some(vec![PanelEvent::NeedsRedraw])
+            }
+
+            Action::Copy => {
+                let text = self.selected_text();
+                // Copying nothing must not wipe what is already held. Every
+                // editor in the field either copies the whole line or does
+                // nothing; doing nothing is the one that never surprises.
+                if !text.is_empty() {
+                    clipboard::set(&text);
+                }
+                Some(vec![PanelEvent::NeedsRedraw])
+            }
+
+            Action::Cut => {
+                let text = self.selected_text();
+                if text.is_empty() {
+                    return Some(Vec::new());
+                }
+                clipboard::set(&text);
+                // `Other`, so a cut always stands alone in the undo history
+                // rather than folding into a run of typing on either side.
+                self.edit_at_each_selection(EditKind::Other, |selection, _buffer| {
+                    let (start, end) = selection.range();
+                    Edit::delete(start, end)
+                })
+            }
+
+            Action::Paste => {
+                let text = clipboard::get();
+                if text.is_empty() {
+                    return Some(Vec::new());
+                }
+
+                // One clipboard line per cursor when the counts match, which is
+                // what makes a multi-cursor copy round-trip through a paste.
+                // VS Code and Sublime both do this, and without it a three-line
+                // copy stamps all three lines at all three cursors.
+                let lines: Vec<String> = text.lines().map(str::to_string).collect();
+                let distribute = lines.len() == self.selections.len() && self.selections.len() > 1;
+
+                let index = std::cell::Cell::new(0usize);
+                self.edit_at_each_selection(EditKind::Other, move |selection, _buffer| {
+                    let (start, end) = selection.range();
+                    let piece = if distribute {
+                        let i = index.get();
+                        index.set(i + 1);
+                        lines[i].clone()
+                    } else {
+                        text.clone()
+                    };
+                    Edit {
+                        start,
+                        end,
+                        text: piece,
+                    }
+                })
             }
 
             // Not this panel's business. The app tries it next.

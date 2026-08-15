@@ -147,6 +147,19 @@ impl TextBuffer {
         self.dirty = true;
     }
 
+    /// The text between two positions.
+    ///
+    /// Ordered by the caller — a selection's `range()` already answers which end
+    /// comes first, so this does not second-guess it.
+    pub fn text_in_range(&self, start: Position, end: Position) -> String {
+        let from = self.char_offset(start);
+        let to = self.char_offset(end);
+        if from >= to {
+            return String::new();
+        }
+        self.rope.slice(from..to).to_string()
+    }
+
     /// Every match in the buffer, in document order, as selections whose head
     /// sits at the end of the match — so jumping to one leaves the cursor
     /// where typing would naturally continue.

@@ -107,6 +107,10 @@ impl EditorPanel {
         self.buffer.line_text(line)
     }
 
+    pub fn line_count(&self) -> usize {
+        self.buffer.line_count()
+    }
+
     /// Collapse to a single caret at `at`, clearing the goal column.
     ///
     /// Every place the old single-cursor code assigned to `self.cursor` now

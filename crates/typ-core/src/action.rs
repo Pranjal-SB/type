@@ -75,6 +75,9 @@ pub enum Action {
     SearchNext,
     SearchPrevious,
     ReplaceOpen,
+    Copy,
+    Cut,
+    Paste,
 }
 
 impl Action {
@@ -207,6 +210,9 @@ impl Action {
         Action::SearchNext,
         Action::SearchPrevious,
         Action::ReplaceOpen,
+        Action::Copy,
+        Action::Cut,
+        Action::Paste,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -273,6 +279,9 @@ impl Action {
             Action::SearchNext => "search_next",
             Action::SearchPrevious => "search_previous",
             Action::ReplaceOpen => "replace_open",
+            Action::Copy => "copy",
+            Action::Cut => "cut",
+            Action::Paste => "paste",
         }
     }
 

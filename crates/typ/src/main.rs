@@ -67,6 +67,11 @@ fn real_main() -> Result<()> {
         (parent, Some(target.clone()))
     };
 
+    // The clipboard only reaches outside this process once a binary says so.
+    // Defaulting it off means a test suite linking typ-buffer never spawns
+    // wl-copy and never clobbers what the developer had copied.
+    typ_buffer::clipboard::enable_system();
+
     let mut app = App::new(&root)?;
 
     // A broken keys.toml warns and starts on the defaults rather than refusing

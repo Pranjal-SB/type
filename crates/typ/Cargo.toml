@@ -18,3 +18,4 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 typ-app.workspace = true
+typ-buffer.workspace = true
