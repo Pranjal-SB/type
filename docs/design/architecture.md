@@ -485,6 +485,17 @@ appears. Not both up front.
 
 ## 9. Milestones
 
+**Versions map onto milestones, they do not replace them.** The scheme is
+`0.<milestone>.<patch milestone>`: M1 shipped as v0.1.0, M2 as v0.2.0, the M2.1 correctness
+pass as v0.2.1, and M6 ships as v1.0.0. One version for the whole workspace, set once in
+`[workspace.package]` and inherited by every crate, so `typ --version` and the crate metadata
+cannot disagree. Milestones remain the unit of work — plans, task lists and commits are
+organised by M-number; the version is the public name for a milestone that has landed, and it
+is bumped in the close-out task alongside the README.
+
+Post-v1 follows the same shape: the plugin host is v1.1, DAP is v1.2.
+
+
 **M0 — Feel spike (throwaway, ~1 week).**
 The riskiest unknown is not "can an editor be written," it is "will the terminal feel good
 enough." Answer before any real architecture exists. Open one file, highlight it, scroll it,

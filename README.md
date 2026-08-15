@@ -38,12 +38,13 @@ immediately if you're arriving from a GUI editor, without giving up capability t
 
 ## Status
 
-**Pre-alpha.** Editing is real: selections, multiple cursors, word-wise motion, drag to
-select, and horizontal scrolling, alongside the file tree, focus cycling, undo/redo and save.
-Every editing primitive is a named action and every key is a table row, so a command palette
-and an opt-in vim layer are configuration rather than a rewrite.
+**v0.2.1 — pre-alpha.** Editing is real: selections, multiple cursors, word-wise motion, drag
+to select, horizontal scrolling, and literal search and replace, alongside the file tree,
+focus cycling, undo/redo, save and rebindable keys. Every editing primitive is a named action
+and every key is a table row, so a command palette and an opt-in vim layer are configuration
+rather than a rewrite.
 
-No syntax highlighting, no search UI, no LSP, no splits or tabs yet — see the roadmap.
+No syntax highlighting, no LSP, no splits or tabs yet — see the roadmap.
 
 A status bar carries messages, the open file, and the cursor position. Quitting with unsaved
 changes asks before discarding them.
@@ -140,17 +141,26 @@ worse than one that plainly did nothing.
 
 ## Roadmap
 
-| Milestone | Scope |
-|---|---|
-| M0 | Feel spike — measure input latency, frame timing, unicode correctness |
-| M1 | Walking skeleton — event loop, panel contract, editor and file tree |
-| M2 | Editing — multi-cursor, selections, search, syntax highlighting |
-| M3 | Code intelligence — LSP client |
-| M4 | Workspace — splits, tabs, sessions, command palette, project search |
-| M5 | Terminal panel and git integration |
-| M6 | OS-level file association, performance budgets enforced in CI |
+| Version | Milestone | Scope | State |
+|---|---|---|---|
+| — | M0 | Feel spike — measure input latency, frame timing, unicode correctness | shipped |
+| v0.1.0 | M1 | Walking skeleton — event loop, panel contract, editor and file tree | shipped |
+| v0.2.0 | M2 | Editing — multi-cursor, selections, word motion, search and replace | shipped |
+| v0.2.1 | M2.1 | Correctness — keystroke budgets, undo coalescing, the shift map | **current** |
+| v0.2.5 | M2.5 | Damage-driven redraw, wakeable event loop, tree-sitter highlighting | next |
+| v0.3.0 | M3 | Code intelligence — LSP client | |
+| v0.4.0 | M4 | Workspace — splits, tabs, sessions, command palette, project search | |
+| v0.5.0 | M5 | Terminal panel and git integration | |
+| v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |
 
-Then: extension host, then debugger.
+Then: extension host (v1.1), then debugger (v1.2).
+
+**Versioning.** `0.<milestone>.<patch milestone>` — the minor is the milestone number, the
+patch is a correctness milestone landing on top of it. One version for the whole workspace;
+every crate inherits it and `typ --version` prints it. v1.0.0 is M6, the point at which the
+author stops using another editor. Milestones stay the working unit — plans, tasks and
+commits are still organised by M-number; the version is what that milestone is called once it
+lands.
 
 ## Non-goals
 

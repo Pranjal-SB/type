@@ -1490,7 +1490,7 @@ checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
 name = "typ-app"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -1505,7 +1505,7 @@ dependencies = [
 
 [[package]]
 name = "typ-buffer"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "ropey",
@@ -1515,7 +1515,7 @@ dependencies = [
 
 [[package]]
 name = "typ-core"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -1525,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "typ-editor"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "typ-app",
@@ -1533,7 +1533,7 @@ dependencies = [
 
 [[package]]
 name = "typ-panel-editor"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -1545,7 +1545,7 @@ dependencies = [
 
 [[package]]
 name = "typ-panel-tree"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -1555,7 +1555,7 @@ dependencies = [
 
 [[package]]
 name = "typ-registry"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "typ-core",
 ]
