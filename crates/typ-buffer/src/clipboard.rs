@@ -246,6 +246,10 @@ impl Provider {
     #[cfg(not(windows))]
     fn commands(&self) -> Option<(Vec<&'static str>, Vec<&'static str>)> {
         match self {
+            // Gated to match the variant. Without this the arm names a variant
+            // that does not exist on Linux, which compiles on macOS and on
+            // Windows-with-no-Unix-arms and fails only where it matters.
+            #[cfg(target_os = "macos")]
             Self::Pasteboard => Some((vec!["pbcopy"], vec!["pbpaste"])),
             Self::Wayland => Some((
                 vec!["wl-copy", "--foreground", "--type", "text/plain"],
