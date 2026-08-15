@@ -209,3 +209,96 @@ fn the_status_bar_spans_the_frame_in_its_own_colors() {
     assert_eq!(buffer[(0, 7)].fg, theme.status_bar_fg);
     assert_ne!(theme.status_bar_bg, Color::Reset);
 }
+
+fn chord(code: KeyCode, mods: KeyModifiers) -> KeyChord {
+    KeyChord::from_event(KeyEvent::new(code, mods))
+}
+
+/// The background a cell was painted with, for asserting selection highlight.
+fn bg(terminal: &Terminal<TestBackend>, x: u16, y: u16) -> Option<Color> {
+    terminal.backend().buffer()[(x, y)].style().bg
+}
+
+#[test]
+fn a_selection_is_visible_in_the_rendered_frame() {
+    let dir = fixture("selection-frame");
+    let mut app = App::new(&dir).unwrap();
+    app.open_path(&dir.join("main.rs")).unwrap();
+    app.handle_chord(chord(KeyCode::Right, KeyModifiers::SHIFT))
+        .unwrap();
+    app.handle_chord(chord(KeyCode::Right, KeyModifiers::SHIFT))
+        .unwrap();
+
+    let terminal = draw(&mut app, 60, 8);
+    let theme = ThemeColors::default();
+    // Editor text begins at column 31.
+    assert_eq!(bg(&terminal, 31, 1), Some(theme.selection_bg));
+    assert_eq!(bg(&terminal, 32, 1), Some(theme.selection_bg));
+    assert_eq!(
+        bg(&terminal, 33, 1),
+        Some(theme.bg),
+        "the highlight must stop where the selection does"
+    );
+}
+
+#[test]
+fn several_cursors_are_all_visible_as_the_frame_is_drawn() {
+    let dir = fixture("multicursor-frame");
+    let mut app = App::new(&dir).unwrap();
+    app.open_path(&dir.join("main.rs")).unwrap();
+    app.handle_chord(chord(
+        KeyCode::Down,
+        KeyModifiers::CONTROL | KeyModifiers::ALT,
+    ))
+    .unwrap();
+    app.handle_chord(chord(KeyCode::Char('#'), KeyModifiers::NONE))
+        .unwrap();
+
+    let terminal = draw(&mut app, 60, 8);
+    let rows = rows(&terminal);
+    assert!(rows[1].contains("#fn main"), "row 1: {}", rows[1]);
+    assert!(rows[2].contains("#let x"), "row 2: {}", rows[2]);
+}
+
+#[test]
+fn an_open_prompt_takes_over_the_left_of_the_status_bar() {
+    let dir = fixture("prompt-frame");
+    let mut app = App::new(&dir).unwrap();
+    app.open_path(&dir.join("main.rs")).unwrap();
+    app.handle_chord(chord(KeyCode::Char('f'), KeyModifiers::CONTROL))
+        .unwrap();
+    for c in "main".chars() {
+        app.handle_chord(chord(KeyCode::Char(c), KeyModifiers::NONE))
+            .unwrap();
+    }
+
+    let terminal = draw(&mut app, 60, 8);
+    let rows = rows(&terminal);
+    assert!(rows[7].starts_with("Search: main"), "status: {}", rows[7]);
+    assert!(rows[7].ends_with("main.rs  1:1"), "status: {}", rows[7]);
+}
+
+#[test]
+fn a_long_line_scrolled_right_keeps_its_borders() {
+    let dir = fixture("horizontal-frame");
+    std::fs::write(dir.join("wide.rs"), "x".repeat(200) + "\n").unwrap();
+    let mut app = App::new(&dir).unwrap();
+    app.open_path(&dir.join("wide.rs")).unwrap();
+
+    // One frame first: the panel learns its width at render time, so a motion
+    // before any draw cannot scroll and the test would pass without exercising
+    // anything.
+    draw(&mut app, 60, 8);
+    app.handle_chord(chord(KeyCode::End, KeyModifiers::NONE))
+        .unwrap();
+    let terminal = draw(&mut app, 60, 8);
+
+    assert!(
+        app.editor_mut().left_col() > 0,
+        "the view must have scrolled sideways"
+    );
+    let rows = rows(&terminal);
+    assert_eq!(rows[1].chars().count(), 60);
+    assert!(rows[1].ends_with('│'), "row 1: {}", rows[1]);
+    assert!(rows[1].starts_with('│'), "row 1: {}", rows[1]);
+}

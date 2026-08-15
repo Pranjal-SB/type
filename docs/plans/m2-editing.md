@@ -4424,7 +4424,7 @@ git commit -m "feat(config): load keys.toml, warning rather than failing on a ba
 - Consumes: everything above
 - Produces: assertions covering selection, multi-cursor and prompt rendering
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `crates/typ-app/tests/frame.rs`:
 
@@ -4511,26 +4511,48 @@ fn a_long_line_scrolled_right_keeps_its_borders() {
 The fixture helper needs `main.rs` to have a second line for the multi-cursor test — it
 already writes `"fn main() {}\nlet x = 1;\n"`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-app --test frame`
 
 Expected: FAIL on the four new tests; the ten existing ones still pass.
 
-- [ ] **Step 3: Fix whatever they catch**
+Actual: all 14 PASS, including the four new ones, first run.
+
+**The plan's expectation was wrong, and the reason matters.** These are characterization
+tests over behavior Tasks 6–13 already built and already tested. There is no RED step
+available for them — a golden frame can only fail here if the feature underneath it is
+broken, which is exactly what makes them worth having and exactly why they are not TDD. The
+red-first rule applies to code being written, not to assertions pinning code that exists.
+
+- [x] **Step 3: Fix whatever they catch**
 
 These tests assert behavior built in Tasks 6–13. If they fail, the bug is in that code, not
 in the tests — check the failure against the equivalent unit test first, since a golden frame
 failing while a unit test passes usually means a coordinate is being computed twice in two
 places rather than once.
 
-- [ ] **Step 4: Run the whole suite**
+Nothing to fix: all four passed. Three deviations from the plan's versions, all so the tests
+assert what they claim to:
+
+1. **`a_long_line_scrolled_right_keeps_its_borders` drew a frame before moving.** A panel
+   learns its width at render time, so `LineEnd` before any draw cannot scroll — the plan's
+   version would have passed with `left_col` still at 0, testing nothing. It now draws,
+   moves, draws again, and asserts `left_col() > 0` so the scroll is a precondition rather
+   than a hope.
+2. **The multi-cursor and selection tests go through `handle_chord`, not
+   `editor_mut().apply_action`.** Task 12 made the dispatcher the real path; a golden frame
+   that bypasses it is not testing the frame a user sees.
+3. **Cell background read via `.style().bg`,** which is `Option<Color>`, rather than a bare
+   `.bg` field.
+
+- [x] **Step 4: Run the whole suite**
 
 Run: `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all -- --check`
 
 Expected: all three clean.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-app/tests/frame.rs
