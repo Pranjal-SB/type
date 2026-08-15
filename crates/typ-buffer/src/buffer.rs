@@ -6,8 +6,8 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::position::Position;
 use crate::search::SearchQuery;
-use crate::selection::Selection;
-use crate::undo::History;
+use crate::selection::{Selection, Selections};
+use crate::undo::{EditKind, History};
 
 pub struct TextBuffer {
     rope: Rope,
@@ -103,7 +103,7 @@ impl TextBuffer {
     }
 
     pub fn insert_char(&mut self, pos: Position, ch: char) {
-        self.record_snapshot();
+        self.record_snapshot(pos);
         let offset = self.char_offset(pos);
         self.rope.insert_char(offset, ch);
         self.dirty = true;
@@ -124,7 +124,7 @@ impl TextBuffer {
                     .map_or(1, |g| g.chars().count())
             })
         };
-        self.record_snapshot();
+        self.record_snapshot(pos);
         self.rope.remove(offset - n..offset);
         self.dirty = true;
     }
@@ -142,7 +142,7 @@ impl TextBuffer {
                 .nth(pos.col)
                 .map_or(1, |g| g.chars().count())
         });
-        self.record_snapshot();
+        self.record_snapshot(pos);
         self.rope.remove(offset..offset + n);
         self.dirty = true;
     }
@@ -182,7 +182,7 @@ impl TextBuffer {
         if from > to || (from == to && text.is_empty()) {
             return;
         }
-        self.record_snapshot();
+        self.record_snapshot(start);
         if to > from {
             self.rope.remove(from..to);
         }
@@ -193,9 +193,16 @@ impl TextBuffer {
     }
 
     /// Take an undo snapshot unless an edit group is open.
-    fn record_snapshot(&mut self) {
+    ///
+    /// Only the M1-era standalone helpers reach this. They have no selection set
+    /// and no edit kind to offer, so they record as `Other` at a caret placed
+    /// where they are editing — which reproduces their old one-step-per-call
+    /// behavior exactly. M2 Task 12 deletes their last callers.
+    fn record_snapshot(&mut self, at: Position) {
         if self.group_depth == 0 {
-            self.history.record(self.rope.clone());
+            let selections = Selections::single(Selection::caret(at));
+            self.history
+                .record(EditKind::Other, self.rope.clone(), &selections);
         }
     }
 
@@ -205,9 +212,12 @@ impl TextBuffer {
     /// cursors typing one character is one undo step. Without this, undoing a
     /// thirty-caret edit would take thirty presses and leave the buffer in
     /// states the user never typed.
-    pub fn begin_edit_group(&mut self) {
+    ///
+    /// Whether that snapshot is actually pushed is `History`'s call: a group
+    /// continuing a run of the same kind folds into the one already there.
+    pub fn begin_edit_group(&mut self, kind: EditKind, selections: &Selections) {
         if self.group_depth == 0 {
-            self.history.record(self.rope.clone());
+            self.history.record(kind, self.rope.clone(), selections);
         }
         self.group_depth += 1;
     }
@@ -216,18 +226,27 @@ impl TextBuffer {
         self.group_depth = self.group_depth.saturating_sub(1);
     }
 
-    pub fn undo(&mut self) {
-        if let Some(prev) = self.history.undo(self.rope.clone()) {
-            self.rope = prev;
-            self.dirty = true;
-        }
+    /// End the current undo run. The next edit starts a new step.
+    pub fn undo_boundary(&mut self) {
+        self.history.boundary();
     }
 
-    pub fn redo(&mut self) {
-        if let Some(next) = self.history.redo(self.rope.clone()) {
-            self.rope = next;
-            self.dirty = true;
-        }
+    /// Undo one step, returning the selections to restore.
+    ///
+    /// `None` means there was nothing to undo, so the caller leaves its
+    /// selections alone.
+    pub fn undo(&mut self, current: &Selections) -> Option<Selections> {
+        let snapshot = self.history.undo(self.rope.clone(), current)?;
+        self.rope = snapshot.rope;
+        self.dirty = true;
+        Some(snapshot.selections)
+    }
+
+    pub fn redo(&mut self, current: &Selections) -> Option<Selections> {
+        let snapshot = self.history.redo(self.rope.clone(), current)?;
+        self.rope = snapshot.rope;
+        self.dirty = true;
+        Some(snapshot.selections)
     }
 
     /// Write the buffer to disk, atomically.

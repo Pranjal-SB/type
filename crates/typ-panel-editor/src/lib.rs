@@ -100,6 +100,10 @@ impl EditorPanel {
     /// goes through here, which is what keeps the selection set the only
     /// source of truth. Task 7 replaces these callers with actions.
     pub(crate) fn set_caret(&mut self, at: Position) {
+        // Placing the caret ends the undo run, the same as a motion does. This
+        // is the mouse's half of that rule: click away mid-word and the next
+        // thing typed is a new undo step.
+        self.buffer.undo_boundary();
         self.selections.set_single(Selection::caret(at));
         self.goal_col = None;
     }
@@ -134,33 +138,6 @@ impl EditorPanel {
     /// so fall back to a screenful rather than moving nowhere.
     pub(crate) fn page(&self) -> usize {
         self.height.max(1)
-    }
-
-    /// Pull the cursor back inside the text after the buffer changed underneath
-    /// it — undo and redo can shrink the content the cursor was sitting in.
-    pub(crate) fn clamp_cursor(&mut self) {
-        let last_line = self.last_line();
-        // Was a Vec of every line's length. On a 50k-line file that is 50k
-        // lookups to clamp a handful of positions, and undo called it on every
-        // press.
-        let buffer = &self.buffer;
-        let clamp = |p: Position| {
-            let line = p.line.min(last_line);
-            Position {
-                line,
-                col: p.col.min(buffer.line_grapheme_count(line)),
-            }
-        };
-        let clamped: Vec<Selection> = self
-            .selections
-            .iter()
-            .map(|s| Selection {
-                anchor: clamp(s.anchor),
-                head: clamp(s.head),
-            })
-            .collect();
-        self.set_selections(clamped);
-        self.goal_col = None;
     }
 
     fn move_vertical(&mut self, delta: i32) {
@@ -246,13 +223,17 @@ impl Panel for EditorPanel {
         // KeyCode::Char('z') and gets typed into the buffer.
         match chord.canonical.as_str() {
             "ctrl+z" => {
-                self.buffer.undo();
-                self.clamp_cursor();
+                if let Some(restored) = self.buffer.undo(&self.selections) {
+                    self.selections = restored;
+                    self.goal_col = None;
+                }
                 return vec![PanelEvent::NeedsRedraw];
             }
             "ctrl+y" => {
-                self.buffer.redo();
-                self.clamp_cursor();
+                if let Some(restored) = self.buffer.redo(&self.selections) {
+                    self.selections = restored;
+                    self.goal_col = None;
+                }
                 return vec![PanelEvent::NeedsRedraw];
             }
             _ => {}

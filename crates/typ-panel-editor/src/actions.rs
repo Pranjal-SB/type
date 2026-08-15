@@ -5,7 +5,7 @@
 //! command palette, and the future vim layer able to reach the same behavior.
 
 use typ_buffer::{
-    Position, Selection, TextBuffer, display_to_grapheme_col, grapheme_to_display_col,
+    EditKind, Position, Selection, TextBuffer, display_to_grapheme_col, grapheme_to_display_col,
     next_word_boundary, previous_word_boundary,
 };
 use typ_core::{Action, Direction, Motion, PanelEvent};
@@ -168,6 +168,7 @@ impl EditorPanel {
     /// and is not something each action should reimplement.
     fn edit_at_each_selection(
         &mut self,
+        kind: EditKind,
         describe: impl Fn(Selection, &TextBuffer) -> Edit,
     ) -> Option<Vec<PanelEvent>> {
         // Describing happens entirely before the first mutation, so the closure
@@ -182,8 +183,9 @@ impl EditorPanel {
             .collect();
 
         // One snapshot for the whole group, so a thirty-caret edit is one undo
-        // step rather than thirty.
-        self.buffer.begin_edit_group();
+        // step rather than thirty — and consecutive edits of the same kind fold
+        // into the run already open, so typing a word is one step too.
+        self.buffer.begin_edit_group(kind, &self.selections);
 
         let mut shift = Shift::default();
         let mut heads: Vec<Position> = Vec::with_capacity(described.len());
@@ -205,15 +207,20 @@ impl EditorPanel {
         Some(vec![PanelEvent::NeedsRedraw])
     }
 
-    /// Pull every selection back inside the text after the buffer changed
-    /// underneath it — undo and redo can shrink what a selection covered.
-    fn clamp_selections(&mut self) {
-        self.clamp_cursor();
-    }
-
     /// The entry point every consumer uses. `None` means this panel does not
     /// handle the action, so the app should try it.
     pub fn perform(&mut self, action: Action) -> Option<Vec<PanelEvent>> {
+        // Anything that is not an edit ends the undo run. "Undo what I just
+        // typed" means the text typed since the cursor last moved, so the
+        // boundary belongs on every action that is not itself an edit — one
+        // place, rather than remembered at each of them.
+        if !matches!(
+            action,
+            Action::InsertChar(_) | Action::InsertNewline | Action::Delete { .. }
+        ) {
+            self.buffer.undo_boundary();
+        }
+
         match action {
             Action::Move { motion, extend } => {
                 let vertical = matches!(
@@ -251,7 +258,7 @@ impl EditorPanel {
             }
             Action::InsertChar(c) => {
                 let text = c.to_string();
-                self.edit_at_each_selection(move |selection, _buffer| {
+                self.edit_at_each_selection(EditKind::Insert, move |selection, _buffer| {
                     let (start, end) = selection.range();
                     Edit {
                         start,
@@ -261,17 +268,21 @@ impl EditorPanel {
                 })
             }
 
-            Action::InsertNewline => self.edit_at_each_selection(|selection, _buffer| {
-                let (start, end) = selection.range();
-                Edit {
-                    start,
-                    end,
-                    text: "\n".to_string(),
-                }
-            }),
+            // `Other`, not `Insert`: a newline ends the typing run, so undo
+            // after Enter takes back the line rather than the paragraph.
+            Action::InsertNewline => {
+                self.edit_at_each_selection(EditKind::Other, |selection, _buffer| {
+                    let (start, end) = selection.range();
+                    Edit {
+                        start,
+                        end,
+                        text: "\n".to_string(),
+                    }
+                })
+            }
 
             Action::Delete { direction, by_word } => {
-                self.edit_at_each_selection(move |selection, buffer| {
+                self.edit_at_each_selection(EditKind::Delete, move |selection, buffer| {
                     // A non-empty selection is the target, whichever key was
                     // pressed.
                     if !selection.is_empty() {
@@ -351,15 +362,23 @@ impl EditorPanel {
             }
 
             Action::Undo => {
-                self.buffer.undo();
-                self.clamp_selections();
+                // No clamping: these selections were valid against this exact
+                // rope when they were recorded, which is also why undo puts the
+                // cursor back where the edit was made rather than wherever the
+                // clamp happened to land it.
+                if let Some(restored) = self.buffer.undo(&self.selections) {
+                    self.selections = restored;
+                    self.goal_col = None;
+                }
                 self.scroll_to_cursor();
                 Some(vec![PanelEvent::NeedsRedraw])
             }
 
             Action::Redo => {
-                self.buffer.redo();
-                self.clamp_selections();
+                if let Some(restored) = self.buffer.redo(&self.selections) {
+                    self.selections = restored;
+                    self.goal_col = None;
+                }
                 self.scroll_to_cursor();
                 Some(vec![PanelEvent::NeedsRedraw])
             }

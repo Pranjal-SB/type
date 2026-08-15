@@ -1,4 +1,10 @@
-use typ_buffer::{Position, SearchQuery, TextBuffer};
+use typ_buffer::{Position, SearchQuery, Selection, Selections, TextBuffer};
+
+/// The M1-era helpers take no selection set of their own, so these tests pass a
+/// caret at the origin — undo's returned selections are covered in `undo.rs`.
+fn origin() -> Selections {
+    Selections::single(Selection::caret(Position { line: 0, col: 0 }))
+}
 
 fn pos(line: usize, col: usize) -> Position {
     Position { line, col }
@@ -83,7 +89,7 @@ fn replace_range_swaps_the_text_and_marks_the_buffer_dirty() {
 fn replace_range_is_undoable_as_one_step() {
     let mut b = TextBuffer::from_str("hello world\n");
     b.replace_range(pos(0, 6), pos(0, 11), "there");
-    b.undo();
+    b.undo(&origin());
     assert_eq!(b.line_text(0), "hello world");
 }
 

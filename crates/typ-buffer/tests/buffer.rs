@@ -1,4 +1,10 @@
-use typ_buffer::{Position, TextBuffer};
+use typ_buffer::{EditKind, Position, Selection, Selections, TextBuffer};
+
+/// The M1-era helpers take no selection set of their own, so these tests pass a
+/// caret at the origin — undo's returned selections are covered in `undo.rs`.
+fn origin() -> Selections {
+    Selections::single(Selection::caret(Position { line: 0, col: 0 }))
+}
 
 #[test]
 fn from_str_counts_lines() {
@@ -81,7 +87,7 @@ fn undo_restores_the_previous_content() {
     let mut b = TextBuffer::from_str("a\n");
     b.insert_char(Position { line: 0, col: 1 }, 'b');
     assert_eq!(b.line_text(0), "ab");
-    b.undo();
+    b.undo(&origin());
     assert_eq!(b.line_text(0), "a");
 }
 
@@ -89,8 +95,8 @@ fn undo_restores_the_previous_content() {
 fn redo_reapplies_an_undone_edit() {
     let mut b = TextBuffer::from_str("a\n");
     b.insert_char(Position { line: 0, col: 1 }, 'b');
-    b.undo();
-    b.redo();
+    b.undo(&origin());
+    b.redo(&origin());
     assert_eq!(b.line_text(0), "ab");
 }
 
@@ -121,7 +127,7 @@ fn undo_history_shares_the_rope_rather_than_copying_the_text() {
         b.insert_char(Position { line: 0, col: i }, 'x');
     }
     for _ in 0..200 {
-        b.undo();
+        b.undo(&origin());
     }
     assert_eq!(b.line_text(0), big);
 }
@@ -174,12 +180,12 @@ fn a_save_that_cannot_be_written_leaves_the_original_untouched() {
 #[test]
 fn an_edit_group_is_a_single_undo_step() {
     let mut b = TextBuffer::from_str("abc\n");
-    b.begin_edit_group();
+    b.begin_edit_group(EditKind::Other, &origin());
     b.insert_char(Position { line: 0, col: 0 }, 'x');
     b.insert_char(Position { line: 0, col: 1 }, 'y');
     b.end_edit_group();
     assert_eq!(b.line_text(0), "xyabc");
-    b.undo();
+    b.undo(&origin());
     assert_eq!(b.line_text(0), "abc", "one undo takes back both edits");
 }
 
@@ -188,6 +194,6 @@ fn edits_outside_a_group_are_separate_undo_steps() {
     let mut b = TextBuffer::from_str("abc\n");
     b.insert_char(Position { line: 0, col: 0 }, 'x');
     b.insert_char(Position { line: 0, col: 1 }, 'y');
-    b.undo();
+    b.undo(&origin());
     assert_eq!(b.line_text(0), "xabc");
 }

@@ -168,6 +168,82 @@ fn undo_pulls_the_caret_back_inside_the_text() {
 }
 
 #[test]
+fn typing_a_word_undoes_as_one_step() {
+    let mut p = EditorPanel::from_str("");
+    for ch in "hello".chars() {
+        p.apply_action(Action::InsertChar(ch));
+    }
+    assert_eq!(p.line_text(0), "hello");
+
+    p.apply_action(Action::Undo);
+    assert_eq!(
+        p.line_text(0),
+        "",
+        "one press takes back the word, not the last letter"
+    );
+}
+
+#[test]
+fn moving_the_cursor_splits_a_typing_run() {
+    let mut p = EditorPanel::from_str("");
+    for ch in "ab".chars() {
+        p.apply_action(Action::InsertChar(ch));
+    }
+    p.apply_action(mv(Motion::Left));
+    p.apply_action(Action::InsertChar('c'));
+
+    p.apply_action(Action::Undo);
+    assert_eq!(p.line_text(0), "ab", "the motion ended the first run");
+}
+
+#[test]
+fn backspacing_after_typing_is_its_own_step() {
+    let mut p = EditorPanel::from_str("");
+    for ch in "ab".chars() {
+        p.apply_action(Action::InsertChar(ch));
+    }
+    p.apply_action(del(Direction::Backward, false));
+    assert_eq!(p.line_text(0), "a");
+
+    p.apply_action(Action::Undo);
+    assert_eq!(
+        p.line_text(0),
+        "ab",
+        "the kind change split the run without needing a motion"
+    );
+}
+
+#[test]
+fn undo_returns_the_cursor_to_where_the_edit_was_made() {
+    let mut p = EditorPanel::from_str("one\ntwo\nthree\n");
+    p.set_selections_for_test(vec![Selection::caret(pos(1, 3))]);
+    p.apply_action(Action::InsertChar('!'));
+
+    // Wander somewhere unrelated, the way a user would before noticing.
+    p.apply_action(mv(Motion::DocumentStart));
+    p.apply_action(Action::Undo);
+
+    assert_eq!(p.line_text(1), "two");
+    assert_eq!(
+        p.cursor(),
+        pos(1, 3),
+        "undo shows what it undid rather than leaving the cursor where it was"
+    );
+}
+
+#[test]
+fn redo_returns_the_cursor_to_where_the_edit_left_it() {
+    let mut p = EditorPanel::from_str("one\ntwo\n");
+    p.set_selections_for_test(vec![Selection::caret(pos(1, 3))]);
+    p.apply_action(Action::InsertChar('!'));
+    p.apply_action(Action::Undo);
+    p.apply_action(Action::Redo);
+
+    assert_eq!(p.line_text(1), "two!");
+    assert_eq!(p.cursor(), pos(1, 4));
+}
+
+#[test]
 fn an_edit_reports_a_redraw() {
     let mut p = EditorPanel::from_str("ab\n");
     assert_eq!(

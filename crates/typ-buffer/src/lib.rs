@@ -12,4 +12,5 @@ pub use position::{
 };
 pub use search::{SearchQuery, find_in_line};
 pub use selection::{Selection, Selections};
+pub use undo::EditKind;
 pub use word::{next_word_boundary, previous_word_boundary, word_at};
