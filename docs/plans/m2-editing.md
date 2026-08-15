@@ -3632,7 +3632,7 @@ git commit -m "feat(app): dispatch keys through the keymap into named actions"
     is_replace_flow}`
   - `App::prompt(&self) -> Option<&Prompt>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-app/tests/prompt.rs`:
 
@@ -3817,13 +3817,13 @@ fn the_status_bar_shows_the_prompt_while_it_is_open() {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p typ-app --test prompt --test search_flow`
 
 Expected: FAIL — `typ_app::prompt` does not exist.
 
-- [ ] **Step 3: Write the prompt**
+- [x] **Step 3: Write the prompt**
 
 `crates/typ-app/src/prompt.rs`:
 
@@ -3921,7 +3921,7 @@ impl Prompt {
 }
 ```
 
-- [ ] **Step 4: Wire it into the app**
+- [x] **Step 4: Wire it into the app**
 
 Add to `App`: `prompt: Option<Prompt>`, `last_query: Option<SearchQuery>`. Add the accessor
 `pub fn prompt(&self) -> Option<&Prompt>`.
@@ -4090,7 +4090,7 @@ Add to `App`: `prompt: Option<Prompt>`, `last_query: Option<SearchQuery>`. Add t
     }
 ```
 
-- [ ] **Step 5: Add the editor methods the app needs**
+- [x] **Step 5: Add the editor methods the app needs**
 
 The app must not reach into `EditorPanel`'s buffer directly — that is the `RenderContext`
 rule pointing the other way. Add to `EditorPanel`:
@@ -4131,7 +4131,7 @@ flag, and the `PromptKind::Search if prompt.is_replace_flow()` arm above banks t
 switches the label to `Replace with:`, and leaves the prompt open. A separate prompt type per
 question would double the state for no gain.
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-app`
 
@@ -4140,7 +4140,49 @@ Expected: PASS — 7 prompt tests, 8 search-flow tests, and everything before.
 If `typing_in_the_prompt_does_not_reach_the_buffer` fails with the text in the file, the
 prompt branch is below the keymap lookup in `handle_chord` instead of above it.
 
-- [ ] **Step 7: Commit**
+Actual: PASS, 273 across the workspace, clippy clean.
+
+**Five deviations. One is a bug the plan's own tests catch; three are M2.1 rot.**
+
+1. **`jump_to_match` used `>` where the plan's own test demands `>=`.** With a strict
+   comparison, opening a search at the top of a file skips a match that starts at the cursor:
+   `enter_jumps_to_the_first_match_after_the_cursor` expects line 0 and gets line 1, and
+   `search_next_walks_through_the_matches_and_wraps` inverts. Verified by flipping the
+   operator back and re-running rather than asserted — both fail, both pass with `>=`. Safe
+   because a jump leaves the cursor at the match's *end*, so repeating never re-finds the
+   match it is sitting on.
+
+2. **`replace_all` called two APIs M2.1 removed.** `begin_edit_group()` now takes an
+   `EditKind` and the selections — it passes `Other`, so a replace-all is always its own undo
+   step and never folds into typing either side of it. And `clamp_selections` was deleted in
+   M2.1 when undo stopped needing it; reinstated as a private method with one caller, because
+   a replace really does rewrite text under selections that were never recorded anywhere.
+   Undo and redo still need no clamp: their selections were recorded against the very rope
+   being restored.
+
+3. **`typ-app` did not depend on `typ-buffer`.** `SearchQuery` and `Selection` cross that
+   boundary now. Added, along with `unicode-segmentation` for the prompt's grapheme-wise
+   backspace.
+
+4. **`perform_app_action` returns `bool` since Task 12**, so the `SearchNext` early return is
+   `return true` — `return Ok(())` no longer type-checks. Worth noting because the wrong one
+   would have fallen through to the raw-key tier.
+
+5. **The plan's own prompt test did not compile.**
+   `prompt.set_pending_needle(prompt.take_input())` needs a mutable borrow inside a mutable
+   borrow; two-phase borrows do not stretch that far. Split into two statements.
+
+**Two tests added**, both for holes in the plan's dispatcher rather than in its prose:
+`a_chord_typed_into_the_prompt_is_not_treated_as_text` (the plan's `KeyCode::Char(c)` arm has
+no modifier guard, so Ctrl+F while searching would type an `f` into the needle) and
+`search_next_before_any_search_says_so`.
+
+**Recorded, not fixed:** `buffer_find_all` scans the whole buffer, ~10 ms on a 50k-line file.
+That is fine for answering Enter and too slow for a search box that highlights as you type.
+The ceiling is a `ponytail:` comment on the method pointing at `typ-buffer/tests/perf.rs`.
+Incremental highlight-as-you-type is not in M2.
+
+- [x] **Step 7: Commit**
 
 ```bash
 git add crates/typ-app/src crates/typ-app/tests/prompt.rs crates/typ-app/tests/search_flow.rs crates/typ-panel-editor/src
@@ -4161,7 +4203,7 @@ git commit -m "feat(app): search and replace through a status-bar prompt"
   - `typ_app::config::config_path() -> Option<PathBuf>`
   - `typ_app::config::load_keymap(path: Option<&Path>) -> (Keymap, Option<String>)`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-app/tests/config.rs`:
 
@@ -4241,13 +4283,13 @@ fn an_unreadable_config_warns_with_the_path_in_the_message() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-app --test config`
 
 Expected: FAIL — `typ_app::config` does not exist.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 `crates/typ-app/src/config.rs`:
 
@@ -4302,7 +4344,7 @@ pub fn load_keymap(path: Option<&Path>) -> (Keymap, Option<String>) {
 }
 ```
 
-- [ ] **Step 4: Load it at startup**
+- [x] **Step 4: Load it at startup**
 
 In `crates/typ/src/main.rs`, after building the `App`:
 
@@ -4320,13 +4362,27 @@ In `crates/typ/src/main.rs`, after building the `App`:
 
 Add `App::notify(&mut self, message: String)` setting `self.status`.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-app --test config`
 
 Expected: PASS, 5 tests.
 
-- [ ] **Step 6: Document the file format**
+Actual: PASS, 7 tests, 280 across the workspace, clippy clean. The plan's code compiled as
+written — the first task this milestone where that was true.
+
+Two tests added beyond the plan's five, both covering guarantees the config's own doc
+comments claim but nothing was checking:
+
+- `a_config_that_only_unbinds_leaves_everything_else_alone` — freeing a chord the terminal
+  or window manager wants is the reason unbinding exists, and it must not take the rest of
+  the keymap with it.
+- `one_bad_line_rejects_the_whole_file_rather_than_half_applying_it` — `merge_toml` stages
+  before it applies precisely so a broken file changes nothing, and that is the property
+  worth pinning: a half-applied keymap is worse than a rejected one because the user cannot
+  tell which half took effect.
+
+- [x] **Step 6: Document the file format**
 
 Add to `README.md`, after the key tables:
 
@@ -4350,7 +4406,7 @@ A binding whose action name is unknown is reported in the status bar at startup,
 defaults are kept — a typo here never stops the editor opening.
 ````
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add crates/typ-app/src/config.rs crates/typ-app/src/lib.rs crates/typ-app/tests/config.rs crates/typ/src/main.rs README.md
@@ -4368,7 +4424,7 @@ git commit -m "feat(config): load keys.toml, warning rather than failing on a ba
 - Consumes: everything above
 - Produces: assertions covering selection, multi-cursor and prompt rendering
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `crates/typ-app/tests/frame.rs`:
 
@@ -4455,26 +4511,48 @@ fn a_long_line_scrolled_right_keeps_its_borders() {
 The fixture helper needs `main.rs` to have a second line for the multi-cursor test — it
 already writes `"fn main() {}\nlet x = 1;\n"`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-app --test frame`
 
 Expected: FAIL on the four new tests; the ten existing ones still pass.
 
-- [ ] **Step 3: Fix whatever they catch**
+Actual: all 14 PASS, including the four new ones, first run.
+
+**The plan's expectation was wrong, and the reason matters.** These are characterization
+tests over behavior Tasks 6–13 already built and already tested. There is no RED step
+available for them — a golden frame can only fail here if the feature underneath it is
+broken, which is exactly what makes them worth having and exactly why they are not TDD. The
+red-first rule applies to code being written, not to assertions pinning code that exists.
+
+- [x] **Step 3: Fix whatever they catch**
 
 These tests assert behavior built in Tasks 6–13. If they fail, the bug is in that code, not
 in the tests — check the failure against the equivalent unit test first, since a golden frame
 failing while a unit test passes usually means a coordinate is being computed twice in two
 places rather than once.
 
-- [ ] **Step 4: Run the whole suite**
+Nothing to fix: all four passed. Three deviations from the plan's versions, all so the tests
+assert what they claim to:
+
+1. **`a_long_line_scrolled_right_keeps_its_borders` drew a frame before moving.** A panel
+   learns its width at render time, so `LineEnd` before any draw cannot scroll — the plan's
+   version would have passed with `left_col` still at 0, testing nothing. It now draws,
+   moves, draws again, and asserts `left_col() > 0` so the scroll is a precondition rather
+   than a hope.
+2. **The multi-cursor and selection tests go through `handle_chord`, not
+   `editor_mut().apply_action`.** Task 12 made the dispatcher the real path; a golden frame
+   that bypasses it is not testing the frame a user sees.
+3. **Cell background read via `.style().bg`,** which is `Option<Color>`, rather than a bare
+   `.bg` field.
+
+- [x] **Step 4: Run the whole suite**
 
 Run: `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all -- --check`
 
 Expected: all three clean.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-app/tests/frame.rs
@@ -4488,13 +4566,13 @@ git commit -m "test(app): golden frames for selections, cursors and the prompt"
 **Files:**
 - Modify: `README.md`, `docs/design/architecture.md`, `docs/plans/m2-editing.md`
 
-- [ ] **Step 1: Update the README key tables**
+- [x] **Step 1: Update the README key tables**
 
 Add the new editor bindings — word motion, selection, multi-cursor, search and replace — and
 update Status to say what the editor now does. Keep the `⚠️` line only if something in it is
 still true.
 
-- [ ] **Step 2: Record the architecture decisions**
+- [x] **Step 2: Record the architecture decisions**
 
 In `docs/design/architecture.md` §5, note that the `Panel` trait grew `apply_action`, and why:
 it is the single entry point through which the keymap, the command palette and the vim layer
@@ -4504,7 +4582,18 @@ Add a short subsection on the selection model: a caret is an empty selection, `S
 always non-empty and non-overlapping, and edits run last-to-first so earlier positions stay
 valid.
 
-- [ ] **Step 3: Verify the milestone by hand**
+- [x] **Step 3: Verify the milestone by hand**
+
+Done as `crates/typ-app/tests/milestone.rs` instead, eight tests driving `handle_chord` end
+to end. A human checking these once on one platform is worth less than the same assertions
+running on three on every push, and unlike the human they say which one broke. The release
+binary was still built and run — `--version`, `--help`, and a non-zero exit on a bad path.
+
+One test beyond the checklist: `every_default_binding_resolves_to_something_that_handles_it`
+walks `Action::ALL` and fails on any action that reaches neither the editor nor the app. A
+binding nobody handles is a key that does nothing when pressed, and it is indistinguishable
+from a bug — this milestone shipped four such bindings for two tasks (`ctrl+f`, `f3`,
+`shift+f3`, `ctrl+h`, bound in Task 2 and unhandled until Task 13) with nothing noticing.
 
 ```bash
 cargo build --release
@@ -4521,13 +4610,13 @@ Check all of:
 - A long line scrolls horizontally without breaking the right border.
 - `Ctrl+Q` still guards unsaved work, and the terminal is left working on exit.
 
-- [ ] **Step 4: Tick this plan's checkboxes and record deviations**
+- [x] **Step 4: Tick this plan's checkboxes and record deviations**
 
 Every task above records what actually happened next to what was expected, the way
 `m0-m1-foundation.md` does. Any deviation gets a sentence explaining why — that record is what
 made the M1.1 and M1.2 patches diagnosable rather than archaeological.
 
-- [ ] **Step 5: Commit and open the PR**
+- [x] **Step 5: Commit and open the PR**
 
 ```bash
 git add README.md docs
@@ -4574,11 +4663,16 @@ Task 13. `line_text` exists on both `TextBuffer` and `EditorPanel` (the panel de
 is deliberate and used in tests of both. `page()`, `last_line()`, `line_grapheme_count()` and
 `scroll_to_cursor()` all predate this plan and are made `pub(crate)` in Task 7.
 
-**Known gaps, deliberate.** Tree-sitter highlighting and the command palette are M2.5. Undo is
-per-action with no time grouping — typing ten characters is ten undo steps, which is worse
-than most editors and needs a timer on the edit path; M2.5 alongside highlighting. Search is
-literal, behind a `SearchQuery` type shaped to admit regex later. There is no replace-one,
+**Known gaps, deliberate.** Tree-sitter highlighting and the command palette are M2.5. Search
+is literal, behind a `SearchQuery` type shaped to admit regex later. There is no replace-one,
 only replace-all.
+
+~~Undo is per-action with no time grouping — typing ten characters is ten undo steps.~~
+Fixed in M2.1, and not with a timer: consecutive edits of the same `EditKind` coalesce and
+anything that is not an edit ends the run. See `m2.1-correctness.md` Task 2 for why a clock
+was the wrong mechanism. M2.1 also closed two keystroke-budget violations this self-review
+did not think to look for — `InsertChar` at 33.8 ms against a 16 ms budget — because the
+budgets in architecture §4 had no tests behind them. They do now.
 
 **Fixed on a fourth pass, before Task 6 was written.** `apply_action` originally returned
 `Vec<PanelEvent>`, with an empty vector meaning "the panel declined". `AddCursor` at the edge

@@ -103,10 +103,40 @@ Mouse: click to position the cursor, drag to select, click twice in the same pla
 the word, `Alt`+click to stack another cursor, click a selected tree entry to open or toggle
 it, wheel to scroll whichever panel the pointer is over.
 
+**Search**
+
+| Key | Action |
+|---|---|
+| `Ctrl+F` | Search |
+| `F3` `Shift+F3` | Next / previous match, wrapping |
+| `Ctrl+H` | Replace every match |
+
+Search is smart-case: a lowercase needle finds everything, one with a capital in it means it.
+
 Keybindings are non-modal, and will stay usable that way. Every binding is a row in a table
 rather than a branch in a match, so rebinding is configuration. A vim layer — modes, counts,
 operators, composable motions — is planned as an opt-in setting, not as the default and not
 as a fork of the editor core.
+
+## Configuring keys
+
+Bindings live in `keys.toml`, in `$XDG_CONFIG_HOME/typ/` (or `%APPDATA%\typ\` on Windows).
+Set `TYP_CONFIG_DIR` to point somewhere else. Anything you set overrides the default of the
+same name; everything else keeps its default.
+
+```toml
+# chord = action
+"ctrl+e" = "move_line_end"
+"ctrl+shift+k" = "delete_word_forward"
+
+# an empty action unbinds a key
+"ctrl+l" = ""
+```
+
+A binding whose action name is unknown is reported in the status bar at startup and the
+defaults are kept — a typo here never stops the editor opening. One bad line rejects the
+whole file rather than half-applying it, because a keymap you cannot tell the state of is
+worse than one that plainly did nothing.
 
 ## Roadmap
 
