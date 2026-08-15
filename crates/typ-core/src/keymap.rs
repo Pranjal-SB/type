@@ -1,0 +1,300 @@
+//! Chord string → `Action`, as data rather than control flow.
+//!
+//! Bindings live in a table because three things need to read them: the input
+//! loop, help text, and — once the vim layer lands — a second table swapped in
+//! wholesale. A `match` on `KeyCode` can be read by exactly one of those.
+
+use std::collections::BTreeMap;
+
+use anyhow::{Context, Result, anyhow};
+
+use crate::{Action, Direction, KeyChord, Motion};
+
+#[derive(Debug, Clone)]
+pub struct Keymap {
+    /// Canonical chord string → action. `BTreeMap` so `bindings_for` and any
+    /// help listing come out in a stable order rather than a hash order that
+    /// changes between runs.
+    bindings: BTreeMap<String, Action>,
+}
+
+/// The non-modal defaults, shaped like what someone arriving from a GUI editor
+/// already has in their fingers.
+const DEFAULTS: &[(&str, Action)] = &[
+    (
+        "left",
+        Action::Move {
+            motion: Motion::Left,
+            extend: false,
+        },
+    ),
+    (
+        "shift+left",
+        Action::Move {
+            motion: Motion::Left,
+            extend: true,
+        },
+    ),
+    (
+        "right",
+        Action::Move {
+            motion: Motion::Right,
+            extend: false,
+        },
+    ),
+    (
+        "shift+right",
+        Action::Move {
+            motion: Motion::Right,
+            extend: true,
+        },
+    ),
+    (
+        "up",
+        Action::Move {
+            motion: Motion::Up,
+            extend: false,
+        },
+    ),
+    (
+        "shift+up",
+        Action::Move {
+            motion: Motion::Up,
+            extend: true,
+        },
+    ),
+    (
+        "down",
+        Action::Move {
+            motion: Motion::Down,
+            extend: false,
+        },
+    ),
+    (
+        "shift+down",
+        Action::Move {
+            motion: Motion::Down,
+            extend: true,
+        },
+    ),
+    (
+        "ctrl+left",
+        Action::Move {
+            motion: Motion::WordLeft,
+            extend: false,
+        },
+    ),
+    (
+        "ctrl+shift+left",
+        Action::Move {
+            motion: Motion::WordLeft,
+            extend: true,
+        },
+    ),
+    (
+        "ctrl+right",
+        Action::Move {
+            motion: Motion::WordRight,
+            extend: false,
+        },
+    ),
+    (
+        "ctrl+shift+right",
+        Action::Move {
+            motion: Motion::WordRight,
+            extend: true,
+        },
+    ),
+    (
+        "home",
+        Action::Move {
+            motion: Motion::LineStart,
+            extend: false,
+        },
+    ),
+    (
+        "shift+home",
+        Action::Move {
+            motion: Motion::LineStart,
+            extend: true,
+        },
+    ),
+    (
+        "end",
+        Action::Move {
+            motion: Motion::LineEnd,
+            extend: false,
+        },
+    ),
+    (
+        "shift+end",
+        Action::Move {
+            motion: Motion::LineEnd,
+            extend: true,
+        },
+    ),
+    (
+        "pageup",
+        Action::Move {
+            motion: Motion::PageUp,
+            extend: false,
+        },
+    ),
+    (
+        "shift+pageup",
+        Action::Move {
+            motion: Motion::PageUp,
+            extend: true,
+        },
+    ),
+    (
+        "pagedown",
+        Action::Move {
+            motion: Motion::PageDown,
+            extend: false,
+        },
+    ),
+    (
+        "shift+pagedown",
+        Action::Move {
+            motion: Motion::PageDown,
+            extend: true,
+        },
+    ),
+    (
+        "ctrl+home",
+        Action::Move {
+            motion: Motion::DocumentStart,
+            extend: false,
+        },
+    ),
+    (
+        "ctrl+shift+home",
+        Action::Move {
+            motion: Motion::DocumentStart,
+            extend: true,
+        },
+    ),
+    (
+        "ctrl+end",
+        Action::Move {
+            motion: Motion::DocumentEnd,
+            extend: false,
+        },
+    ),
+    (
+        "ctrl+shift+end",
+        Action::Move {
+            motion: Motion::DocumentEnd,
+            extend: true,
+        },
+    ),
+    (
+        "backspace",
+        Action::Delete {
+            direction: Direction::Backward,
+            by_word: false,
+        },
+    ),
+    (
+        "ctrl+backspace",
+        Action::Delete {
+            direction: Direction::Backward,
+            by_word: true,
+        },
+    ),
+    (
+        "delete",
+        Action::Delete {
+            direction: Direction::Forward,
+            by_word: false,
+        },
+    ),
+    (
+        "ctrl+delete",
+        Action::Delete {
+            direction: Direction::Forward,
+            by_word: true,
+        },
+    ),
+    ("enter", Action::InsertNewline),
+    ("ctrl+z", Action::Undo),
+    ("ctrl+y", Action::Redo),
+    ("ctrl+a", Action::SelectAll),
+    ("ctrl+l", Action::SelectLine),
+    ("esc", Action::CollapseSelections),
+    ("ctrl+alt+up", Action::AddCursor(Direction::Backward)),
+    ("ctrl+alt+down", Action::AddCursor(Direction::Forward)),
+    ("ctrl+s", Action::Save),
+    ("ctrl+q", Action::Quit),
+    ("tab", Action::FocusNext),
+    ("ctrl+f", Action::SearchOpen),
+    ("f3", Action::SearchNext),
+    ("shift+f3", Action::SearchPrevious),
+    ("ctrl+h", Action::ReplaceOpen),
+];
+
+impl Keymap {
+    pub fn default_bindings() -> Self {
+        Self {
+            bindings: DEFAULTS
+                .iter()
+                .map(|(chord, action)| ((*chord).to_string(), *action))
+                .collect(),
+        }
+    }
+
+    pub fn lookup(&self, chord: &KeyChord) -> Option<Action> {
+        self.bindings.get(&chord.canonical).copied()
+    }
+
+    /// Chords bound to an action, for help text and the future palette.
+    pub fn bindings_for(&self, action: Action) -> Vec<&str> {
+        self.bindings
+            .iter()
+            .filter(|(_, a)| **a == action)
+            .map(|(chord, _)| chord.as_str())
+            .collect()
+    }
+
+    /// Apply a user config over the current bindings.
+    ///
+    /// Parsed into a staging list first, so a config with one bad line changes
+    /// nothing. A half-applied keymap is worse than a rejected one: the user
+    /// cannot tell which half took effect.
+    pub fn merge_toml(&mut self, src: &str) -> Result<()> {
+        let table: BTreeMap<String, String> =
+            toml::from_str(src).context("parsing the keybinding table")?;
+
+        let mut staged: Vec<(String, Option<Action>)> = Vec::new();
+        for (chord, action_name) in table {
+            if action_name.is_empty() {
+                // An empty action unbinds, which a user needs in order to free
+                // a chord their terminal or window manager wants for itself.
+                staged.push((chord, None));
+                continue;
+            }
+            let action = Action::from_name(&action_name)
+                .ok_or_else(|| anyhow!("{chord} is bound to an unknown action: {action_name}"))?;
+            staged.push((chord, Some(action)));
+        }
+
+        for (chord, action) in staged {
+            match action {
+                Some(action) => {
+                    self.bindings.insert(chord, action);
+                }
+                None => {
+                    self.bindings.remove(&chord);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Default for Keymap {
+    fn default() -> Self {
+        Self::default_bindings()
+    }
+}

@@ -97,6 +97,18 @@ made testable so it can be verified rather than asserted.
 LSP, git, file watching, and syntax parsing all run on worker threads and deliver results as
 events. The render thread only renders.
 
+**These budgets have tests behind them** — `crates/typ-buffer/tests/perf.rs` and
+`crates/typ-panel-editor/tests/perf.rs`, measured against a 50k-line file. They are
+`#[ignore]`d, because a shared CI runner cannot hold a 16 ms number steadily enough to gate a
+merge on it and a flaky perf gate gets disabled within a week; they are run by hand with
+`--release --ignored`. A budget stated in prose with nothing measuring it is how M2 shipped a
+keystroke costing 33 ms against this table, for ten tasks, with 215 tests green.
+
+One thing the tests establish that the budget alone does not: a whole-buffer scan returning a
+match on every line of a large file does not fit in a frame at any constant factor. Search is
+therefore viewport-first with the remainder completed off-thread — a design constraint, not a
+number to optimise toward.
+
 ### Clean
 
 - No chrome without a job. Every border, gutter, and status segment justifies its cells.

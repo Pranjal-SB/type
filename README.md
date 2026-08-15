@@ -38,16 +38,21 @@ immediately if you're arriving from a GUI editor, without giving up capability t
 
 ## Status
 
-**Pre-alpha.** Walking skeleton runs: file tree with expandable directories, editor panel,
-focus cycling with visible focus, mouse and keyboard as peers, scroll coalescing, undo/redo
-and save. No syntax highlighting, no LSP, no selections, no splits or tabs yet — see the
-roadmap.
+**Pre-alpha.** Editing is real: selections, multiple cursors, word-wise motion, drag to
+select, and horizontal scrolling, alongside the file tree, focus cycling, undo/redo and save.
+Every editing primitive is a named action and every key is a table row, so a command palette
+and an opt-in vim layer are configuration rather than a rewrite.
+
+No syntax highlighting, no search UI, no LSP, no splits or tabs yet — see the roadmap.
 
 A status bar carries messages, the open file, and the cursor position. Quitting with unsaved
 changes asks before discarding them.
 
+Undo takes back a run of typing in one press rather than one character at a time, and puts
+the cursor back where the edit was made.
+
 - [Architecture and design rationale](docs/design/architecture.md)
-- [Current implementation plan](docs/plans/m0-m1-foundation.md)
+- [Current implementation plan](docs/plans/m2-editing.md)
 
 ## Build
 
@@ -77,16 +82,29 @@ cargo build --release
 | Key | Action |
 |---|---|
 | Arrows | Move the cursor |
+| `Shift`+arrows | Extend the selection |
+| `Ctrl+←` `Ctrl+→` | Move by word |
 | `Home` `End` | Start / end of line |
+| `Ctrl+Home` `Ctrl+End` | Start / end of document |
 | `PageUp` `PageDown` | Move by a screen |
+| `Ctrl+A` | Select all |
+| `Ctrl+L` | Select the line |
+| `Esc` | Collapse to a single cursor |
+| `Ctrl+Alt+↑` `Ctrl+Alt+↓` | Add a cursor above / below |
 | `Enter` | Split the line |
 | `Backspace` `Delete` | Delete before / under the cursor |
+| `Ctrl+Backspace` `Ctrl+Delete` | Delete a word |
 | `Ctrl+Z` `Ctrl+Y` | Undo / redo |
 
-Mouse: click to select or position the cursor, click a selected tree entry to open or toggle
+Every one of those works at every cursor at once, and holding `Shift` with any motion
+extends instead of moving.
+
+Mouse: click to position the cursor, drag to select, click twice in the same place to select
+the word, `Alt`+click to stack another cursor, click a selected tree entry to open or toggle
 it, wheel to scroll whichever panel the pointer is over.
 
-Keybindings are non-modal, and will stay usable that way. A vim layer — modes, counts,
+Keybindings are non-modal, and will stay usable that way. Every binding is a row in a table
+rather than a branch in a match, so rebinding is configuration. A vim layer — modes, counts,
 operators, composable motions — is planned as an opt-in setting, not as the default and not
 as a fork of the editor core.
 

@@ -102,7 +102,7 @@ touching the editor core, by making every primitive an `Action` and every bindin
   - `typ_core::Action::name(&self) -> &'static str`
   - `typ_core::Motion`, `typ_core::Direction`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-core/tests/action.rs`:
 
@@ -181,13 +181,13 @@ fn directions_are_explicit_arguments_not_separate_actions() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-core --test action`
 
 Expected: FAIL — `unresolved imports typ_core::Action, typ_core::Direction, typ_core::Motion`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 `crates/typ-core/src/action.rs`:
 
@@ -413,13 +413,15 @@ pub mod action;
 pub use action::{Action, Direction, Motion};
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cargo test -p typ-core --test action`
 
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 6 tests. Clippy clean. No deviations — the plan's code compiled as written.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-core/src/action.rs crates/typ-core/src/lib.rs crates/typ-core/tests/action.rs
@@ -442,7 +444,7 @@ git commit -m "feat(core): name every editing primitive as an Action"
   - `Keymap::merge_toml(&mut self, src: &str) -> anyhow::Result<()>`
   - `Keymap::bindings_for(&self, action: Action) -> Vec<&str>`
 
-- [ ] **Step 1: Add the dependencies**
+- [x] **Step 1: Add the dependencies**
 
 `typ-core` currently depends on only `crossterm` and `ratatui`. `merge_toml` needs both a TOML
 parser and `anyhow`, which the crate does not yet have:
@@ -466,7 +468,7 @@ ratatui.workspace = true
 toml.workspace = true
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `crates/typ-core/tests/keymap.rs`:
 
@@ -565,13 +567,13 @@ fn bindings_can_be_looked_up_backwards_for_help_text() {
 }
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [x] **Step 3: Run the test to verify it fails**
 
 Run: `cargo test -p typ-core --test keymap`
 
 Expected: FAIL — `unresolved import typ_core::Keymap`.
 
-- [ ] **Step 4: Write the implementation**
+- [x] **Step 4: Write the implementation**
 
 `crates/typ-core/src/keymap.rs`:
 
@@ -719,17 +721,26 @@ pub mod keymap;
 pub use keymap::Keymap;
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `cargo test -p typ-core --test keymap`
 
 Expected: PASS, 10 tests.
 
+Actual: PASS, 10 tests. Two notes from execution:
+
+- `cargo add toml` resolved **1.1.4**, not the 0.8 line. Using `cargo add` rather than a
+  guessed version in the manifest is why this was a non-event; `toml::from_str` into a
+  `BTreeMap<String, String>` works unchanged on 1.x.
+- `cargo add` writes its own `toml = "1.1.4"` line into the crate manifest, which collides
+  with the `toml.workspace = true` this step also asks for. Cargo reports it as
+  `error: duplicate key`. Delete the version line and keep the workspace one.
+
 If `shift+left` fails to look up, check `KeyChord::from_event` — crossterm reports
 `KeyModifiers::SHIFT` on arrow keys but folds shift into the character for letters, which is
 why the default table has no `shift+<letter>` entries.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/typ-core/src/keymap.rs crates/typ-core/src/lib.rs \
@@ -752,7 +763,7 @@ git commit -m "feat(core): keybindings as a data table with TOML overrides"
   - `typ_buffer::Selections` with `primary`, `iter`, `len`, `push`, `set_single`,
     `map_in_place`, `collapse_to_heads`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-buffer/tests/selection.rs`:
 
@@ -855,13 +866,13 @@ fn map_in_place_rewrites_every_selection_then_restores_the_invariants() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-buffer --test selection`
 
 Expected: FAIL — `unresolved imports typ_buffer::Selection, typ_buffer::Selections`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 `crates/typ-buffer/src/selection.rs`:
 
@@ -1044,13 +1055,29 @@ pub mod selection;
 pub use selection::{Selection, Selections};
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cargo test -p typ-buffer --test selection`
 
 Expected: PASS, 11 tests.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 13 tests — two added during execution, after one of the planned tests failed
+against the planned code:
+
+- `map_in_place_rewrites_every_selection_then_restores_the_invariants` failed with 2
+  selections instead of 1. `overlaps` used `a_end > b_start`, which is correct for ranges but
+  false for two carets at the *same* position: an empty range never strictly contains
+  anything, so duplicate cursors survived normalization and typing would have inserted twice
+  in one place. `overlaps` now also merges two empty selections at the same point.
+- Added `two_carets_at_the_same_position_are_one_cursor` and
+  `a_caret_inside_a_selection_is_absorbed_by_it` to pin that behaviour by name rather than
+  leaving it as a side effect the `map_in_place` test happens to cover.
+
+Also dropped the planned `is_empty`, which returned `list.is_empty()` and could only ever
+answer false. `#[allow(clippy::len_without_is_empty)]` with the reason stated is more honest
+than a method that is a constant.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-buffer/src/selection.rs crates/typ-buffer/src/lib.rs crates/typ-buffer/tests/selection.rs
@@ -1072,7 +1099,7 @@ git commit -m "feat(buffer): selections with a primary, ordered and non-overlapp
   - `typ_buffer::previous_word_boundary(line: &str, col: usize) -> usize`
   - `typ_buffer::word_at(line: &str, col: usize) -> Option<(usize, usize)>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-buffer/tests/word.rs`:
 
@@ -1137,13 +1164,13 @@ fn a_cursor_just_past_a_word_is_still_on_it() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-buffer --test word`
 
 Expected: FAIL — unresolved imports.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 `crates/typ-buffer/src/word.rs`:
 
@@ -1256,13 +1283,19 @@ pub mod word;
 pub use word::{next_word_boundary, previous_word_boundary, word_at};
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cargo test -p typ-buffer --test word`
 
 Expected: PASS, 10 tests.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 11 tests. One planned assertion was wrong and the code was right:
+`previous_word_boundary("日本語 ok", 4)` was written expecting 4, but a cursor at grapheme 4
+sits at the *start* of "ok", so moving back a word must reach the start of the CJK run at 0 —
+expecting 4 would mean the key did nothing. Rewritten to assert both meaningful cases (from 6
+back to 4, from 4 back to 0), and one test added for `word_at` on an empty line.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-buffer/src/word.rs crates/typ-buffer/src/lib.rs crates/typ-buffer/tests/word.rs
@@ -1285,7 +1318,7 @@ git commit -m "feat(buffer): grapheme-indexed word boundaries with punctuation r
   - `TextBuffer::find_all(&self, query: &SearchQuery) -> Vec<Selection>`
   - `TextBuffer::replace_range(&mut self, start: Position, end: Position, text: &str)`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-buffer/tests/search.rs`:
 
@@ -1369,13 +1402,13 @@ fn replace_range_handles_a_replacement_of_a_different_length() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-buffer --test search`
 
 Expected: FAIL — `unresolved import typ_buffer::SearchQuery`, no method `find_all`.
 
-- [ ] **Step 3: Write the search module**
+- [x] **Step 3: Write the search module**
 
 `crates/typ-buffer/src/search.rs`:
 
@@ -1402,39 +1435,81 @@ impl SearchQuery {
 }
 
 /// Grapheme index pairs of every non-overlapping match in one line.
+///
+/// The scan runs on `&str` with `match_indices`, which is SIMD-optimised in
+/// std, and converts byte offsets to grapheme indices once per hit. The
+/// obvious alternative — collecting the line into a `Vec<String>` of graphemes
+/// and comparing windows — allocates once per character of every line searched,
+/// which on a 100k-line file is millions of allocations per keystroke of an
+/// incremental search.
 pub fn find_in_line(line: &str, query: &SearchQuery) -> Vec<(usize, usize)> {
     if query.needle.is_empty() {
         return Vec::new();
     }
 
-    let fold = |s: &str| {
-        if query.case_sensitive {
-            s.to_string()
-        } else {
-            s.to_lowercase()
-        }
+    // One allocation per line, and only when folding case — not one per
+    // character. Case folding can change byte length, so the folded copy is
+    // only ever used to find byte offsets, which are then mapped back through
+    // the original line.
+    let (haystack, needle) = if query.case_sensitive {
+        (line.to_string(), query.needle.clone())
+    } else {
+        (line.to_lowercase(), query.needle.to_lowercase())
     };
 
-    let haystack: Vec<String> = line.graphemes(true).map(&fold).collect();
-    let needle: Vec<String> = query.needle.graphemes(true).map(&fold).collect();
+    let mut byte_hits: Vec<(usize, usize)> = Vec::new();
+    let mut from = 0usize;
+    while let Some(found) = haystack[from..].find(&needle) {
+        let start = from + found;
+        let end = start + needle.len();
+        byte_hits.push((start, end));
+        // Advance past the match: overlapping hits would let a replace-all
+        // rewrite text it had already rewritten.
+        from = end;
+    }
+    if byte_hits.is_empty() {
+        return Vec::new();
+    }
 
-    let mut hits = Vec::new();
-    let mut i = 0usize;
-    while i + needle.len() <= haystack.len() {
-        if haystack[i..i + needle.len()] == needle[..] {
-            hits.push((i, i + needle.len()));
-            // Advance past the match. Overlapping hits would let a replace-all
-            // rewrite text it had already rewritten.
-            i += needle.len();
-        } else {
-            i += 1;
+    // Walk the line once, converting byte offsets into grapheme indices.
+    let mut hits = Vec::with_capacity(byte_hits.len());
+    let mut pending = byte_hits.into_iter().peekable();
+    let mut open: Option<usize> = None;
+    for (index, (byte, _)) in haystack.grapheme_indices(true).enumerate() {
+        while pending.peek().is_some_and(|(start, _)| *start == byte) {
+            open = Some(index);
+            let (_, end_byte) = *pending.peek().expect("just checked");
+            if end_byte == byte {
+                pending.next();
+            } else {
+                break;
+            }
         }
+        if let Some((_, end_byte)) = pending.peek().copied()
+            && end_byte == byte
+            && let Some(start_index) = open.take()
+        {
+            hits.push((start_index, index));
+            pending.next();
+        }
+    }
+    // A match ending at the end of the line has no following grapheme to close
+    // it, so close it here.
+    if let Some(start_index) = open {
+        hits.push((start_index, line.graphemes(true).count()));
     }
     hits
 }
 ```
 
-- [ ] **Step 4: Add the buffer methods**
+Note the import: this needs `UnicodeSegmentation` for both `graphemes` and `grapheme_indices`.
+
+If the offset-mapping loop proves fiddly in practice, the acceptable fallback is a single
+pass building a `Vec<usize>` of byte offsets per grapheme and binary-searching it — still one
+allocation per line rather than one per character. What is **not** acceptable is collecting
+`Vec<String>`.
+
+- [x] **Step 4: Add the buffer methods**
 
 In `crates/typ-buffer/src/buffer.rs`, add these to `impl TextBuffer`, and add
 `use crate::search::SearchQuery;` and `use crate::selection::Selection;` to the imports:
@@ -1479,13 +1554,30 @@ pub mod search;
 pub use search::{SearchQuery, find_in_line};
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `cargo test -p typ-buffer --test search`
 
 Expected: PASS, 9 tests.
 
-- [ ] **Step 6: Run the whole buffer suite**
+Actual: PASS, 12 tests. The implementation took the fallback the plan named rather than its
+first choice, and ended up simpler than either:
+
+- The planned scan folded whole lines with `to_lowercase` and mapped byte offsets back to
+  grapheme indices afterwards. That is not just fiddly, it is **wrong** — case folding can
+  change a string's byte length, so offsets taken in the folded copy do not reliably describe
+  the original.
+- Instead the line and the needle are each split into `Vec<&str>` of graphemes: two
+  allocations of borrowed slices, not one per character, which was the whole point of the
+  rewrite. Indices come out in graphemes directly, so nothing needs mapping back and folding
+  can never shift them.
+- Case-insensitive comparison folds lazily per grapheme via `char::to_lowercase`, which
+  returns an iterator precisely so no `String` is built.
+
+Three tests added: a match made of wide characters, a match at the end of a line, and
+`replace_range` with an empty replacement.
+
+- [x] **Step 6: Run the whole buffer suite**
 
 Run: `cargo test -p typ-buffer`
 
@@ -1493,7 +1585,7 @@ Expected: PASS — the earlier buffer, width, selection and word tests still pas
 and `replace_range` are additive; if `delete_before` or `insert_char` broke, the cause is
 `char_offset` having been changed rather than reused.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add crates/typ-buffer/src/search.rs crates/typ-buffer/src/buffer.rs crates/typ-buffer/src/lib.rs crates/typ-buffer/tests/search.rs
@@ -1513,12 +1605,13 @@ git commit -m "feat(buffer): literal search and single-step range replacement"
 **Interfaces:**
 - Consumes: `typ_buffer::{Selection, Selections}`, `typ_core::Action`
 - Produces:
-  - `Panel::apply_action(&mut self, action: Action) -> Vec<PanelEvent>` — defaulted to empty
+  - `Panel::apply_action(&mut self, action: Action) -> Option<Vec<PanelEvent>>` — defaulted to
+    `None`, meaning "not handled"
   - `EditorPanel::selections(&self) -> &Selections`
   - `EditorPanel::cursor(&self) -> Position` — now the primary head, unchanged signature
   - `typ_panel_editor::render::styled_line(...) -> ratatui::text::Line`
 
-- [ ] **Step 1: Add the trait method**
+- [x] **Step 1: Add the trait method**
 
 In `crates/typ-core/src/panel.rs`, add to `trait Panel`, beside the other defaulted methods:
 
@@ -1526,15 +1619,21 @@ In `crates/typ-core/src/panel.rs`, add to `trait Panel`, beside the other defaul
     /// Perform a named action.
     ///
     /// This is the only way a binding, the command palette, or the vim layer
-    /// reaches a panel's behavior. A panel that ignores an action returns no
-    /// events, which is how the app knows to try the action itself.
-    fn apply_action(&mut self, action: crate::Action) -> Vec<PanelEvent> {
+    /// reaches a panel's behavior.
+    ///
+    /// `None` means "I do not handle this action" and lets the app try it.
+    /// `Some(vec![])` means "handled, nothing to report" — a real outcome, as
+    /// when adding a cursor at the edge of the document does nothing. Folding
+    /// those two into an empty vector reads fine today and becomes a silent bug
+    /// the first time an action needs both a panel implementation and an app
+    /// fallback.
+    fn apply_action(&mut self, action: crate::Action) -> Option<Vec<PanelEvent>> {
         let _ = action;
-        Vec::new()
+        None
     }
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `crates/typ-panel-editor/tests/selection_render.rs`:
 
@@ -1644,13 +1743,13 @@ fn selection_highlighting_lands_on_the_right_columns_with_wide_characters() {
 }
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [x] **Step 3: Run the test to verify it fails**
 
 Run: `cargo test -p typ-panel-editor --test selection_render`
 
 Expected: FAIL — no method `selections`, no method `set_selections_for_test`.
 
-- [ ] **Step 4: Replace the cursor field with selections**
+- [x] **Step 4: Replace the cursor field with selections**
 
 In `crates/typ-panel-editor/src/lib.rs`, change the struct and add the accessors. The
 `cursor: Position` field goes away entirely — leaving it beside `Selections` would create two
@@ -1696,7 +1795,7 @@ Every existing use of `self.cursor` inside the file becomes
 `self.selections.set_single(Selection::caret(new_position))`. The existing `handle_key` arms
 stay working for now; Task 7 replaces them.
 
-- [ ] **Step 5: Write the selection-aware line renderer**
+- [x] **Step 5: Write the selection-aware line renderer**
 
 `crates/typ-panel-editor/src/render.rs`:
 
@@ -1752,7 +1851,7 @@ pub fn styled_line(
 }
 ```
 
-- [ ] **Step 6: Use it from `render`**
+- [x] **Step 6: Use it from `render`**
 
 In `crates/typ-panel-editor/src/lib.rs`, replace the `Line::raw(...)` construction inside
 `Panel::render` with:
@@ -1769,16 +1868,28 @@ In `crates/typ-panel-editor/src/lib.rs`, replace the `Line::raw(...)` constructi
 and add `pub mod render;` at the top of the file. Add `unicode-segmentation.workspace = true`
 to `crates/typ-panel-editor/Cargo.toml` if it is not already there.
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-panel-editor`
 
 Expected: PASS — 7 new selection-render tests plus the existing editor and keys suites.
 
+Actual: PASS, 7 new tests, 160 across the workspace. One assertion was wrong about ratatui
+rather than about our rendering: a wide grapheme occupies its own cell plus a continuation
+cell holding a space, and only the first carries the glyph and its style. The terminal paints
+the double-width character across both columns from that first cell and never draws the
+continuation, so asserting a selection background on the second cell asserts something no
+user can see. Probed the real buffer contents rather than guessing, then asserted what is
+actually there.
+
+The old `handle_key` arms were kept working by routing every former `self.cursor = ...`
+assignment through a new `set_caret` helper. Task 7 replaces those arms with actions; until
+then the selection set stays the single source of truth even on the legacy path.
+
 If the wide-character test fails by one column, the cause is spans being cut on `char`
 boundaries rather than graphemes; `styled_line` must iterate `graphemes(true)`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add crates/typ-core/src/panel.rs crates/typ-panel-editor/src crates/typ-panel-editor/tests crates/typ-panel-editor/Cargo.toml
@@ -1797,7 +1908,7 @@ git commit -m "feat(editor): hold selections rather than a bare cursor, and draw
 - Consumes: `typ_core::{Action, Motion}`, `typ_buffer::{next_word_boundary, previous_word_boundary}`
 - Produces: `EditorPanel::apply_action` covering every `Action::Move`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-panel-editor/tests/motion.rs`:
 
@@ -1946,14 +2057,14 @@ fn a_motion_requests_a_redraw() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-panel-editor --test motion`
 
 Expected: FAIL — `apply_action` is the defaulted trait method, so every assertion about
 movement fails while the redraw assertion fails on an empty vector.
 
-- [ ] **Step 3: Write the motion implementation**
+- [x] **Step 3: Write the motion implementation**
 
 `crates/typ-panel-editor/src/actions.rs`:
 
@@ -2069,8 +2180,9 @@ impl EditorPanel {
         Position { line, col }
     }
 
-    /// The entry point every consumer uses.
-    pub fn perform(&mut self, action: Action) -> Vec<PanelEvent> {
+    /// The entry point every consumer uses. `None` means this panel does not
+    /// handle the action, so the app should try it.
+    pub fn perform(&mut self, action: Action) -> Option<Vec<PanelEvent>> {
         match action {
             Action::Move { motion, extend } => {
                 // The goal column survives vertical motion and is cleared by
@@ -2108,9 +2220,10 @@ impl EditorPanel {
                     self.selections.push(selection);
                 }
                 self.scroll_to_cursor();
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
-            _ => Vec::new(),
+            // Not this panel's business. The app tries it next.
+            _ => None,
         }
     }
 }
@@ -2121,7 +2234,7 @@ Note the borrow shape: selections are read into a `Vec` before being written bac
 `Vec` of at most a few dozen selections is the cheap way out; cloning the whole `Selections`
 each keystroke is not.
 
-- [ ] **Step 4: Wire it to the trait**
+- [x] **Step 4: Wire it to the trait**
 
 In `crates/typ-panel-editor/src/lib.rs`, add `pub mod actions;`, make `goal_col`,
 `selections`, `buffer`, `top_line`, `height`, `page`, `line_grapheme_count`, `last_line` and
@@ -2129,18 +2242,26 @@ In `crates/typ-panel-editor/src/lib.rs`, add `pub mod actions;`, make `goal_col`
 `impl Panel for EditorPanel` add:
 
 ```rust
-    fn apply_action(&mut self, action: Action) -> Vec<PanelEvent> {
+    fn apply_action(&mut self, action: Action) -> Option<Vec<PanelEvent>> {
         self.perform(action)
     }
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `cargo test -p typ-panel-editor --test motion`
 
 Expected: PASS, 12 tests.
 
-- [ ] **Step 6: Commit**
+Actual: PASS, 14 tests. Two planned expectations were wrong about collapse behaviour and the
+implementation was right: pressing Right with a selection active collapses to the far edge
+**and stops there**, rather than collapsing and then also moving one further. The keypress is
+spent dismissing the selection; advancing as well would skip a character, and no GUI editor
+does that. Same for Left at the near edge. Two tests added — one pinning that a horizontal
+motion clears the goal column, one that an action the editor does not handle returns `None`
+rather than an empty vector.
+
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/typ-panel-editor/src crates/typ-panel-editor/tests/motion.rs
@@ -2159,7 +2280,7 @@ git commit -m "feat(editor): every motion as an action, applied to every selecti
 - Consumes: `typ_buffer::TextBuffer`, `typ_core::{Action, Direction}`
 - Produces: `Action::{InsertChar, InsertNewline, Delete, Undo, Redo}` handled in `perform`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-panel-editor/tests/edit.rs`:
 
@@ -2316,13 +2437,13 @@ fn undo_pulls_the_caret_back_inside_the_text() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-panel-editor --test edit`
 
 Expected: FAIL — `perform` returns nothing for edit actions, so the buffer never changes.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add to `impl EditorPanel` in `crates/typ-panel-editor/src/actions.rs`:
 
@@ -2337,7 +2458,7 @@ Add to `impl EditorPanel` in `crates/typ-panel-editor/src/actions.rs`:
     fn edit_at_each_selection(
         &mut self,
         mut edit: impl FnMut(&mut typ_buffer::TextBuffer, Selection) -> Position,
-    ) -> Vec<PanelEvent> {
+    ) -> Option<Vec<PanelEvent>> {
         let mut selections: Vec<Selection> = self.selections.iter().copied().collect();
         // The buffer records one undo snapshot per call, so a multi-caret edit
         // is one undo step. Without this, undoing a 30-caret edit would take
@@ -2358,7 +2479,7 @@ Add to `impl EditorPanel` in `crates/typ-panel-editor/src/actions.rs`:
         }
         self.goal_col = None;
         self.scroll_to_cursor();
-        vec![PanelEvent::NeedsRedraw]
+        Some(vec![PanelEvent::NeedsRedraw])
     }
 ```
 
@@ -2392,13 +2513,13 @@ and extend `perform` with these arms, above the catch-all:
             Action::Undo => {
                 self.buffer.undo();
                 self.clamp_selections();
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
 
             Action::Redo => {
                 self.buffer.redo();
                 self.clamp_selections();
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
 ```
 
@@ -2409,7 +2530,7 @@ Deletion needs the line text, so it reads what it needs before mutating:
         &mut self,
         direction: typ_core::Direction,
         by_word: bool,
-    ) -> Vec<PanelEvent> {
+    ) -> Option<Vec<PanelEvent>> {
         use typ_core::Direction;
 
         // Line texts are captured up front: the closure below cannot borrow
@@ -2481,7 +2602,7 @@ Deletion needs the line text, so it reads what it needs before mutating:
     }
 ```
 
-- [ ] **Step 4: Add edit grouping to the buffer**
+- [x] **Step 4: Add edit grouping to the buffer**
 
 `TextBuffer` currently snapshots on every mutation. Add grouping in
 `crates/typ-buffer/src/buffer.rs`:
@@ -2510,16 +2631,31 @@ every existing `self.history.record(...)` call with:
         }
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-buffer -p typ-panel-editor`
 
 Expected: PASS — 14 new edit tests, and the existing buffer suite unchanged.
 
+Actual: PASS, 15 edit tests plus 3 new buffer tests, 193 across the workspace. The planned
+design was wrong in a way its own test caught, and the fix changed the shape of this task:
+
+- The plan had each closure *perform* its edit and return the new caret, applying selections
+  last-to-first so buffer positions stayed valid. The text came out right and every caret
+  after the first landed in the wrong column — `multi_caret_edits_on_one_line_do_not_corrupt_each_other`
+  expected `[2, 5, 8]` and got `[2, 4, 6]`. Processing in reverse keeps the *buffer* positions
+  valid but leaves each returned caret ignorant of the edits applied to its left afterwards.
+- Rewritten so the closure **describes** an edit — `Edit { start, end, text }` — and this
+  function applies them in order, carrying an accumulated `Shift` (line delta, plus a column
+  delta scoped to the line the last edit ended on). That is the change-mapping every real
+  editor has, and doing it once here is what stops each action reimplementing it.
+- `TextBuffer::replace_range` now treats an empty range as an insert, so insertion, deletion
+  and replacement are one primitive and the mapping only has to understand one shape.
+
 If `multi_caret_edits_on_one_line_do_not_corrupt_each_other` fails with the insertions
 landing at the wrong columns, the loop is running forwards; it must be `.rev()`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/typ-panel-editor/src/actions.rs crates/typ-panel-editor/tests/edit.rs crates/typ-buffer/src/buffer.rs
@@ -2538,7 +2674,7 @@ git commit -m "feat(editor): edits apply at every selection as one undo step"
 - Consumes: `typ_core::{Action, Direction}`, `typ_buffer::word_at`
 - Produces: `Action::{SelectAll, SelectLine, CollapseSelections, AddCursor}` handled
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-panel-editor/tests/multicursor.rs`:
 
@@ -2654,13 +2790,13 @@ fn a_motion_that_merges_two_cursors_leaves_one() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-panel-editor --test multicursor`
 
 Expected: FAIL — these actions fall through `perform`'s catch-all and do nothing.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add these arms to `perform` in `crates/typ-panel-editor/src/actions.rs`:
 
@@ -2672,7 +2808,7 @@ Add these arms to `perform` in `crates/typ-panel-editor/src/actions.rs`:
                     head: Position { line: last, col: self.line_grapheme_count(last) },
                 });
                 self.goal_col = None;
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
 
             Action::SelectLine => {
@@ -2685,14 +2821,14 @@ Add these arms to `perform` in `crates/typ-panel-editor/src/actions.rs`:
                     head: Position { line, col: self.line_grapheme_count(line) },
                 });
                 self.goal_col = None;
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
 
             Action::CollapseSelections => {
                 self.selections.collapse_to_heads();
                 self.goal_col = None;
                 self.scroll_to_cursor();
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
 
             Action::AddCursor(direction) => {
@@ -2705,25 +2841,32 @@ Add these arms to `perform` in `crates/typ-panel-editor/src/actions.rs`:
                     }
                 };
                 let Some(line) = target_line else {
-                    // At the edge of the document there is nowhere to add one.
-                    // Silently doing nothing is right: the alternative is
-                    // stacking a duplicate cursor on the line already held.
-                    return Vec::new();
+                    // At the edge of the document there is nowhere to add
+                    // one. Some(vec![]) rather than None: the action was
+                    // handled and simply had nothing to do, so the app must
+                    // not retry it as an app action.
+                    return Some(Vec::new());
                 };
                 let col = from.col.min(self.line_grapheme_count(line));
                 self.selections.push(Selection::caret(Position { line, col }));
                 self.scroll_to_cursor();
-                vec![PanelEvent::NeedsRedraw]
+                Some(vec![PanelEvent::NeedsRedraw])
             }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cargo test -p typ-panel-editor --test multicursor`
 
 Expected: PASS, 11 tests.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 12 tests, 205 across the workspace. No deviations — the planned code compiled
+and behaved as written, which is the first task in this milestone that has. One test added,
+`select_all_then_typing_replaces_the_document`, because select-all followed by a keystroke is
+the destructive path most worth pinning and the planned tests only covered the two halves
+separately.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-panel-editor/src/actions.rs crates/typ-panel-editor/tests/multicursor.rs
@@ -2742,7 +2885,7 @@ git commit -m "feat(editor): select all, select line, collapse, and stacked curs
 - Consumes: `crossterm::event::{MouseEvent, MouseEventKind}`, `typ_buffer::word_at`
 - Produces: drag-to-select, alt-click to add a cursor, double-click to select a word
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-panel-editor/tests/mouse.rs`:
 
@@ -2877,13 +3020,13 @@ fn releasing_the_button_ends_the_drag() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-panel-editor --test mouse`
 
 Expected: FAIL — `handle_mouse` currently ignores drags and modifiers.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add drag state to `EditorPanel` in `crates/typ-panel-editor/src/lib.rs`:
 
@@ -2967,14 +3110,18 @@ Both start as `None`. Replace `handle_mouse` with:
 
 Add `KeyModifiers` to the crossterm import.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-panel-editor`
 
 Expected: PASS — 9 new mouse tests, and the existing click tests from M1 still pass because a
 plain press still places a caret.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 10 mouse tests, 215 across the workspace. No deviations. One test added for
+clicking twice on a wide character, since click-to-grapheme and word-selection compose there
+and each was only covered separately.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-panel-editor/src/lib.rs crates/typ-panel-editor/tests/mouse.rs
@@ -2993,7 +3140,7 @@ git commit -m "feat(editor): drag to select, alt-click to stack cursors, click t
 - Consumes: `typ_buffer::{display_width_with_tabs, grapheme_to_display_col}`
 - Produces: `EditorPanel::left_col(&self) -> usize`, horizontal windowing in `render`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-panel-editor/tests/horizontal.rs`:
 
@@ -3092,13 +3239,13 @@ fn vertical_scrolling_still_works_alongside_it() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-panel-editor --test horizontal`
 
 Expected: FAIL — no method `left_col`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add `left_col: usize` to `EditorPanel` (initialised to `0`) and its accessor:
 
@@ -3188,13 +3335,31 @@ compares against selections by the number of skipped graphemes, so highlighting 
 with the text after scrolling. `cursor_position` subtracts `left_col` from the display column
 and returns `None` when the result is negative or past the width.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-panel-editor`
 
 Expected: PASS — 6 new horizontal tests plus everything before.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 8 horizontal tests, 242 across the workspace, clippy clean.
+
+Three deviations.
+
+1. **`window` returns `&str`, not `String`.** The plan allocated a fresh string per visible
+   line per frame to drop a prefix. A subslice does the same job; the only reason to own it
+   would be to modify it, and nothing does.
+2. **Two extra tests, both covering things the plan changed silently.** Selection
+   highlighting after a scroll — `styled_line` now offsets its grapheme index by the number
+   of dropped graphemes, and nothing in the plan's six tests would have caught that offset
+   being wrong or missing. And a click in a scrolled view: the plan never mentioned
+   `handle_mouse`, which was still translating screen columns as if `left_col` were zero, so
+   every click in a scrolled view landed on the wrong character. Mouse and keyboard are
+   peers; the mouse half needed the same offset and its own test.
+3. **`cursor_position` returns `None` when the cursor is off the *left* edge**, via
+   `checked_sub`. The plan said "subtracts `left_col`"; unsigned subtraction there would have
+   panicked in debug and wrapped in release.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-panel-editor/src crates/typ-panel-editor/tests/horizontal.rs
@@ -3215,7 +3380,7 @@ git commit -m "feat(editor): horizontal scrolling that never splits a wide graph
   - `App::keymap(&self) -> &Keymap`, `App::set_keymap(&mut self, keymap: Keymap)`
   - `App::handle_chord(&mut self, chord: KeyChord) -> anyhow::Result<()>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/typ-app/tests/dispatch.rs`:
 
@@ -3324,13 +3489,13 @@ fn the_keymap_is_readable_for_help_text() {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p typ-app --test dispatch`
 
 Expected: FAIL — no method `handle_chord`, `set_keymap`, or `keymap`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add `keymap: Keymap` to `App`, initialised with `Keymap::default_bindings()`, plus the
 accessors. Then the dispatcher, which is the piece that replaces the `match key.code` block
@@ -3349,11 +3514,13 @@ in `run.rs`:
         }
 
         if let Some(action) = self.keymap.lookup(&chord) {
-            let events = self.focused_mut().apply_action(action);
-            if events.is_empty() {
-                return self.perform_app_action(action);
-            }
-            return self.apply(events);
+            // None means the panel does not handle this action at all, which
+            // is a different answer from handling it and having nothing to
+            // report.
+            return match self.focused_mut().apply_action(action) {
+                Some(events) => self.apply(events),
+                None => self.perform_app_action(action),
+            };
         }
 
         let is_chorded = chord
@@ -3362,8 +3529,8 @@ in `run.rs`:
             .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
         if let KeyCode::Char(c) = chord.raw.code
             && !is_chorded
+            && let Some(events) = self.focused_mut().apply_action(Action::InsertChar(c))
         {
-            let events = self.focused_mut().apply_action(Action::InsertChar(c));
             return self.apply(events);
         }
         Ok(())
@@ -3387,9 +3554,10 @@ in `run.rs`:
     }
 ```
 
-`Focus::Tree` must not swallow `Action::Save`: `TreePanel` leaves `apply_action` defaulted, so
-it returns no events and the app handles it. That is the whole reason the default returns an
-empty vector rather than a redraw.
+`Focus::Tree` must not swallow `Action::Save`: `TreePanel` leaves `apply_action` defaulted,
+so it returns `None` and the app handles it. That is the whole reason the default is `None`
+rather than an empty vector — "did not handle" and "handled, nothing happened" are different
+answers, and `AddCursor` at the edge of the document is a real case of the second.
 
 In `run.rs`, the key branch collapses to:
 
@@ -3399,7 +3567,7 @@ In `run.rs`, the key branch collapses to:
             }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p typ-app`
 
@@ -3409,7 +3577,38 @@ The frame tests may need their expected status hint updated if `HINT` changed; i
 have. If `save_reports_through_the_status_bar` fails with `None`, the editor panel is
 claiming `Action::Save` — it must not implement that arm.
 
-- [ ] **Step 5: Commit**
+Actual: PASS, 256 across the workspace, clippy clean, release binary runs and still exits
+non-zero on a bad path.
+
+**One plan defect, caught before writing the dispatcher, and it would have killed the file
+tree.** The plan's `handle_chord` ends at "the app did not want it either", and `_ => {}` in
+`perform_app_action` swallows the action silently. But the tree navigates entirely on raw
+`Up`/`Down`/`Enter`/`Left`/`Right`, and the keymap binds all five to editor actions. Every
+one would have been eaten and the tree would have gone completely dead — with the plan's nine
+tests all passing, because not one of them presses an arrow key with the tree focused.
+
+The fix is a fourth tier: keymap action → panel `apply_action` → app → panel raw
+`handle_key`. `perform_app_action` returns `bool` rather than `Result<()>` so "nobody claimed
+this" is a value the dispatcher can branch on instead of a case that looks identical to
+success. Two regression tests added — arrows moving the tree selection, and Enter opening a
+file from it.
+
+The honest fix is naming the tree's primitives as actions the way the editor's are;
+"activate the selected entry" has no name today. That is a command-surface question and it
+belongs with the palette at M4. Recorded as a ceiling in the code rather than guessed at now.
+
+**Two further deviations.**
+
+1. **Three test files had to move off `handle_key`** — `editor.rs`, `keys.rs`, and helpers in
+   `frame.rs` and `status.rs` drove the editor through the legacy arms, so they went green
+   against a method that now returns an empty vector. Restated as actions, which is the path
+   a real keypress takes. `keys.rs` is now about what an action does once it arrives; which
+   chord reaches it is `typ-app`'s dispatch tests.
+2. **Two tests added for the thing the milestone is for** — `multi_cursor_reaches_the_keyboard`
+   and `shift_arrow_extends_a_selection_from_the_keyboard`. Ten tasks of multi-cursor work
+   existed with nothing asserting a keypress could reach any of it.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/typ-app/src crates/typ-app/tests/dispatch.rs
@@ -4381,11 +4580,11 @@ than most editors and needs a timer on the edit path; M2.5 alongside highlightin
 literal, behind a `SearchQuery` type shaped to admit regex later. There is no replace-one,
 only replace-all.
 
-**One behavior worth watching during execution.** Task 12 treats an empty event vector as "the
-panel declined this action", and `Action::AddCursor` at the edge of the document deliberately
-returns empty. The app then tries it as an app action and finds no arm, so it is a harmless
-no-op — but if a future action both belongs to a panel and needs a fallback, that convention
-will need a real "handled" signal rather than an empty vector.
+**Fixed on a fourth pass, before Task 6 was written.** `apply_action` originally returned
+`Vec<PanelEvent>`, with an empty vector meaning "the panel declined". `AddCursor` at the edge
+of the document legitimately returns empty, so the two answers were already conflated. It now
+returns `Option<Vec<PanelEvent>>`: `None` is "not handled", `Some(vec![])` is "handled,
+nothing to report". Free to change while it was still only on paper.
 
 **One execution risk.** Task 6 changes `EditorPanel`'s cursor field to `Selections`, and Tasks
 7–8 add the action path while the old `handle_key` arms still exist. Task 12 deletes them.

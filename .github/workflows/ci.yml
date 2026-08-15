@@ -17,9 +17,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      # No toolchain pinned here: rust-toolchain.toml is the single source, and
+      # `rustup show` installs exactly what it names, components included.
+      # Naming a version in both places is how they drift apart.
+      - name: Install the pinned toolchain
+        run: rustup show
       - uses: Swatinem/rust-cache@v2
       - name: Format
         run: cargo fmt --all -- --check

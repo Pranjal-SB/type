@@ -1,1 +1,5 @@
 target/
+
+# Local agent instructions — not part of the shipped project.
+AGENTS.md
+CLAUDE.md

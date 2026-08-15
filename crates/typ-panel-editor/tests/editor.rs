@@ -1,33 +1,36 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use typ_buffer::Position;
-use typ_core::{KeyChord, Panel, PanelEvent};
+use typ_core::{Action, Direction, KeyChord, Motion, Panel, PanelEvent};
 use typ_panel_editor::EditorPanel;
 
-fn chord(code: KeyCode) -> KeyChord {
-    KeyChord::from_event(KeyEvent::new(code, KeyModifiers::NONE))
+fn mv(motion: Motion) -> Action {
+    Action::Move {
+        motion,
+        extend: false,
+    }
 }
 
 #[test]
 fn typing_inserts_text_and_advances_the_cursor() {
     let mut p = EditorPanel::from_str("\n");
-    p.handle_key(chord(KeyCode::Char('h')));
-    p.handle_key(chord(KeyCode::Char('i')));
+    p.apply_action(Action::InsertChar('h'));
+    p.apply_action(Action::InsertChar('i'));
     assert_eq!(p.cursor(), Position { line: 0, col: 2 });
 }
 
 #[test]
 fn arrow_keys_move_the_cursor() {
     let mut p = EditorPanel::from_str("abc\ndef\n");
-    p.handle_key(chord(KeyCode::Right));
-    p.handle_key(chord(KeyCode::Down));
+    p.apply_action(mv(Motion::Right));
+    p.apply_action(mv(Motion::Down));
     assert_eq!(p.cursor(), Position { line: 1, col: 1 });
 }
 
 #[test]
 fn cursor_cannot_move_left_past_the_start() {
     let mut p = EditorPanel::from_str("abc\n");
-    p.handle_key(chord(KeyCode::Left));
+    p.apply_action(mv(Motion::Left));
     assert_eq!(p.cursor(), Position { line: 0, col: 0 });
 }
 
@@ -35,28 +38,42 @@ fn cursor_cannot_move_left_past_the_start() {
 fn moving_down_clamps_the_column_to_a_shorter_line() {
     let mut p = EditorPanel::from_str("abcdef\nab\n");
     for _ in 0..5 {
-        p.handle_key(chord(KeyCode::Right));
+        p.apply_action(mv(Motion::Right));
     }
-    p.handle_key(chord(KeyCode::Down));
+    p.apply_action(mv(Motion::Down));
     assert_eq!(p.cursor(), Position { line: 1, col: 2 });
 }
 
 #[test]
 fn backspace_deletes_the_previous_grapheme() {
     let mut p = EditorPanel::from_str("\n");
-    p.handle_key(chord(KeyCode::Char('a')));
-    p.handle_key(chord(KeyCode::Char('b')));
-    p.handle_key(chord(KeyCode::Backspace));
+    p.apply_action(Action::InsertChar('a'));
+    p.apply_action(Action::InsertChar('b'));
+    p.apply_action(Action::Delete {
+        direction: Direction::Backward,
+        by_word: false,
+    });
     assert_eq!(p.cursor(), Position { line: 0, col: 1 });
 }
 
 #[test]
-fn every_key_press_requests_a_redraw() {
+fn every_action_requests_a_redraw() {
     let mut p = EditorPanel::from_str("\n");
     assert_eq!(
-        p.handle_key(chord(KeyCode::Char('a'))),
-        vec![PanelEvent::NeedsRedraw]
+        p.apply_action(Action::InsertChar('a')),
+        Some(vec![PanelEvent::NeedsRedraw])
     );
+}
+
+#[test]
+fn the_editor_has_no_raw_key_behaviour_of_its_own() {
+    // Every key that does anything is a keymap row resolving to an Action. A
+    // handle_key arm here would be unreachable from the command palette and
+    // from the vim layer, which is the invariant M2 exists to establish.
+    let mut p = EditorPanel::from_str("\n");
+    let chord = KeyChord::from_event(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    assert!(p.handle_key(chord).is_empty());
+    assert_eq!(p.line_text(0), "", "a raw key must not reach the buffer");
 }
 
 #[test]

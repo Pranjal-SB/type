@@ -1,11 +1,12 @@
 use std::path::Path;
 
 use anyhow::Result;
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
-use typ_core::{Panel, PanelEvent, RenderContext, ThemeColors};
+use typ_core::{Action, KeyChord, Keymap, Panel, PanelEvent, RenderContext, ThemeColors};
 use typ_panel_editor::EditorPanel;
 use typ_panel_tree::TreePanel;
 use typ_registry::Registry;
@@ -20,6 +21,7 @@ pub struct App {
     tree: TreePanel,
     editor: EditorPanel,
     registry: Registry,
+    keymap: Keymap,
     theme: ThemeColors,
     focus: Focus,
     quit: bool,
@@ -40,6 +42,7 @@ impl App {
             tree: TreePanel::new(root)?,
             editor: EditorPanel::from_str(""),
             registry: Registry::with_builtins(),
+            keymap: Keymap::default_bindings(),
             theme: ThemeColors::default(),
             focus: Focus::Tree,
             quit: false,
@@ -132,6 +135,91 @@ impl App {
         self.editor = EditorPanel::from_path(path)?;
         self.focus = Focus::Editor;
         Ok(())
+    }
+
+    pub fn keymap(&self) -> &Keymap {
+        &self.keymap
+    }
+
+    pub fn set_keymap(&mut self, keymap: Keymap) {
+        self.keymap = keymap;
+    }
+
+    /// Route one keypress.
+    ///
+    /// Order matters and is deliberate:
+    ///
+    /// 1. A bound chord becomes an `Action`, and the focused panel gets first
+    ///    refusal. `None` means "I do not handle this action", which is a
+    ///    different answer from handling it and having nothing to report.
+    /// 2. Then the app tries it — focus, quit, save.
+    /// 3. Then the panel gets the *raw key*, because a bound chord may still
+    ///    mean something to a panel that has no action for it.
+    /// 4. Anything unbound and printable is text. A chord carrying Ctrl or Alt
+    ///    is never text — that is what stops an unbound Ctrl+J typing a `j`.
+    ///
+    /// Step 3 is not in the milestone plan and the file tree does not work
+    /// without it. The tree navigates on raw `Up`/`Down`/`Enter`/`Left`/`Right`,
+    /// and the keymap binds all five to editor actions, so a dispatcher that
+    /// stops after step 2 swallows every key the tree needs.
+    ///
+    /// ponytail: the honest fix is naming the tree's primitives as actions the
+    /// way the editor's are — "activate the selected entry" has no name today.
+    /// That is a command-surface question and it lands with the palette at M4;
+    /// until then the raw-key fallback is four lines and invents no vocabulary
+    /// that would have to be guessed at now and lived with later.
+    pub fn handle_chord(&mut self, chord: KeyChord) -> Result<()> {
+        // Every key except Ctrl+Q retires the current status message and any
+        // quit it left pending, so a confirmation is answered by the very next
+        // keystroke or not at all.
+        if chord.canonical != "ctrl+q" {
+            self.clear_transient();
+        }
+
+        if let Some(action) = self.keymap.lookup(&chord) {
+            if let Some(events) = self.focused_mut().apply_action(action) {
+                return self.apply(events);
+            }
+            if self.perform_app_action(action) {
+                return Ok(());
+            }
+            let events = self.focused_mut().handle_key(chord);
+            return self.apply(events);
+        }
+
+        let is_chorded = chord
+            .raw
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
+        if let KeyCode::Char(c) = chord.raw.code
+            && !is_chorded
+            && let Some(events) = self.focused_mut().apply_action(Action::InsertChar(c))
+        {
+            return self.apply(events);
+        }
+
+        // Unbound and not text: the panel may still want it.
+        let events = self.focused_mut().handle_key(chord);
+        self.apply(events)
+    }
+
+    /// Actions no panel claimed. Returns whether the app handled it.
+    ///
+    /// The bool is what lets an unclaimed action fall through to the raw key
+    /// rather than being silently dropped — `_ => {}` here would look identical
+    /// and would be the bug that kills the file tree.
+    fn perform_app_action(&mut self, action: Action) -> bool {
+        match action {
+            Action::FocusNext => self.cycle_focus(),
+            Action::Quit => self.request_quit(),
+            Action::Save => match self.editor.save() {
+                Ok(()) => self.status = Some("Saved.".to_string()),
+                // A save that fails silently is how work gets lost.
+                Err(e) => self.status = Some(format!("Save failed: {e:#}")),
+            },
+            _ => return false,
+        }
+        true
     }
 
     /// Process events emitted by panels.

@@ -4,11 +4,10 @@ use std::time::Duration;
 use anyhow::Result;
 use crossterm::ExecutableCommand;
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
-    MouseEventKind,
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind, MouseEventKind,
 };
 use ratatui::layout::Rect;
-use typ_core::{KeyChord, NotifyLevel, Panel, PanelEvent};
+use typ_core::{KeyChord, Panel, PanelEvent};
 
 use crate::app::{App, Focus};
 
@@ -58,38 +57,10 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
         let mut events: Vec<PanelEvent> = Vec::new();
 
         match event::read()? {
+            // Every binding lives in the keymap now, so there is nothing left
+            // here to special-case. The dispatcher owns the order.
             Event::Key(key) if key.kind == KeyEventKind::Press => {
-                // Application bindings win before panel dispatch.
-                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-                // Every key except Ctrl+Q retires the current status message and
-                // any quit it left pending, so a confirmation is answered by the
-                // very next keystroke or not at all.
-                if !(ctrl && key.code == KeyCode::Char('q')) {
-                    app.clear_transient();
-                }
-                match key.code {
-                    KeyCode::Char('q') if ctrl => events.push(PanelEvent::Quit),
-                    KeyCode::Char('s') if ctrl => {
-                        if app.focus() == Focus::Editor {
-                            match app.editor_mut().save() {
-                                Ok(()) => events.push(PanelEvent::Notify {
-                                    level: NotifyLevel::Info,
-                                    message: "Saved.".into(),
-                                }),
-                                // A failed save must be visible: silently
-                                // continuing is how work gets lost.
-                                Err(e) => events.push(PanelEvent::Notify {
-                                    level: NotifyLevel::Error,
-                                    message: format!("Save failed: {e:#}"),
-                                }),
-                            }
-                        }
-                    }
-                    KeyCode::Tab => app.cycle_focus(),
-                    _ => {
-                        events = app.focused_mut().handle_key(KeyChord::from_event(key));
-                    }
-                }
+                app.handle_chord(KeyChord::from_event(key))?;
             }
             Event::Mouse(m) => {
                 if matches!(m.kind, MouseEventKind::Down(_)) {

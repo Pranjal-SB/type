@@ -120,8 +120,10 @@ fn an_open_file_renders_its_text_with_the_cursor_on_it() {
     let dir = fixture("open");
     let mut app = App::new(&dir).unwrap();
     app.open_path(&dir.join("main.rs")).unwrap();
-    app.editor_mut().handle_key(key(KeyCode::Down));
-    app.editor_mut().handle_key(key(KeyCode::Right));
+    // Through the dispatcher, the way a real keypress arrives — the editor has
+    // no raw-key behavior of its own any more.
+    app.handle_chord(key(KeyCode::Down)).unwrap();
+    app.handle_chord(key(KeyCode::Right)).unwrap();
 
     let mut terminal = draw(&mut app, 60, 8);
     let rows = rows(&terminal);
@@ -155,7 +157,7 @@ fn the_cursor_lands_past_a_wide_character_not_inside_it() {
     let dir = fixture("wide-cursor");
     let mut app = App::new(&dir).unwrap();
     app.open_path(&dir.join("src/wide.txt")).unwrap();
-    app.editor_mut().handle_key(key(KeyCode::Right));
+    app.handle_chord(key(KeyCode::Right)).unwrap();
 
     let mut terminal = draw(&mut app, 60, 8);
     // One CJK grapheme is two columns: 31 + 2.
