@@ -175,6 +175,37 @@ enum Provider {
     None,
 }
 
+/// Which clipboard provider was chosen, for a log line.
+///
+/// A name rather than a log call, because `typ-buffer` sits below `typ-app` and
+/// cannot reach its logger. That is the right direction for the dependency and
+/// arguably the right direction for the decision too — the library reports what
+/// it did and the application decides whether anyone is told.
+///
+/// This is the single most useful line in the log when somebody reports that
+/// copy does not work: the answer is almost always that detection picked a
+/// provider whose binary is missing, or `None`.
+pub fn provider_name() -> &'static str {
+    match Provider::detect() {
+        #[cfg(windows)]
+        Provider::Windows => "windows",
+        #[cfg(target_os = "macos")]
+        Provider::Pasteboard => "pbcopy",
+        #[cfg(not(windows))]
+        Provider::Wayland => "wl-copy",
+        #[cfg(not(windows))]
+        Provider::XClip => "xclip",
+        #[cfg(not(windows))]
+        Provider::XSel => "xsel",
+        #[cfg(not(windows))]
+        Provider::Tmux => "tmux",
+        #[cfg(not(windows))]
+        Provider::Termux => "termux-clipboard",
+        #[cfg(not(windows))]
+        Provider::None => "none (internal register only)",
+    }
+}
+
 /// Is this binary on the PATH?
 ///
 /// `command -v` rather than a `which` crate: the shell already answers this,

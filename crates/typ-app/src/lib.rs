@@ -1,6 +1,7 @@
 pub mod app;
 pub mod config;
 pub mod layout;
+pub mod log;
 pub mod prompt;
 pub mod run;
 pub mod status;

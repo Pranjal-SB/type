@@ -57,13 +57,13 @@ pub struct App {
     last_query: Option<SearchQuery>,
 }
 
-/// Shown when there is nothing more urgent to say. Discoverability is part of
-/// the product: bindings nobody can find are bindings that do not exist.
 /// Between status segments. Two spaces rather than a glyph separator: a
 /// separator needs a colour decision of its own and a Nerd Font question at
 /// M6, and whitespace has neither.
 const SEGMENT_GAP: &str = "  ";
 
+/// Shown when there is nothing more urgent to say. Discoverability is part of
+/// the product: bindings nobody can find are bindings that do not exist.
 const HINT: &str = "Tab focus  ·  Enter open  ·  Ctrl+S save  ·  Ctrl+Q quit";
 
 impl App {
@@ -510,8 +510,13 @@ impl App {
             Action::Quit => self.request_quit(),
             Action::Save => match self.editor.save() {
                 Ok(()) => self.status = Some("Saved.".to_string()),
-                // A save that fails silently is how work gets lost.
-                Err(e) => self.status = Some(format!("Save failed: {e:#}")),
+                // A save that fails silently is how work gets lost. The status
+                // bar says so and the log keeps the whole error chain, which is
+                // the part that is actually diagnosable.
+                Err(e) => {
+                    crate::log_error!("save failed: {e:#}");
+                    self.status = Some(format!("Save failed: {e:#}"));
+                }
             },
             Action::GotoLine => self.prompt = Some(Prompt::new(PromptKind::GotoLine)),
             Action::SearchOpen => self.prompt = Some(Prompt::new(PromptKind::Search)),
