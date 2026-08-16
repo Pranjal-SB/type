@@ -22,6 +22,8 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSL-1.0",       # clipboard-win, error-code
     "Zlib",          # foldhash
+    "ISC",           # inotify, inotify-sys — the Linux half of the file watcher
+    "CC0-1.0",       # notify itself
     "Unicode-3.0",   # unicode-ident
     "Unicode-DFS-2016",
     "Unlicense",

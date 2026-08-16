@@ -55,6 +55,12 @@ pub struct App {
     prompt: Option<Prompt>,
     /// What F3 repeats.
     last_query: Option<SearchQuery>,
+    /// Handed to workers so they can wake the loop. `None` in tests that do not
+    /// care, and in `App::new` before `run` wires it up.
+    sender: Option<crate::run::AppSender>,
+    /// The watch on the open file. Dropping it stops the watching, so opening
+    /// another file replaces this rather than accumulating watches.
+    watch: Option<typ_buffer::FileWatch>,
 }
 
 /// Between status segments. Two spaces rather than a glyph separator: a
@@ -82,7 +88,74 @@ impl App {
             event_seq: 0,
             prompt: None,
             last_query: None,
+            sender: None,
+            watch: None,
         })
+    }
+
+    /// Give the app the channel workers report through.
+    ///
+    /// Separate from `new` because the channel belongs to the loop, and an app
+    /// without one is exactly what most tests want: no watcher thread, no
+    /// events arriving from somewhere the test did not ask about.
+    pub fn set_event_sender(&mut self, sender: crate::run::AppSender) {
+        self.sender = Some(sender);
+        self.rewatch();
+    }
+
+    /// Watch whatever file is open now, and stop watching the last one.
+    ///
+    /// A failure here is not worth interrupting anyone over: the editor keeps
+    /// working, it just stops noticing outside writes. It goes to the log,
+    /// which is where the answer will be looked for.
+    fn rewatch(&mut self) {
+        self.watch = None;
+        let (Some(sender), Some(path)) = (self.sender.clone(), self.editor.path()) else {
+            return;
+        };
+        let path = path.to_path_buf();
+        match typ_buffer::watch_file(&path, move |changed| {
+            let _ = sender.send(typ_core::AppEvent::FileChanged(changed));
+        }) {
+            Ok(watch) => self.watch = Some(watch),
+            Err(e) => crate::log_warn!("watching {} failed: {e:#}", path.display()),
+        }
+    }
+
+    /// The file changed on disk. Three states, one of them automatic.
+    ///
+    /// Reloading a dirty buffer discards the user's edits; ignoring the change
+    /// discards the other writer's on the next save. Only the user knows which
+    /// matters, so the only thing to do is say so and touch nothing.
+    pub fn handle_external_change(&mut self, path: &Path) -> Result<()> {
+        if self.editor.path() != Some(path) {
+            return Ok(());
+        }
+
+        if !path.exists() {
+            self.status = Some(format!(
+                "{} was deleted on disk. Ctrl+S writes it back.",
+                self.editor.file_name()
+            ));
+            return Ok(());
+        }
+
+        // Covers our own save: the watcher reports the write, and what is on
+        // disk is what we have, so there is nothing to do.
+        if self.editor.matches_disk() {
+            return Ok(());
+        }
+
+        if self.editor.is_dirty() {
+            self.status = Some(format!(
+                "{} changed on disk. Your unsaved changes are kept; Ctrl+S overwrites it.",
+                self.editor.file_name()
+            ));
+            return Ok(());
+        }
+
+        self.editor.reload()?;
+        Ok(())
     }
 
     pub fn status(&self) -> Option<&str> {
@@ -228,6 +301,7 @@ impl App {
         };
         self.focus = Focus::Editor;
         self.open_pending = None;
+        self.rewatch();
         Ok(())
     }
 

@@ -124,7 +124,7 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
     let mut events: Vec<PanelEvent> = Vec::new();
 
     match event {
-        AppEvent::FileChanged(_) => {}
+        AppEvent::FileChanged(path) => app.handle_external_change(&path)?,
         AppEvent::Input(input) => match input {
             // Every binding lives in the keymap now, so there is nothing left
             // here to special-case. The dispatcher owns the order.

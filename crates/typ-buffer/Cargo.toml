@@ -12,6 +12,7 @@ categories.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+notify.workspace = true
 ropey.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true

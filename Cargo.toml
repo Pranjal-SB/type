@@ -18,6 +18,9 @@ categories = ["text-editors", "command-line-utilities"]
 [workspace.dependencies]
 anyhow = "1.0"
 crossterm = "0.29"
+# 8.2 stable, not the 9.0 release candidate: a data-loss guard is the last
+# place to take an RC.
+notify = "8.2"
 ratatui = "0.30.2"
 ropey = "1.6"
 toml = "1.1"

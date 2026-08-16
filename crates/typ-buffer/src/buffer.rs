@@ -77,6 +77,14 @@ impl TextBuffer {
         self.rope.len_lines()
     }
 
+    /// The whole buffer as a `String`.
+    ///
+    /// Allocates the entire text, so it is for whole-file work — comparing
+    /// against what is on disk — and never for anything on the keystroke path.
+    pub fn text(&self) -> String {
+        self.rope.to_string()
+    }
+
     /// The line terminator this file was loaded with.
     ///
     /// Detection only: `save` still writes LF regardless. Preserving it is
