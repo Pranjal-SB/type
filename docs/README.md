@@ -17,5 +17,5 @@ wrong and gets fixed. Each carries a `verified` date saying when that was last c
 The roadmap lives in the [README](../README.md). Per-milestone task lists are working documents
 and are not published.
 
-[`../spikes/m0-feel/FINDINGS.md`](../spikes/m0-feel/FINDINGS.md) is kept for its numbers — the
-M0 spike's code is gone, its measurements are not.
+[`design/m0-findings.md`](design/m0-findings.md) is kept for its numbers — the M0 feel spike's
+code was deleted once it had answered its question, its measurements were not.

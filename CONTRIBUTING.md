@@ -37,7 +37,8 @@ Paste the numbers in the PR. A budget with nothing measuring it is a budget nobo
 
 ## The rules that are not negotiable
 
-`AGENTS.md` has the full list and the reasoning. The ones that catch people out:
+The reasoning is in [the architecture doc](docs/design/architecture.md). The ones that catch
+people out:
 
 - **Every editing primitive is an `Action`.** No key handler may mutate a buffer directly.
   Three things need to reach editing behaviour — the keymap, the command palette, the planned
