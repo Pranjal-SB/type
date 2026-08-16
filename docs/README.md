@@ -23,8 +23,10 @@ copy of that history.
 |---|---|
 | [`design/architecture.md`](design/architecture.md) | The spec. Goals, invariants, budgets, the panel contract, milestones. Deviating from it needs a stated reason. |
 | [`design/gap-analysis.md`](design/gap-analysis.md) | Known defects, how TYPE measures against other editors, and the install and first-launch design. Re-run at each milestone. |
-| [`plans/m2.3-polish.md`](plans/m2.3-polish.md) | The current plan — M2.3, written and not yet started. A plan is living until its first commit lands and frozen once its last one does; between those it is the only document that is allowed to change on the basis of what the code turns out to be. |
 | [`../README.md`](../README.md) | The public face. Status, keys, roadmap, versioning. |
+
+No plan is currently live. The next one is M2.5 — file watching first, because it is a data-loss
+bug, then the event-loop rework, tree-sitter and themes as files.
 
 ## Records
 
@@ -34,6 +36,7 @@ copy of that history.
 | [`plans/m2-editing.md`](plans/m2-editing.md) | M2 editing — selections, multi-cursor, search | v0.2.0 |
 | [`plans/m2.1-correctness.md`](plans/m2.1-correctness.md) | M2.1 keystroke budgets, undo coalescing | v0.2.1 |
 | [`plans/m2.2-usable.md`](plans/m2.2-usable.md) | M2.2 clipboard, indent, guarded open | v0.2.2 |
+| [`plans/m2.3-polish.md`](plans/m2.3-polish.md) | M2.3 polish — gutter, truecolor theme, status segments, `Ctrl+D`, goto-line, logging | v0.2.3 |
 | [`../spikes/m0-feel/FINDINGS.md`](../spikes/m0-feel/FINDINGS.md) | M0 measurements — the spike's code is gone, its numbers are not | — |
 
 ## Conventions

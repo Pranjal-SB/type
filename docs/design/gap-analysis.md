@@ -3,12 +3,12 @@ type: design
 status: living
 area: audit
 verified: 2026-08-16
-verified-against: v0.2.2
+verified-against: v0.2.3
 ---
 
 # Gap analysis — TYPE against itself and against the field
 
-**Status:** living document · **Written at:** v0.2.1 · **Re-verified at:** v0.2.2 · **Date:** 2026-08-16
+**Status:** living document · **Written at:** v0.2.1 · **Re-verified at:** v0.2.3 · **Date:** 2026-08-16
 
 Two questions, answered together because they turn out to be the same question:
 
@@ -24,7 +24,9 @@ these](#why-the-plans-could-not-catch-these).
 ## Part 1 — Defects in v0.2.1
 
 Severity is about consequence to a user, not about effort to fix. **A struck-through number
-means v0.2.2 fixed it**; the row stays so the record of what was wrong survives the fix.
+means a later release fixed it** — the version is named in the row — and the row stays so the
+record of what was wrong survives the fix. A row that is only *partly* fixed keeps its number
+and says which half remains, because striking it would lose the rest.
 
 ### Data loss and correctness
 
@@ -50,7 +52,7 @@ no parent-dir fsync, non-UTF-8 files fail to open.
 | ~~9~~ | HIGH | **Bracketed paste is not enabled.** A terminal paste arrives as N separate key events: N loop passes, N repaints, and any chord inside the pasted text executes as a command rather than being inserted. `Event::Paste` is unhandled. | `typ-app/src/run.rs:59` |
 | 10 | MED | **`Event::Resize` is unhandled.** Harmless *today* only because the loop repaints unconditionally. The moment M2.5 makes redraw damage-driven this becomes a frozen screen on resize. Must be written into the M2.5 plan, not rediscovered. | `typ-app/src/run.rs:116` |
 | 11 | MED | Drag past the viewport edge does not autoscroll; the selection stops at the last visible row. | `typ-panel-editor/src/lib.rs:388` |
-| 12 | MED | No goto-line. No move-line / duplicate-line. No comment toggle. | — |
+| 12 | MED | **Partly fixed at v0.2.3**: ~~no goto-line~~ shipped. **Still absent: move-line, duplicate-line, comment toggle** — all cheap, all unowned. | — |
 | 13 | LOW | `last_click` is never cleared by keyboard motion, so click → arrow away → click the same cell selects a word rather than placing a caret. | `typ-panel-editor/src/lib.rs:358` |
 | 14 | LOW | No horizontal wheel scroll, no Shift+wheel. | `typ-app/src/run.rs:77` |
 
@@ -66,14 +68,14 @@ imagined it, and the furniture below is absent because the **audit** only imagin
 
 | # | Sev | Defect | Where |
 |---|---|---|---|
-| 23 | **CRITICAL to feel** | **There is no gutter. No line numbers at all.** `styled_line` draws text and selection spans, nothing else. Worse than unplanned: `ThemeColors` has carried a `line_numbers: Color::DarkGray` field since M1 that **nothing has ever read**. An earlier session modelled the intent, wired the colour and never drew the digits. The README's ASCII art shows line numbers that do not exist. | `render.rs:52`, `panel.rs:22` |
-| 24 | **HIGH** | **The palette is 16-colour ANSI.** `Color::White`, `Color::Blue`, `Color::DarkGray` — not one `Color::Rgb` in the tree. TYPE inherits whatever the terminal's palette defines, cannot be tuned, and cannot look designed. TermIDE ships 38 themes; we ship one, in someone else's colours. | `panel.rs:28-43` |
-| 25 | HIGH | **`ThemeColors` is 10 flat fields.** Helix's theme surface is 40+ `ui.*` scopes with inheritance, modifiers and underline styles. Ours has no concept of cursorline, gutter, menu, popup, picker, bufferline, virtual text, or a statusline that differs when inactive. | `panel.rs:15` |
-| 26 | HIGH | **The primary selection is not visually distinct.** Helix themes `ui.selection.primary` separately from `ui.selection`, and `ui.cursor.primary` from `ui.cursor`. With thirty cursors TYPE gives no way to tell which one is primary — which is the one every motion is relative to. | `render.rs:60` |
-| 27 | MED | No current-line highlight (`ui.cursorline`), no matching-bracket highlight (`ui.cursor.match`), no indent guides, no whitespace rendering, no scroll position indicator. Each is a few lines; collectively they are most of what "designed" looks like. | — |
-| 28 | MED | **The status bar carries 3 things.** Message, filename, `line:col`. Helix's statusline is **24 named, reorderable elements**: mode, LSP spinner, file encoding, line ending, indent style, filetype, diagnostics counts, workspace diagnostics, selection count, primary selection length, position percentage, total lines, version control, register, cwd, read-only indicator. ttt puts git blame and an indent picker there. | `app.rs:470` |
+| ~~23~~ | **CRITICAL to feel** | ~~**There is no gutter. No line numbers at all.**~~ **Fixed at v0.2.3**, and as a component list rather than a column, so M3's diagnostics and M5's diff markers fill in a renderer instead of restructuring a module. Original: `styled_line` draws text and selection spans, nothing else. Worse than unplanned: `ThemeColors` has carried a `line_numbers: Color::DarkGray` field since M1 that **nothing has ever read**. An earlier session modelled the intent, wired the colour and never drew the digits. The README's ASCII art shows line numbers that do not exist. | `render.rs:52`, `panel.rs:22` |
+| ~~24~~ | **HIGH** | ~~**The palette is 16-colour ANSI.**~~ **Fixed at v0.2.3** — one named ramp at one hue, contrast checked by test rather than by eye. Original: `Color::White`, `Color::Blue`, `Color::DarkGray` — not one `Color::Rgb` in the tree. TYPE inherits whatever the terminal's palette defines, cannot be tuned, and cannot look designed. TermIDE ships 38 themes; we ship one, in someone else's colours. | `panel.rs:28-43` |
+| ~~25~~ | HIGH | ~~**`ThemeColors` is 10 flat fields.**~~ **Fixed at v0.2.3** — twenty-four scopes including cursorline, gutter, and a statusline that differs when inactive. Menu, popup, picker and bufferline wait for the panels that need them. Original: Helix's theme surface is 40+ `ui.*` scopes with inheritance, modifiers and underline styles. Ours has no concept of cursorline, gutter, menu, popup, picker, bufferline, virtual text, or a statusline that differs when inactive. | `panel.rs:15` |
+| ~~26~~ | HIGH | ~~**The primary selection is not visually distinct.**~~ **Fixed at v0.2.3.** Original: Helix themes `ui.selection.primary` separately from `ui.selection`, and `ui.cursor.primary` from `ui.cursor`. With thirty cursors TYPE gives no way to tell which one is primary — which is the one every motion is relative to. | `render.rs:60` |
+| 27 | MED | **Partly fixed at v0.2.3.** ~~No current-line highlight~~ and ~~no matching-bracket highlight~~ both shipped. **Still absent: indent guides, whitespace rendering, a scroll position indicator.** The first two need the syntax tree to look right around continuation lines and are M2.5; the third is cheap and unowned. | — |
+| ~~28~~ | MED | ~~**The status bar carries 3 things.**~~ **Fixed at v0.2.3** — seven, each with an emphasis. Reorderability and click routing wait for `status_segments()` at M4. Original: Message, filename, `line:col`. Helix's statusline is **24 named, reorderable elements**: mode, LSP spinner, file encoding, line ending, indent style, filetype, diagnostics counts, workspace diagnostics, selection count, primary selection length, position percentage, total lines, version control, register, cwd, read-only indicator. ttt puts git blame and an indent picker there. | `app.rs:470` |
 | 29 | MED | **The sidebar is a fixed 30 columns and cannot be resized.** ttt drags its dividers with the mouse. Invariant 8 says mouse and keyboard are peers; a layout that cannot be adjusted by either is not yet a layout. | `layout.rs:4` |
-| 30 | LOW | The file tree has no icons and no git status colouring. TermIDE and ttt both colour by VCS state, which is how a tree becomes information rather than a list. | `typ-panel-tree/src/lib.rs:188` |
+| 30 | LOW | **Partly fixed at v0.2.3**: directories and files are now coloured apart, so the shape of a project is readable without reading the names. **Still absent: icons, and git status colouring** — the latter needs `typ-git` and is M5, the former is a Nerd Font question that belongs with the symbol presets at M2.5. | `typ-panel-tree/src/lib.rs:188` |
 
 **The structural cause underneath all of it:** the render path draws every cell on every loop
 pass and the loop blocks on `event::read()`. There is no headroom to *add* visual richness
@@ -94,12 +96,13 @@ Found by reading TermIDE's 45 crate names and ttt's feature list rather than the
 | # | Sev | Defect |
 |---|---|---|
 | 31 | **HIGH — data loss** | **No file watching.** If a file changes on disk while open — a rebase, a formatter, another editor — TYPE neither reloads nor warns, and the next save silently overwrites. This is the same class as the open-over-dirty-buffer bug just fixed, and architecture §4 mentions file watching as a worker-thread concern while **no milestone owns it**. TermIDE has a whole `watcher` crate. |
-| 32 | HIGH | **No logging, anywhere.** No `log`, no `tracing`, no log file. A TUI owns the screen, so `println!` debugging is unavailable by construction — the one place logging is not optional is the one place we have none. TermIDE has a `logger` crate. |
-| 33 | HIGH | **No select-next-occurrence.** `Ctrl+D` in VS Code, Sublime and ttt; `Ctrl+K L` for all occurrences. TYPE has add-cursor-above/below only, which is the *rarer* half of multi-cursor. This is the idiom people mean when they say multi-cursor. |
+| ~~32~~ | HIGH | ~~**No logging, anywhere.**~~ **Fixed at v0.2.3** — `TYP_LOG` names a file, off otherwise. A file and a mutex rather than `tracing`, which earns its weight when there are spans to correlate across the worker threads arriving at M2.5. Original: No `log`, no `tracing`, no log file. A TUI owns the screen, so `println!` debugging is unavailable by construction — the one place logging is not optional is the one place we have none. TermIDE has a `logger` crate. |
+| ~~33~~ | HIGH | ~~**No select-next-occurrence.**~~ **Fixed at v0.2.3**, and searching from the cursor rather than filtering `find_all` — 3.89 µs per press on a 50k-line file. Original: `Ctrl+D` in VS Code, Sublime and ttt; `Ctrl+K L` for all occurrences. TYPE has add-cursor-above/below only, which is the *rarer* half of multi-cursor. This is the idiom people mean when they say multi-cursor. |
 | 34 | MED | **No `.editorconfig`, no indent detection.** `TAB_WIDTH` is a hardcoded `const` and indentation is always spaces. ttt reads `.editorconfig` and auto-detects indent from content, with a status-bar override. TYPE will silently reformat a tab-indented project. |
 | 35 | MED | **No file operations in the tree.** No new file, new folder, rename, delete. ttt puts them on a right-click context menu. The tree is currently a viewer, not a manager. |
-| 36 | MED | No goto-line (`Ctrl+G`), already listed as #12 and reconfirmed as universal across the field. |
+| ~~36~~ | MED | ~~No goto-line (`Ctrl+G`)~~ **Fixed at v0.2.3**, centring the target line. Was also listed as #12, whose move-line, duplicate-line and comment-toggle remain. |
 | 37 | LOW | No multi-root workspaces. ttt has Add Folder to Workspace and switches the status-bar git branch by which root the active file belongs to. Ours is one root. |
+| 38 | MED | **`find_all` sits at half the keystroke budget and no milestone owns fixing it.** Measured at v0.2.3 on a 50k-line file: 5.4–8.7 ms best-of-five against 16 ms, and single samples on an idle laptop ranged 6.9–18.7 ms. Architecture §4 already states the answer — "search is viewport-first with the remainder completed off-thread, a design constraint, not a number to optimise toward" — but the constraint is written down in the spec and owned by no task. M2's search box calls `find_all` on Enter, which is fine; M4's project search and any highlight-as-you-type is where it stops being fine. **The number to watch, watched:** M2.1 recorded 10.5 ms and said so in as many words. |
 
 ### Project and process gaps
 
@@ -470,7 +473,7 @@ Changes from the roadmap in the README, with reasons.
 | Version | Milestone | Scope | Change |
 |---|---|---|---|
 | ~~v0.2.2~~ | **M2.2 — Usable** | clipboard, indent/outdent, dirty guard on open, new-file creation, undo cap, bracketed paste, temp-file nonce | **shipped** — turned on self-hosting |
-| **v0.2.3** | **M2.3 — Polish** | the gutter and line numbers, truecolor theme surface, current-line highlight, distinguishable primary selection, bracket matching, status-bar segments, `Ctrl+D` select-next-occurrence, goto-line, logging | **new** — the answer to "it feels prototypey" |
+| ~~v0.2.3~~ | **M2.3 — Polish** | the gutter and line numbers, truecolor theme surface, current-line highlight, distinguishable primary selection, bracket matching, status-bar segments, `Ctrl+D` select-next-occurrence, goto-line, logging | **shipped** — all eight tasks, plus line-ending detection and the first measurement of the render path |
 | v0.2.5 | M2.5 — Loop and colour | **file watching first — it is a data-loss bug**, damage-driven redraw, wakeable channel, resize handling, dropped-keystroke fix, line endings, save metadata, tree-sitter highlighting, themes as files and `typ-config`, `.editorconfig` and indent detection | watcher added and promoted |
 | v0.3.0 | M3 — Code intelligence | LSP: completion, diagnostics, goto-def, rename, code actions, **+ undercurl, + peek definition** | two additions |
 | v0.4.0 | M4 — Workspace | splits, **tabs** (with per-tab dirty guard), sessions, **one composed Goto-Anything finder**, project search, **+ minimap, + sticky scroll**, capability detection | finder composed, polish pulled in |

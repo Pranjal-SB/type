@@ -105,8 +105,9 @@ fn the_cursor_sits_inside_the_border_at_the_text_position() {
     render(&mut p, area);
     p.apply_action(mv(Motion::Right));
     p.apply_action(mv(Motion::Right));
-    // One column and one row of border, then two columns of text.
-    assert_eq!(p.cursor_position(area), Some((3, 1)));
+    // One column and one row of border, two columns of gutter, then two
+    // columns of text.
+    assert_eq!(p.cursor_position(area), Some((5, 1)));
 }
 
 #[test]
@@ -115,8 +116,8 @@ fn the_cursor_accounts_for_wide_characters() {
     let area = Rect::new(0, 0, 40, 10);
     render(&mut p, area);
     p.apply_action(mv(Motion::Right));
-    // One CJK grapheme is two display columns, plus the border.
-    assert_eq!(p.cursor_position(area), Some((3, 1)));
+    // One CJK grapheme is two display columns, plus the border and the gutter.
+    assert_eq!(p.cursor_position(area), Some((5, 1)));
 }
 
 #[test]

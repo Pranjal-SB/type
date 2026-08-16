@@ -111,7 +111,11 @@ fn the_status_bar_reports_the_cursor_position_one_based() {
         KeyModifiers::NONE,
     )))
     .unwrap();
-    assert_eq!(app.status_right(), "hello.rs  1:2");
+    // The whole right-hand strip, in order: what the file is, what state it is
+    // in, and where the cursor sits. Asserted whole rather than by substring —
+    // the order is a design decision and a substring check would not notice it
+    // changing.
+    assert_eq!(app.status_right(), "hello.rs  rs  LF  Spaces: 4  1:2  50%");
 }
 
 #[test]

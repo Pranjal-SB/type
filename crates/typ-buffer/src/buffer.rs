@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use ropey::Rope;
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::line_ending::LineEnding;
 use crate::position::Position;
 use crate::search::SearchQuery;
 use crate::selection::{Selection, Selections};
@@ -18,6 +19,10 @@ pub struct TextBuffer {
     /// stop taking their own snapshots, so a multi-caret edit is one undo step
     /// rather than one per cursor.
     group_depth: usize,
+    /// Detected once at load. Recorded rather than recomputed because editing
+    /// the file must not change the answer — a user deleting the first line
+    /// does not thereby convert the file to LF.
+    line_ending: LineEnding,
 }
 
 impl TextBuffer {
@@ -31,6 +36,7 @@ impl TextBuffer {
             dirty: false,
             history: History::default(),
             group_depth: 0,
+            line_ending: LineEnding::detect(s),
         }
     }
 
@@ -48,6 +54,9 @@ impl TextBuffer {
             dirty: false,
             history: History::default(),
             group_depth: 0,
+            // Nothing to detect from, and a file TYPE is about to create has no
+            // existing convention to honour.
+            line_ending: LineEnding::default(),
         }
     }
 
@@ -55,6 +64,7 @@ impl TextBuffer {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         Ok(Self {
+            line_ending: LineEnding::detect(&text),
             rope: Rope::from_str(&text),
             path: Some(path.to_path_buf()),
             dirty: false,
@@ -65,6 +75,15 @@ impl TextBuffer {
 
     pub fn line_count(&self) -> usize {
         self.rope.len_lines()
+    }
+
+    /// The line terminator this file was loaded with.
+    ///
+    /// Detection only: `save` still writes LF regardless. Preserving it is
+    /// M2.5's job, and this is the half the status bar needs to stop claiming
+    /// every file is LF.
+    pub fn line_ending(&self) -> LineEnding {
+        self.line_ending
     }
 
     pub fn path(&self) -> Option<&Path> {
@@ -200,6 +219,54 @@ impl TextBuffer {
             });
         }
         hits
+    }
+
+    /// The first match strictly after `after`, wrapping to the top of the
+    /// buffer if there is none below it.
+    ///
+    /// This exists so `Ctrl+D` is not `find_all` with a filter on it. `find_all`
+    /// scans the whole buffer — measured at ~7 ms on 50k lines, against a 16 ms
+    /// keystroke budget — and select-next-occurrence is a key people *hold*, so
+    /// one scan per press is not a cost that can be paid. Stopping at the first
+    /// hit is both the faster thing and the simpler one.
+    ///
+    /// Wrapping is unconditional, and it is load-bearing rather than a
+    /// convenience: coming back round to a match the caller already holds is how
+    /// `Ctrl+D` knows every occurrence is selected and it is time to stop.
+    pub fn find_next(&self, query: &SearchQuery, after: Position) -> Option<Selection> {
+        if query.needle.is_empty() {
+            return None;
+        }
+        let needle: Vec<&str> = query.needle.graphemes(true).collect();
+
+        let line_count = self.rope.len_lines();
+        let first_on_line = |line: usize, min_col: Option<usize>| -> Option<Selection> {
+            self.with_line_str(line, |text| {
+                crate::search::find_in_line_with(text, &needle, query)
+                    .into_iter()
+                    .find(|(start, _)| min_col.is_none_or(|min| *start > min))
+                    .map(|(start, end)| Selection {
+                        anchor: Position { line, col: start },
+                        head: Position { line, col: end },
+                    })
+            })
+        };
+
+        // Forward from the cursor's line to the end...
+        for line in after.line..line_count {
+            let min_col = (line == after.line).then_some(after.col);
+            if let Some(hit) = first_on_line(line, min_col) {
+                return Some(hit);
+            }
+        }
+        // ...then round to the top and back up to it, inclusive, so a lone match
+        // behind the cursor is still found.
+        for line in 0..=after.line.min(line_count.saturating_sub(1)) {
+            if let Some(hit) = first_on_line(line, None) {
+                return Some(hit);
+            }
+        }
+        None
     }
 
     /// Replace the text between two positions as a single undo step.

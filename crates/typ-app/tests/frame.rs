@@ -59,15 +59,22 @@ fn the_opening_frame_draws_both_panels_and_the_status_bar() {
     let rows = rows(&terminal);
 
     // Sidebar is the fixed 30 columns at this width; the editor takes the rest.
+    // The editor's `1` is the gutter: an empty buffer is still one line long,
+    // and numbering it from the first frame is what makes the column furniture
+    // rather than something that appears once there is text.
     let expected = [
         "┌opening─────────────────────┐┌untitled────────────────────┐",
-        "│> src                       ││                            │",
+        "│> src                       ││1                           │",
         "│  main.rs                   ││                            │",
         "│                            ││                            │",
         "│                            ││                            │",
         "│                            ││                            │",
         "└────────────────────────────┘└────────────────────────────┘",
-        "Tab focus  ·  Enter open  ·  Ctrl+S save  ·    untitled  1:1",
+        // The hint is truncated to whatever the segments leave: the right half
+        // is the fixed cost, so a message can never shove the position off the
+        // end of the bar. Sixty columns is a tight terminal and this is what
+        // tight looks like.
+        "Tab focus  ·  Enter open  untitled  LF  Spaces: 4  1:1  100%",
     ];
     assert_eq!(rows, expected);
 }
@@ -97,9 +104,13 @@ fn the_selected_tree_row_is_highlighted_and_only_that_row() {
     let terminal = draw(&mut app, 60, 8);
     let buffer = terminal.backend().buffer();
 
-    assert_eq!(buffer[(1, 1)].bg, theme.selection_bg);
+    // The primary colour, not the secondary one: the tree has exactly one
+    // selected row and it is the thing being steered, which is the same job the
+    // editor's primary selection does. A tree cursor in the quieter colour
+    // would be the one selection on screen that is hard to find.
+    assert_eq!(buffer[(1, 1)].bg, theme.selection_primary_bg);
     assert_eq!(buffer[(1, 1)].fg, theme.selection_fg);
-    assert_ne!(buffer[(1, 2)].bg, theme.selection_bg);
+    assert_ne!(buffer[(1, 2)].bg, theme.selection_primary_bg);
 }
 
 #[test]
@@ -128,11 +139,12 @@ fn an_open_file_renders_its_text_with_the_cursor_on_it() {
     let mut terminal = draw(&mut app, 60, 8);
     let rows = rows(&terminal);
     assert!(rows[0].contains("main.rs"), "title missing: {}", rows[0]);
-    assert_eq!(cols(&rows[1], 30, 60), "│fn main() {}                │");
-    assert_eq!(cols(&rows[2], 30, 60), "│let x = 1;                  │");
+    assert_eq!(cols(&rows[1], 30, 60), "│1 fn main() {}              │");
+    assert_eq!(cols(&rows[2], 30, 60), "│2 let x = 1;                │");
 
-    // Editor text starts at column 31 (sidebar 30 + border), row 1.
-    assert_eq!(terminal.get_cursor_position().unwrap(), (32, 2).into());
+    // Sidebar 30, border 1, gutter 2: editor text starts at column 33. The
+    // cursor is one line down and one grapheme in.
+    assert_eq!(terminal.get_cursor_position().unwrap(), (34, 2).into());
 }
 
 #[test]
@@ -146,7 +158,7 @@ fn wide_characters_do_not_push_the_border_out_of_line() {
     // A wide grapheme occupies its cell plus a blank continuation cell, so one
     // char here is one column — which is the whole point: if the width maths
     // were wrong, the trailing border would move.
-    assert_eq!(cols(&rows[1], 30, 60), "│日 本 語  ok                   │");
+    assert_eq!(cols(&rows[1], 30, 60), "│1 日 本 語  ok                 │");
     for row in &rows[1..6] {
         assert!(row.ends_with('│'), "border broke on: {row}");
     }
@@ -160,8 +172,8 @@ fn the_cursor_lands_past_a_wide_character_not_inside_it() {
     app.handle_chord(key(KeyCode::Right)).unwrap();
 
     let mut terminal = draw(&mut app, 60, 8);
-    // One CJK grapheme is two columns: 31 + 2.
-    assert_eq!(terminal.get_cursor_position().unwrap(), (33, 1).into());
+    // Text starts at 33 and one CJK grapheme is two columns: 33 + 2.
+    assert_eq!(terminal.get_cursor_position().unwrap(), (35, 1).into());
 }
 
 #[test]
@@ -193,7 +205,10 @@ fn a_long_message_is_truncated_rather_than_shoving_the_position_off_screen() {
     let rows = rows(&terminal);
     let status = &rows[7];
     assert_eq!(status.chars().count(), 60);
-    assert!(status.ends_with("main.rs  1:1"), "status was: {status}");
+    assert!(
+        status.ends_with("main.rs  rs  LF  Spaces: 4  1:1  33%"),
+        "status was: {status}"
+    );
 }
 
 #[test]
@@ -231,13 +246,20 @@ fn a_selection_is_visible_in_the_rendered_frame() {
 
     let terminal = draw(&mut app, 60, 8);
     let theme = ThemeColors::default();
-    // Editor text begins at column 31.
-    assert_eq!(bg(&terminal, 31, 1), Some(theme.selection_bg));
-    assert_eq!(bg(&terminal, 32, 1), Some(theme.selection_bg));
+    // Editor text begins at column 33: sidebar 30, border 1, gutter 2.
+    // A lone selection is the primary one — the thing every motion is
+    // relative to, and the only one on screen worth pointing at.
+    assert_eq!(bg(&terminal, 33, 1), Some(theme.selection_primary_bg));
+    assert_eq!(bg(&terminal, 34, 1), Some(theme.selection_primary_bg));
     assert_eq!(
-        bg(&terminal, 33, 1),
+        bg(&terminal, 35, 1),
         Some(theme.bg),
         "the highlight must stop where the selection does"
+    );
+    assert_eq!(
+        bg(&terminal, 31, 1),
+        Some(theme.gutter_bg),
+        "and it must not bleed back into the gutter"
     );
 }
 
@@ -275,7 +297,11 @@ fn an_open_prompt_takes_over_the_left_of_the_status_bar() {
     let terminal = draw(&mut app, 60, 8);
     let rows = rows(&terminal);
     assert!(rows[7].starts_with("Search: main"), "status: {}", rows[7]);
-    assert!(rows[7].ends_with("main.rs  1:1"), "status: {}", rows[7]);
+    assert!(
+        rows[7].ends_with("main.rs  rs  LF  Spaces: 4  1:1  33%"),
+        "status: {}",
+        rows[7]
+    );
 }
 
 #[test]

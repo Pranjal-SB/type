@@ -9,15 +9,33 @@ use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Paragraph, Widget};
 use typ_buffer::{
-    EditKind, Position, SearchQuery, Selection, Selections, TextBuffer, display_to_grapheme_col,
-    grapheme_to_display_col,
+    EditKind, LineEnding, Position, SearchQuery, Selection, Selections, TextBuffer,
+    display_to_grapheme_col, grapheme_to_display_col,
 };
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
 
 pub mod actions;
+pub mod gutter;
+mod occurrence;
 pub mod render;
 
-pub(crate) const TAB_WIDTH: usize = 4;
+use crate::gutter::Gutter;
+
+/// Columns a tab occupies, and the width one level of indent inserts.
+///
+/// Public because the status bar states it on screen — `Spaces: 4` — and a
+/// value shown to the user that the shower has to guess at is how the shown
+/// value and the real one drift apart. `.editorconfig` and indent detection at
+/// M2.5 replace the constant, not its readers.
+pub const TAB_WIDTH: usize = 4;
+
+/// Lines beyond the viewport a bracket search may walk before giving up.
+///
+/// A partner just off-screen is worth finding — scrolling one line should not
+/// make a highlight appear from nothing. A partner four hundred lines away is
+/// not: nobody is reading both ends at once, and the scan would be on the
+/// keystroke path. See `typ-buffer/src/brackets.rs`.
+const BRACKET_SEARCH_MARGIN: usize = 64;
 
 pub struct EditorPanel {
     pub(crate) buffer: TextBuffer,
@@ -41,6 +59,9 @@ pub struct EditorPanel {
     /// The last cell clicked, so a second click in the same place can mean
     /// "select the word" without a double-click timer.
     last_click: Option<Position>,
+    /// The gutter. Owned by the panel because its width is a function of this
+    /// buffer's line count, and that width narrows the text area.
+    pub(crate) gutter: Gutter,
 }
 
 impl EditorPanel {
@@ -71,6 +92,7 @@ impl EditorPanel {
             width: 0,
             drag_anchor: None,
             last_click: None,
+            gutter: Gutter::default(),
         }
     }
 
@@ -116,6 +138,35 @@ impl EditorPanel {
         self.buffer.line_count()
     }
 
+    // The app asks through these rather than reaching into `self.buffer`. A
+    // panel's internals are not application state — the same rule
+    // `RenderContext` enforces pointing the other way.
+
+    pub fn path(&self) -> Option<&Path> {
+        self.buffer.path()
+    }
+
+    /// The file's name with no dirty marker on it.
+    ///
+    /// `title()` is what a panel border shows and carries the `*`; the status
+    /// bar draws that state as colour instead, so it needs the bare name.
+    pub fn file_name(&self) -> String {
+        self.buffer
+            .path()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("untitled")
+            .to_string()
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.buffer.is_dirty()
+    }
+
+    pub fn line_ending(&self) -> LineEnding {
+        self.buffer.line_ending()
+    }
+
     /// Collapse to a single caret at `at`, clearing the goal column.
     ///
     /// Every place the old single-cursor code assigned to `self.cursor` now
@@ -130,9 +181,42 @@ impl EditorPanel {
         self.goal_col = None;
     }
 
-    /// The text area inside the panel's border.
-    fn text_area(area: Rect) -> Rect {
+    /// Cells the gutter occupies for this buffer.
+    pub(crate) fn gutter_width(&self) -> usize {
+        self.gutter.width(self.buffer.line_count())
+    }
+
+    /// The area inside the border, before the gutter is taken out of it.
+    fn inner_area(area: Rect) -> Rect {
         Block::bordered().inner(area)
+    }
+
+    /// The text area: inside the border, and to the right of the gutter.
+    ///
+    /// This is an instance method rather than a free function precisely because
+    /// the gutter's width depends on the buffer. Three callers convert between
+    /// screen cells and buffer positions — `render`, `handle_mouse` and
+    /// `cursor_position` — and every one of them must subtract the same number.
+    /// Routing all three through here is what stops a click landing
+    /// `gutter_width` graphemes to the left of the pointer, which is a failure
+    /// no test of the gutter's own output would catch.
+    fn text_area(&self, area: Rect) -> Rect {
+        let inner = Self::inner_area(area);
+        let gutter = (self.gutter_width() as u16).min(inner.width);
+        Rect {
+            x: inner.x + gutter,
+            width: inner.width - gutter,
+            ..inner
+        }
+    }
+
+    /// The gutter's own area, to the left of the text.
+    fn gutter_area(&self, area: Rect) -> Rect {
+        let inner = Self::inner_area(area);
+        Rect {
+            width: (self.gutter_width() as u16).min(inner.width),
+            ..inner
+        }
     }
 
     pub(crate) fn line_grapheme_count(&self, line: usize) -> usize {
@@ -187,10 +271,16 @@ impl EditorPanel {
     /// panel's internals are not application state, which is the same rule
     /// `RenderContext` enforces pointing the other way.
     ///
-    /// ponytail: this scans the whole buffer, which is ~10 ms on a 50k-line
-    /// file — fine for answering Enter, too slow to run on every keystroke.
-    /// An incremental search box scans the viewport first and completes off
-    /// the render thread; see `typ-buffer/tests/perf.rs`.
+    /// ponytail: this scans the whole buffer — 5.4–8.7 ms on a 50k-line file,
+    /// re-measured at v0.2.3 against a 16 ms keystroke budget. Fine for
+    /// answering Enter, too slow to run on every keystroke, and the one budget
+    /// in the project with less than an order of magnitude of headroom
+    /// (gap-analysis defect 38).
+    ///
+    /// `Ctrl+D` already avoids it: `TextBuffer::find_next` searches from the
+    /// cursor and stops at the first hit, at 3.89 µs per press. An incremental
+    /// search box wants the same shape — viewport first, the rest completed off
+    /// the render thread. See `typ-buffer/tests/perf.rs`.
     pub fn buffer_find_all(&self, query: &SearchQuery) -> Vec<Selection> {
         self.buffer.find_all(query)
     }
@@ -199,6 +289,27 @@ impl EditorPanel {
     pub fn select_range(&mut self, selection: Selection) {
         self.selections.set_single(selection);
         self.goal_col = None;
+        self.scroll_to_cursor();
+    }
+
+    /// Put the caret at the start of a line and centre it in the viewport.
+    ///
+    /// Centred rather than merely scrolled into view: `scroll_to_cursor` moves
+    /// the minimum, which after a jump leaves the target line on whichever edge
+    /// it entered from. That is technically visible and useless — you jumped
+    /// there to read *around* it, and half the context is off-screen.
+    ///
+    /// Out-of-range clamps to the last line. Someone typing 9999 means the end
+    /// of the file, and erroring at them is pedantry rather than correctness.
+    pub fn goto_line(&mut self, line: usize) {
+        let line = line.min(self.last_line());
+        self.set_caret(Position { line, col: 0 });
+
+        if self.height > 0 {
+            // Saturating: near the top of the file there is nothing above to
+            // scroll into, and the first screenful is its own context.
+            self.top_line = line.saturating_sub(self.height / 2);
+        }
         self.scroll_to_cursor();
     }
 
@@ -283,24 +394,80 @@ impl Panel for EditorPanel {
         let block = Block::bordered()
             .border_style(Style::default().fg(border))
             .title(self.title());
-        let inner = block.inner(area);
         block.render(area, buf);
 
-        self.height = inner.height as usize;
-        self.width = inner.width as usize;
-        let end = (self.top_line + self.height).min(self.buffer.line_count());
+        let text_area = self.text_area(area);
+        let gutter_area = self.gutter_area(area);
+
+        // Height and width are learned here, and the width is the *text* width:
+        // horizontal scrolling measures against the columns text can occupy,
+        // not against the ones the gutter has already taken.
+        self.height = text_area.height as usize;
+        self.width = text_area.width as usize;
+
+        let line_count = self.buffer.line_count();
+        let end = (self.top_line + self.height).min(line_count);
         let selections: Vec<Selection> = self.selections.iter().copied().collect();
         let left_col = self.left_col;
+        let cursor_line = self.cursor().line;
+
+        // The gutter is furniture, not text: it is drawn into its own area and
+        // never windowed by `left_col`, so scrolling a long line sideways moves
+        // the code and leaves the numbers standing.
+        let gutter_lines: Vec<Line> = (self.top_line..end)
+            .map(|i| {
+                Line::from(
+                    self.gutter
+                        .render_line(i, cursor_line, line_count, ctx.theme),
+                )
+            })
+            .collect();
+        Paragraph::new(gutter_lines)
+            .style(
+                Style::default()
+                    .fg(ctx.theme.gutter_fg)
+                    .bg(ctx.theme.gutter_bg),
+            )
+            .render(gutter_area, buf);
+
+        // Once per frame, not once per line: the match depends on the cursor,
+        // and the search is bounded by the viewport plus a margin so a bracket
+        // whose partner is off-screen costs a bounded walk rather than a scan of
+        // the file.
+        let primary = self.selections.primary();
+        let brackets = typ_buffer::brackets::match_at(
+            &self.buffer,
+            primary.head,
+            self.height + BRACKET_SEARCH_MARGIN,
+        );
+        let text_width = text_area.width as usize;
+
         let lines: Vec<Line> = (self.top_line..end)
             .map(|i| {
-                self.buffer.with_line_str(i, |text| {
-                    crate::render::styled_line(text, i, left_col, TAB_WIDTH, &selections, ctx.theme)
-                })
+                // Only carets tint their line; a line carrying a real selection
+                // is already saying where the user is.
+                let cursor_line = self
+                    .selections
+                    .iter()
+                    .any(|s| s.is_empty() && s.head.line == i);
+                let style = crate::render::LineStyle {
+                    line: i,
+                    left_col,
+                    width: text_width,
+                    tab_width: TAB_WIDTH,
+                    selections: &selections,
+                    primary,
+                    cursor_line,
+                    brackets,
+                    theme: ctx.theme,
+                };
+                self.buffer
+                    .with_line_str(i, |text| crate::render::styled_line(text, &style))
             })
             .collect();
         Paragraph::new(lines)
             .style(Style::default().fg(ctx.theme.fg).bg(ctx.theme.bg))
-            .render(inner, buf);
+            .render(text_area, buf);
     }
 
     fn apply_action(&mut self, action: typ_core::Action) -> Option<Vec<PanelEvent>> {
@@ -308,7 +475,7 @@ impl Panel for EditorPanel {
     }
 
     fn cursor_position(&self, panel_area: Rect) -> Option<(u16, u16)> {
-        let inner = Self::text_area(panel_area);
+        let inner = self.text_area(panel_area);
         let cursor = self.cursor();
         let row = cursor.line.checked_sub(self.top_line)?;
         if row >= inner.height as usize {
@@ -337,7 +504,10 @@ impl Panel for EditorPanel {
 
     fn handle_mouse(&mut self, event: MouseEvent, panel_area: Rect) -> Vec<PanelEvent> {
         let at = |panel: &Self, event: &MouseEvent| {
-            let inner = Self::text_area(panel_area);
+            // The text area, gutter already subtracted — so a click in the
+            // gutter saturates to column 0 and selects the line its number
+            // labels, which is what clicking a line number means everywhere.
+            let inner = panel.text_area(panel_area);
             let row = event.row.saturating_sub(inner.y) as usize;
             // Both offsets apply: a click is at a screen cell, and the text
             // under it is `top_line` rows down and `left_col` columns across.

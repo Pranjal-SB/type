@@ -3,13 +3,13 @@ type: design
 status: living
 area: spec
 verified: 2026-08-16
-verified-against: v0.2.2
+verified-against: v0.2.3
 ---
 
 # TYPE — Terminal-Yoked Programming Environment
 
-**Status:** approved; M0–M2.2 built against it
-**Date:** 2026-08-10, last verified against the tree 2026-08-16 at v0.2.2
+**Status:** approved; M0–M2.3 built against it
+**Date:** 2026-08-10, last verified against the tree 2026-08-16 at v0.2.3
 **Binary:** `typ` · **Crate:** `typ-editor` · **Repo:** `type`
 
 ---
@@ -116,6 +116,15 @@ One thing the tests establish that the budget alone does not: a whole-buffer sca
 match on every line of a large file does not fit in a frame at any constant factor. Search is
 therefore viewport-first with the remainder completed off-thread — a design constraint, not a
 number to optimise toward.
+
+**The budget is keystroke to painted glyph, so the paint is measured too.** Until v0.2.3 every
+perf test measured edits and none measured rendering, which is half a number — and M2.3 put a
+gutter, a bracket search and a per-grapheme paint decision on that path. A frame drawn deep in
+a 50k-line file costs 439 µs. Two further cautions were learned by getting them wrong: these
+tests take a mutex, because cargo's parallel threads made one read 32 µs against the 1.9 µs it
+actually cost, and the `find_all` budget takes best-of-five, because it is the one number here
+with less than an order of magnitude of headroom and a single sample of it measures the
+scheduler.
 
 ### Clean
 
@@ -232,9 +241,21 @@ typ-app/             event loop, layout, session, palette, fuzzy find
 typ/                 thin binary
 ```
 
-Hard cap: **800 lines per file.** Fresh and TermIDE both broke this badly and it shows —
-`plugin_dispatch.rs` at 6.7k lines, `panel-editor` at 22k, `modal` at 15k. Files that size
-stop being contributable, including by their own author.
+**800 lines per file is where you go looking for a seam.** Fresh and TermIDE both broke this
+badly and it shows — `plugin_dispatch.rs` at 6.7k lines, `panel-editor` at 22k, `modal` at
+15k. Files that size stop being contributable, including by their own author.
+
+**Revised at v0.2.3, after the rule misfired.** It was written as a hard cap, and a hard
+numeric gate has a failure of its own: it forces a cut at an arithmetic boundary rather than
+at a seam. `actions.rs` crossed 800 by eleven lines and was split twice — once into
+`occurrence.rs`, which shares a needle, a case rule and a stop condition with nothing else in
+the editor and was worth doing at any length, and once into a 56-line `edit.rs` that cohered
+around nothing and was merged straight back. The second split existed to satisfy a number.
+
+So the number is a **trigger to look**, not a threshold to satisfy. At 800 a file has almost
+always grown a second responsibility; find it and split there. If there genuinely is not one,
+the file stays long and the reason is recorded. The failure this rule exists to prevent is a
+6,700-line file, and nothing about 850 resembles that.
 
 ### The Panel contract
 

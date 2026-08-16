@@ -4,12 +4,13 @@
 //! `handle_key` touches the buffer, which is what keeps the keymap, the future
 //! command palette, and the future vim layer able to reach the same behavior.
 
+use unicode_segmentation::UnicodeSegmentation;
+
 use typ_buffer::{
     EditKind, Position, Selection, Shift, TextBuffer, clipboard, display_to_grapheme_col,
     grapheme_to_display_col, next_word_boundary, previous_word_boundary,
 };
 use typ_core::{Action, Direction, Motion, PanelEvent};
-use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{EditorPanel, TAB_WIDTH};
 
@@ -536,6 +537,9 @@ impl EditorPanel {
                 self.goal_col = None;
                 Some(vec![PanelEvent::NeedsRedraw])
             }
+
+            Action::SelectNextOccurrence => self.select_next_occurrence(),
+            Action::SelectAllOccurrences => self.select_all_occurrences(),
 
             Action::CollapseSelections => {
                 self.selections.collapse_to_heads();

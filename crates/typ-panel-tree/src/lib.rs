@@ -218,12 +218,17 @@ impl Panel for TreePanel {
                     "> "
                 };
                 let label = format!("{}{marker}{name}", "  ".repeat(entry.depth));
+                // Directories carry the accent, files the quieter secondary
+                // step. This is what turns a tree from a list into information:
+                // the shape of a project is readable without reading the names.
                 let style = if i == self.selected {
                     Style::default()
                         .fg(ctx.theme.selection_fg)
-                        .bg(ctx.theme.selection_bg)
+                        .bg(ctx.theme.selection_primary_bg)
+                } else if entry.is_dir {
+                    Style::default().fg(ctx.theme.tree_directory_fg)
                 } else {
-                    Style::default().fg(ctx.theme.fg)
+                    Style::default().fg(ctx.theme.tree_file_fg)
                 };
                 Line::styled(label, style)
             })

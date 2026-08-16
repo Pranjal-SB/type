@@ -80,10 +80,11 @@ fn the_editor_has_no_raw_key_behaviour_of_its_own() {
 fn clicking_places_the_cursor_at_that_position() {
     let mut p = EditorPanel::from_str("hello\nworld\n");
     let area = Rect::new(0, 0, 40, 10);
-    // One row and one column of that is border, so this lands on line 1, col 3.
+    // One row and column of border, then two cells of gutter, so column 6 is
+    // the fourth grapheme of "world".
     let ev = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
-        column: 4,
+        column: 6,
         row: 2,
         modifiers: KeyModifiers::NONE,
     };

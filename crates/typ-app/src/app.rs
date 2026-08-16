@@ -4,7 +4,7 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::Style;
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 use typ_buffer::SearchQuery;
 use typ_core::{
@@ -15,6 +15,7 @@ use typ_panel_tree::TreePanel;
 use typ_registry::Registry;
 
 use crate::prompt::{Prompt, PromptKind};
+use crate::status::{Segment, StatusFacts, segments};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -56,6 +57,11 @@ pub struct App {
     last_query: Option<SearchQuery>,
 }
 
+/// Between status segments. Two spaces rather than a glyph separator: a
+/// separator needs a colour decision of its own and a Nerd Font question at
+/// M6, and whitespace has neither.
+const SEGMENT_GAP: &str = "  ";
+
 /// Shown when there is nothing more urgent to say. Discoverability is part of
 /// the product: bindings nobody can find are bindings that do not exist.
 const HINT: &str = "Tab focus  ·  Enter open  ·  Ctrl+S save  ·  Ctrl+Q quit";
@@ -93,16 +99,37 @@ impl App {
         self.status.clone().unwrap_or_else(|| HINT.to_string())
     }
 
-    /// Right half: what is open and where the cursor is, counted from 1 the way
-    /// every compiler error and every other editor does.
+    /// Right half: what is open, what state it is in, and where the cursor is.
     pub fn status_right(&self) -> String {
+        self.status_segments()
+            .into_iter()
+            .map(|s| s.text)
+            .collect::<Vec<_>>()
+            .join(SEGMENT_GAP)
+    }
+
+    /// The right-hand segments.
+    ///
+    /// The app assembles the facts today. At M4 this becomes a call to
+    /// `Panel::status_segments()` on the focused panel, and because the segment
+    /// list and its emphasis rules live in `status.rs` rather than here, that is
+    /// a change of source rather than a rewrite of content.
+    pub fn status_segments(&self) -> Vec<Segment> {
         let cursor = self.editor.cursor();
-        format!(
-            "{}  {}:{}",
-            self.editor.title(),
-            cursor.line + 1,
-            cursor.col + 1
-        )
+        let path = self.editor.path();
+        let file_type = crate::status::file_type_of(path);
+        let file_name = self.editor.file_name();
+        segments(&StatusFacts {
+            file_name: &file_name,
+            modified: self.editor.is_dirty(),
+            file_type: file_type.as_deref(),
+            line_ending: self.editor.line_ending().label(),
+            indent_width: typ_panel_editor::TAB_WIDTH,
+            selection_count: self.editor.selections().len(),
+            line: cursor.line,
+            col: cursor.col,
+            total_lines: self.editor.line_count(),
+        })
     }
 
     /// Drop anything that should not outlive the next keypress.
@@ -332,6 +359,7 @@ impl App {
             Search(String),
             AskReplacement(String),
             Replace { needle: String, replacement: String },
+            Goto(String),
         }
 
         // A chord is never text, in the prompt exactly as in the buffer —
@@ -368,6 +396,7 @@ impl App {
                         needle: prompt.pending_needle().unwrap_or_default().to_string(),
                         replacement: input,
                     },
+                    PromptKind::GotoLine => Outcome::Goto(input),
                 }
             }
             _ => Outcome::Stay,
@@ -392,6 +421,23 @@ impl App {
             } => {
                 self.prompt = None;
                 self.run_replace_all(&needle, &replacement);
+            }
+            Outcome::Goto(input) => {
+                if input.is_empty() {
+                    // Answering nothing is answering "never mind".
+                    self.prompt = None;
+                } else if let Some(line) = parse_line_number(&input) {
+                    self.prompt = None;
+                    self.editor.goto_line(line);
+                } else {
+                    // Rejected, and the prompt stays open with the input still
+                    // in it: closing on a typo throws the answer away and makes
+                    // the user reopen and retype it.
+                    self.status = Some(format!("Not a line number: {input}"));
+                    if let Some(prompt) = self.prompt.as_mut() {
+                        prompt.restore_input(input);
+                    }
+                }
             }
         }
         Ok(())
@@ -464,9 +510,15 @@ impl App {
             Action::Quit => self.request_quit(),
             Action::Save => match self.editor.save() {
                 Ok(()) => self.status = Some("Saved.".to_string()),
-                // A save that fails silently is how work gets lost.
-                Err(e) => self.status = Some(format!("Save failed: {e:#}")),
+                // A save that fails silently is how work gets lost. The status
+                // bar says so and the log keeps the whole error chain, which is
+                // the part that is actually diagnosable.
+                Err(e) => {
+                    crate::log_error!("save failed: {e:#}");
+                    self.status = Some(format!("Save failed: {e:#}"));
+                }
             },
+            Action::GotoLine => self.prompt = Some(Prompt::new(PromptKind::GotoLine)),
             Action::SearchOpen => self.prompt = Some(Prompt::new(PromptKind::Search)),
             Action::ReplaceOpen => {
                 let mut prompt = Prompt::new(PromptKind::Search);
@@ -549,22 +601,44 @@ impl App {
     }
 
     fn render_status(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-        let style = Style::default()
+        let background = Style::default()
             .fg(self.theme.status_bar_fg)
             .bg(self.theme.status_bar_bg);
         let left = self.status_left();
-        let right = self.status_right();
+        let right_segments = self.status_segments();
+        let right_width: usize = right_segments
+            .iter()
+            .map(|s| s.text.chars().count())
+            .sum::<usize>()
+            + SEGMENT_GAP.len() * right_segments.len().saturating_sub(1);
 
         // The right half is the fixed cost; the left is truncated to whatever
         // is left over, so a long message never pushes the position off-screen.
         let width = area.width as usize;
-        let room = width.saturating_sub(right.chars().count() + 2);
+        let room = width.saturating_sub(right_width + 2);
         let left: String = left.chars().take(room).collect();
-        let gap = width.saturating_sub(left.chars().count() + right.chars().count());
-        let line = format!("{left}{}{right}", " ".repeat(gap));
+        let gap = width.saturating_sub(left.chars().count() + right_width);
 
-        Paragraph::new(Line::raw(line))
-            .style(style)
+        // Each segment carries its own emphasis. This is where
+        // `status_bar_inactive_fg` and `status_bar_accent` earn their place:
+        // without them the bar is one weight of text and a reader has to parse
+        // it rather than glance at it.
+        let mut spans = vec![
+            Span::styled(left, background),
+            Span::styled(" ".repeat(gap), background),
+        ];
+        for (index, segment) in right_segments.iter().enumerate() {
+            if index > 0 {
+                spans.push(Span::styled(SEGMENT_GAP, background));
+            }
+            spans.push(Span::styled(
+                segment.text.clone(),
+                background.fg(segment.emphasis.colour(&self.theme)),
+            ));
+        }
+
+        Paragraph::new(Line::from(spans))
+            .style(background)
             .render(area, buf);
     }
 
@@ -596,4 +670,13 @@ impl App {
             Focus::Editor => &mut self.editor,
         }
     }
+}
+
+/// A 1-based line number typed into the goto prompt, as a 0-based index.
+///
+/// Line 0 is line 1: a user who types `0` means the top of the file, and there
+/// is no other thing they could have meant.
+fn parse_line_number(input: &str) -> Option<usize> {
+    let n: usize = input.trim().parse().ok()?;
+    Some(n.saturating_sub(1))
 }

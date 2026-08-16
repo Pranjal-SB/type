@@ -40,7 +40,7 @@ fn a_short_line_is_not_scrolled() {
     let mut p = EditorPanel::from_str("abc\n");
     let buf = render(&mut p, AREA);
     assert_eq!(p.left_col(), 0);
-    assert_eq!(row(&buf, 1), "│abc       │");
+    assert_eq!(row(&buf, 1), "│1 abc     │");
 }
 
 #[test]
@@ -155,7 +155,7 @@ fn selection_highlighting_stays_on_the_text_after_scrolling() {
 
     let visible = row(&buf, 1);
     let styled: String = (0..buf.area.width)
-        .filter(|x| buf[(*x, 1)].style().bg == Some(ThemeColors::default().selection_bg))
+        .filter(|x| buf[(*x, 1)].style().bg == Some(ThemeColors::default().selection_primary_bg))
         .map(|x| buf[(x, 1)].symbol())
         .collect();
     assert_eq!(

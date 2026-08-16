@@ -41,24 +41,31 @@ no editing primitives of its own and the core never depends on it.
 
 ## Status
 
-**v0.2.2 — pre-alpha.** Selections, multiple cursors, word-wise motion, drag to select,
-horizontal scrolling, literal search and replace, clipboard with OSC 52 so it works over SSH,
-Tab indent, and creating new files — alongside the file tree, focus cycling, undo/redo, save
-and rebindable keys. Every editing primitive is a named action and every key is a table row, so
-a command palette and an opt-in vim layer are configuration rather than a rewrite.
+**v0.2.3 — pre-alpha.** The milestone that made TYPE look like a finished program rather than
+a working one.
 
-This is the release at which TYPE should be able to edit its own source: the gaps that made a
-real editing session impossible — no clipboard, no indent, opening a file discarding unsaved
-work — are closed. Whether it is actually pleasant to use it all day is the next thing to find
-out, and the answer is expected to produce a defect list rather than a victory lap.
+There is a **gutter** with line numbers, built as an ordered list of components so the
+diagnostics and git-diff markers arriving at M3 and M5 land in a column that already exists.
+The palette is **truecolor** — one ramp at one hue, with contrast ratios checked by test rather
+than by eye, so body text holds 7:1 and no diagnostic colour falls below 4.5:1. The cursor's
+line is tinted, matching brackets are highlighted, and the **primary selection is drawn
+differently from the rest**, which is what tells you which of thirty cursors every motion is
+relative to.
+
+`Ctrl+D` selects the next occurrence of the word under the cursor, and `Ctrl+G` jumps to a
+line. The status bar went from three things to seven. `TYP_LOG` names a log file.
+
+Underneath: selections, multiple cursors, word-wise motion, drag to select, horizontal
+scrolling, literal search and replace, clipboard with OSC 52 so it works over SSH, Tab indent,
+and creating new files — alongside the file tree, focus cycling, undo/redo, save and rebindable
+keys. Every editing primitive is a named action and every key is a table row, so a command
+palette and an opt-in vim layer are configuration rather than a rewrite.
 
 No syntax highlighting, no LSP, no splits or tabs yet — see the roadmap.
 
-A status bar carries messages, the open file, and the cursor position. Quitting with unsaved
-changes asks before discarding them.
-
-Undo takes back a run of typing in one press rather than one character at a time, and puts
-the cursor back where the edit was made.
+Quitting with unsaved changes asks before discarding them. Undo takes back a run of typing in
+one press rather than one character at a time, and puts the cursor back where the edit was
+made.
 
 - [Architecture and design rationale](docs/design/architecture.md)
 - [Gap analysis — known defects and how TYPE measures against the field](docs/design/gap-analysis.md)
@@ -75,9 +82,10 @@ The crate is `typ-editor`; the binary it installs is `typ`. That is the only ins
 today, so it reaches you only if you already have a Rust toolchain — prebuilt binaries,
 checksums and a one-line installer are planned and not yet built.
 
-**crates.io currently serves 0.2.1, one version behind this tree.** Publishing is a manual step
-and it has lagged. Until it catches up, `cargo install` gets you an editor with no clipboard and
-no Tab indent — build from source for what the Status section above describes.
+**crates.io currently serves 0.2.1, two versions behind this tree.** Publishing is a manual
+step and it has lagged. Until it catches up, `cargo install` gets you an editor with no
+clipboard, no Tab indent and no gutter — build from source for what the Status section above
+describes.
 
 ## Build from source
 
@@ -116,6 +124,9 @@ cargo build --release
 | `Ctrl+L` | Select the line |
 | `Esc` | Collapse to a single cursor |
 | `Ctrl+Alt+↑` `Ctrl+Alt+↓` | Add a cursor above / below |
+| `Ctrl+D` | Select the word under the cursor, then each next occurrence |
+| `Ctrl+Shift+L` | Select every occurrence at once |
+| `Ctrl+G` | Go to a line |
 | `Enter` | Split the line |
 | `Backspace` `Delete` | Delete before / under the cursor |
 | `Ctrl+Backspace` `Ctrl+Delete` | Delete a word |
@@ -159,11 +170,30 @@ pointer is over.
 | `Ctrl+H` | Replace every match |
 
 Search is smart-case: a lowercase needle finds everything, one with a capital in it means it.
+`Ctrl+D` is not: matching an identifier is a different job from finding prose, so `value` and
+`Value` stay two different things.
+
+**The status bar** carries the file name, its type, its line ending, the indent width, the
+cursor count when there is more than one, the position and how far through the file you are.
+Unsaved changes and a cursor count above one are accented, because both are states you can
+forget you are in.
 
 Keybindings are non-modal, and will stay usable that way. Every binding is a row in a table
 rather than a branch in a match, so rebinding is configuration. A vim layer — modes, counts,
 operators, composable motions — is planned as an opt-in setting, not as the default and not
 as a fork of the editor core.
+
+## Debugging
+
+A TUI owns the screen, so there is nowhere to print. Set `TYP_LOG` to a path and TYPE appends a
+line per event — startup, the clipboard provider it detected, config problems, failed saves:
+
+```bash
+TYP_LOG=/tmp/typ.log typ .
+```
+
+Unset, it costs a branch and writes nothing. The clipboard provider line is the first thing
+worth looking at if copy and paste are not doing what you expect.
 
 ## Configuring keys
 
@@ -193,8 +223,8 @@ worse than one that plainly did nothing.
 | v0.1.0 | M1 | Walking skeleton — event loop, panel contract, editor and file tree | shipped |
 | v0.2.0 | M2 | Editing — multi-cursor, selections, word motion, search and replace | shipped |
 | v0.2.1 | M2.1 | Correctness — keystroke budgets, undo coalescing, the shift map | shipped |
-| v0.2.2 | M2.2 | Usable — clipboard, indent, new files, guarded open. Self-hosting starts here | **current** |
-| v0.2.3 | M2.3 | Polish — gutter and line numbers, truecolor theme, status segments, `Ctrl+D` | next |
+| v0.2.2 | M2.2 | Usable — clipboard, indent, new files, guarded open | shipped |
+| v0.2.3 | M2.3 | Polish — gutter, truecolor theme, current line, brackets, status segments, `Ctrl+D`, goto-line, logging | **current** |
 | v0.2.5 | M2.5 | File watching, damage-driven redraw, wakeable event loop, tree-sitter, themes as files | |
 | v0.3.0 | M3 | Code intelligence — LSP client | |
 | v0.4.0 | M4 | Workspace — splits, tabs, sessions, command palette, project search | |

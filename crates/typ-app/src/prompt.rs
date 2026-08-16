@@ -11,6 +11,8 @@ pub enum PromptKind {
     Search,
     /// The needle has been entered; this is collecting the replacement.
     Replace,
+    /// A line number to jump to.
+    GotoLine,
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +48,7 @@ impl Prompt {
         match self.kind {
             PromptKind::Search => "Search:",
             PromptKind::Replace => "Replace with:",
+            PromptKind::GotoLine => "Go to line:",
         }
     }
 
@@ -59,6 +62,14 @@ impl Prompt {
         let mut graphemes: Vec<&str> = self.input.graphemes(true).collect();
         graphemes.pop();
         self.input = graphemes.concat();
+    }
+
+    /// Put an answer back after rejecting it.
+    ///
+    /// A prompt that clears itself on a typo makes the user retype the whole
+    /// thing, which is the annoying version of validation.
+    pub fn restore_input(&mut self, input: String) {
+        self.input = input;
     }
 
     pub fn take_input(&mut self) -> String {

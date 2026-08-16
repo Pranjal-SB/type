@@ -80,6 +80,12 @@ fn main() -> ExitCode {
 }
 
 fn real_main() -> Result<()> {
+    // First, before anything that can fail. Initialising after argument
+    // handling looked fine and left the one path that most needs a log entry —
+    // a bad path, which exits non-zero and takes `$EDITOR`'s caller down with
+    // it — writing nothing at all.
+    typ_app::log::init_from_env();
+
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     for a in &args {
@@ -101,7 +107,9 @@ fn real_main() -> Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
 
-    let Target { root, file } = resolve(&target)?;
+    let Target { root, file } = resolve(&target).inspect_err(|e| {
+        typ_app::log_error!("{} could not be opened: {e:#}", target.display());
+    })?;
 
     // The clipboard only reaches outside this process once a binary says so.
     // Defaulting it off means a test suite linking typ-buffer never spawns
@@ -113,9 +121,17 @@ fn real_main() -> Result<()> {
     // A broken keys.toml warns and starts on the defaults rather than refusing
     // to open — otherwise the one tool that could fix the typo is the one the
     // typo locked you out of.
+    typ_app::log_info!("typ {VERSION} starting, root {}", root.display());
+    // The single most useful line when somebody reports that copy does nothing.
+    typ_app::log_info!(
+        "clipboard provider: {}",
+        typ_buffer::clipboard::provider_name()
+    );
+
     let (keymap, warning) = typ_app::config::load_keymap(typ_app::config::config_path().as_deref());
     app.set_keymap(keymap);
     if let Some(warning) = warning {
+        typ_app::log_warn!("{warning}");
         app.notify(warning);
     }
 

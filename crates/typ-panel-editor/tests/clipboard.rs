@@ -216,10 +216,19 @@ fn click(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
     }
 }
 
-/// The text area sits inside the panel border, so a click at text (0,0) is a
-/// screen cell at (1,1).
+/// Screen cell for a position in the text.
+///
+/// The text area sits inside the border *and* to the right of the gutter, so
+/// this is one cell for the border plus the gutter's width. Every fixture in
+/// this file is a two-line buffer, so the gutter is one digit and a spacer.
+///
+/// It is a helper rather than a literal because the geometry has now moved
+/// twice — borders at M1.1, the gutter at M2.3 — and each time it moved, every
+/// test that hardcoded a column was wrong in the same way at once.
 fn text_cell(col: u16, line: u16) -> (u16, u16) {
-    (col + 1, line + 1)
+    const BORDER: u16 = 1;
+    const GUTTER: u16 = 2;
+    (col + BORDER + GUTTER, line + BORDER)
 }
 
 #[test]

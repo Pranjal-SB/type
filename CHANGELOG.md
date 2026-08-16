@@ -5,6 +5,55 @@ Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-08-16 — M2.3, polish
+
+The milestone that makes TYPE *look* like a finished program. M2.2 made it usable and did
+nothing for how it reads; this is the answer to "feels very prototypey compared to ttt and
+TermIDE". Every item closes a defect from the gap analysis's "Reads as unfinished" class —
+the class the first audit had no rows for, because it compared feature lists and never asked
+whether the thing looks finished.
+
+### Added
+- **A gutter, with line numbers.** Built as an ordered list of components rather than a
+  line-number column: `LineNumbers`, `Spacer`, and `Diagnostics`/`Diff` reserving their cell
+  and drawing nothing until M3 and M5 fill them in. Right-aligned, 1-based, width taken from
+  the whole buffer so the text never shifts sideways at line 100. Relative numbering exists
+  behind a field for the vim layer, off by default.
+- **A truecolor theme.** `ThemeColors` goes from ten flat fields to twenty-four, modelled on
+  Helix's `ui.*` scopes and drawn from one named ramp at one hue. Contrast is checked by test
+  against WCAG ratios rather than by eye: body text holds 7:1, the gutter 3:1, every
+  diagnostic 4.5:1, and error and warning are separated by lightness so they survive
+  deuteranopia. The diagnostic colours ship unused so a theme file written at M2.5 does not
+  get a breaking change at M3.
+- **Current-line highlight, distinguishable primary selection, matching brackets.** Only
+  empty selections tint their line. The bracket search is bounded by the viewport plus a
+  margin and gives up rather than exceeding it, because it runs on the render path.
+- **`Ctrl+D` selects the next occurrence**, `Ctrl+Shift+L` selects all of them. Case
+  sensitive, unlike `Ctrl+F` — matching an identifier is a different job from finding prose.
+- **`Ctrl+G` jumps to a line**, centring it rather than merely scrolling it into view.
+- **Seven status segments** instead of three: name, filetype, line ending, indent, cursor
+  count, position, percentage — each with an emphasis, so unsaved changes and a cursor count
+  above one are accented rather than lost in a strip of even text.
+- **A log file.** `TYP_LOG` names a path; unset, logging costs a branch. A TUI owns the
+  screen, so `println!` debugging is unavailable by construction.
+- **Line-ending detection.** The status bar stops claiming every file is LF. Preserving it on
+  save remains M2.5's half of the job.
+- **The tree colours directories apart from files**, so the shape of a project is readable
+  without reading the names.
+
+### Changed
+- The tree's selected row uses the primary selection colour: it is the one thing being
+  steered, the same job the editor's primary does.
+- Perf tests take a mutex and the `find_all` budget takes best-of-five. Adding two render
+  benchmarks made `InsertChar` read 32 µs against the 1.9 µs it actually costs — cargo runs
+  tests in parallel threads, so the older tests were being timed while a sibling saturated a
+  core. It took a bisect against v0.2.2 to establish that the 20x was a phantom.
+
+### Fixed
+- The render path is measured for the first time. Architecture §4 budgets keystroke *to
+  painted glyph*, and every perf test measured edits only. A frame deep in a 50k-line file
+  costs 439 µs against 16 ms.
+
 ## [0.2.2] — 2026-08-15 — M2.2, usable
 
 The milestone that makes TYPE able to edit TYPE. Every item here closes a defect found by
