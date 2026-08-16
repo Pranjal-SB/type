@@ -4,13 +4,14 @@
 //! `handle_key` touches the buffer, which is what keeps the keymap, the future
 //! command palette, and the future vim layer able to reach the same behavior.
 
+use unicode_segmentation::UnicodeSegmentation;
+
 use typ_buffer::{
     EditKind, Position, Selection, Shift, TextBuffer, clipboard, display_to_grapheme_col,
     grapheme_to_display_col, next_word_boundary, previous_word_boundary,
 };
 use typ_core::{Action, Direction, Motion, PanelEvent};
 
-use crate::edit::{Edit, position_after};
 use crate::{EditorPanel, TAB_WIDTH};
 
 impl EditorPanel {
@@ -659,4 +660,50 @@ impl EditorPanel {
             _ => None,
         }
     }
+}
+
+/// One edit, described rather than performed: replace `start..end` with `text`.
+///
+/// An empty range inserts and an empty text deletes, so every editing action
+/// reduces to this one shape and the position mapping only has to understand
+/// one thing.
+struct Edit {
+    start: Position,
+    end: Position,
+    text: String,
+}
+
+impl Edit {
+    fn delete(start: Position, end: Position) -> Self {
+        Self {
+            start,
+            end,
+            text: String::new(),
+        }
+    }
+
+    /// An edit that changes nothing, for a caret with nowhere to go — the
+    /// start of the buffer for backspace, the end for delete.
+    fn nothing(at: Position) -> Self {
+        Self {
+            start: at,
+            end: at,
+            text: String::new(),
+        }
+    }
+}
+
+/// Where a position ends up once `text` has been inserted at `start`.
+fn position_after(start: Position, text: &str) -> Position {
+    let mut line = start.line;
+    let mut col = start.col;
+    for grapheme in text.graphemes(true) {
+        if grapheme == "\n" || grapheme == "\r\n" {
+            line += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+    }
+    Position { line, col }
 }

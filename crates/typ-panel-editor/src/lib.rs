@@ -15,7 +15,6 @@ use typ_buffer::{
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
 
 pub mod actions;
-mod edit;
 pub mod gutter;
 mod occurrence;
 pub mod render;
@@ -272,10 +271,16 @@ impl EditorPanel {
     /// panel's internals are not application state, which is the same rule
     /// `RenderContext` enforces pointing the other way.
     ///
-    /// ponytail: this scans the whole buffer, which is ~10 ms on a 50k-line
-    /// file — fine for answering Enter, too slow to run on every keystroke.
-    /// An incremental search box scans the viewport first and completes off
-    /// the render thread; see `typ-buffer/tests/perf.rs`.
+    /// ponytail: this scans the whole buffer — 5.4–8.7 ms on a 50k-line file,
+    /// re-measured at v0.2.3 against a 16 ms keystroke budget. Fine for
+    /// answering Enter, too slow to run on every keystroke, and the one budget
+    /// in the project with less than an order of magnitude of headroom
+    /// (gap-analysis defect 38).
+    ///
+    /// `Ctrl+D` already avoids it: `TextBuffer::find_next` searches from the
+    /// cursor and stops at the first hit, at 3.89 µs per press. An incremental
+    /// search box wants the same shape — viewport first, the rest completed off
+    /// the render thread. See `typ-buffer/tests/perf.rs`.
     pub fn buffer_find_all(&self, query: &SearchQuery) -> Vec<Selection> {
         self.buffer.find_all(query)
     }

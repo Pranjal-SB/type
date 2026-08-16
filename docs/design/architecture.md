@@ -241,9 +241,21 @@ typ-app/             event loop, layout, session, palette, fuzzy find
 typ/                 thin binary
 ```
 
-Hard cap: **800 lines per file.** Fresh and TermIDE both broke this badly and it shows —
-`plugin_dispatch.rs` at 6.7k lines, `panel-editor` at 22k, `modal` at 15k. Files that size
-stop being contributable, including by their own author.
+**800 lines per file is where you go looking for a seam.** Fresh and TermIDE both broke this
+badly and it shows — `plugin_dispatch.rs` at 6.7k lines, `panel-editor` at 22k, `modal` at
+15k. Files that size stop being contributable, including by their own author.
+
+**Revised at v0.2.3, after the rule misfired.** It was written as a hard cap, and a hard
+numeric gate has a failure of its own: it forces a cut at an arithmetic boundary rather than
+at a seam. `actions.rs` crossed 800 by eleven lines and was split twice — once into
+`occurrence.rs`, which shares a needle, a case rule and a stop condition with nothing else in
+the editor and was worth doing at any length, and once into a 56-line `edit.rs` that cohered
+around nothing and was merged straight back. The second split existed to satisfy a number.
+
+So the number is a **trigger to look**, not a threshold to satisfy. At 800 a file has almost
+always grown a second responsibility; find it and split there. If there genuinely is not one,
+the file stays long and the reason is recorded. The failure this rule exists to prevent is a
+6,700-line file, and nothing about 850 resembles that.
 
 ### The Panel contract
 
