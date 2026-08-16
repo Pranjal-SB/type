@@ -240,8 +240,10 @@ fn a_selection_is_visible_in_the_rendered_frame() {
     let terminal = draw(&mut app, 60, 8);
     let theme = ThemeColors::default();
     // Editor text begins at column 33: sidebar 30, border 1, gutter 2.
-    assert_eq!(bg(&terminal, 33, 1), Some(theme.selection_bg));
-    assert_eq!(bg(&terminal, 34, 1), Some(theme.selection_bg));
+    // A lone selection is the primary one — the thing every motion is
+    // relative to, and the only one on screen worth pointing at.
+    assert_eq!(bg(&terminal, 33, 1), Some(theme.selection_primary_bg));
+    assert_eq!(bg(&terminal, 34, 1), Some(theme.selection_primary_bg));
     assert_eq!(
         bg(&terminal, 35, 1),
         Some(theme.bg),
@@ -249,7 +251,7 @@ fn a_selection_is_visible_in_the_rendered_frame() {
     );
     assert_eq!(
         bg(&terminal, 31, 1),
-        Some(theme.bg),
+        Some(theme.gutter_bg),
         "and it must not bleed back into the gutter"
     );
 }

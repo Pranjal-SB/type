@@ -22,6 +22,14 @@ use crate::gutter::Gutter;
 
 pub(crate) const TAB_WIDTH: usize = 4;
 
+/// Lines beyond the viewport a bracket search may walk before giving up.
+///
+/// A partner just off-screen is worth finding — scrolling one line should not
+/// make a highlight appear from nothing. A partner four hundred lines away is
+/// not: nobody is reading both ends at once, and the scan would be on the
+/// keystroke path. See `typ-buffer/src/brackets.rs`.
+const BRACKET_SEARCH_MARGIN: usize = 64;
+
 pub struct EditorPanel {
     pub(crate) buffer: TextBuffer,
     /// Never a bare cursor: a caret is an empty selection, so every editing
@@ -359,11 +367,39 @@ impl Panel for EditorPanel {
             )
             .render(gutter_area, buf);
 
+        // Once per frame, not once per line: the match depends on the cursor,
+        // and the search is bounded by the viewport plus a margin so a bracket
+        // whose partner is off-screen costs a bounded walk rather than a scan of
+        // the file.
+        let primary = self.selections.primary();
+        let brackets = typ_buffer::brackets::match_at(
+            &self.buffer,
+            primary.head,
+            self.height + BRACKET_SEARCH_MARGIN,
+        );
+        let text_width = text_area.width as usize;
+
         let lines: Vec<Line> = (self.top_line..end)
             .map(|i| {
-                self.buffer.with_line_str(i, |text| {
-                    crate::render::styled_line(text, i, left_col, TAB_WIDTH, &selections, ctx.theme)
-                })
+                // Only carets tint their line; a line carrying a real selection
+                // is already saying where the user is.
+                let cursor_line = self
+                    .selections
+                    .iter()
+                    .any(|s| s.is_empty() && s.head.line == i);
+                let style = crate::render::LineStyle {
+                    line: i,
+                    left_col,
+                    width: text_width,
+                    tab_width: TAB_WIDTH,
+                    selections: &selections,
+                    primary,
+                    cursor_line,
+                    brackets,
+                    theme: ctx.theme,
+                };
+                self.buffer
+                    .with_line_str(i, |text| crate::render::styled_line(text, &style))
             })
             .collect();
         Paragraph::new(lines)

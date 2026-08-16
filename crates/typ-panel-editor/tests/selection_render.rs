@@ -70,8 +70,8 @@ fn selected_text_is_drawn_in_the_selection_colors() {
     for col in 1..4 {
         assert_eq!(
             buf[(tx(col), 1)].bg,
-            theme.selection_bg,
-            "column {col} should be selected"
+            theme.selection_primary_bg,
+            "column {col} should be selected, and a lone selection is the primary"
         );
     }
     assert_eq!(
@@ -93,12 +93,12 @@ fn a_selection_spanning_lines_covers_both_ends() {
 
     assert_eq!(
         buf[(tx(2), 1)].bg,
-        theme.selection_bg,
+        theme.selection_primary_bg,
         "tail of the first line"
     );
     assert_eq!(
         buf[(tx(0), 2)].bg,
-        theme.selection_bg,
+        theme.selection_primary_bg,
         "head of the second line"
     );
     assert_eq!(
@@ -124,7 +124,11 @@ fn every_selection_is_drawn_not_only_the_primary() {
     ]);
     let buf = render(&mut panel, Rect::new(0, 0, 20, 5));
     assert_eq!(buf[(tx(0), 1)].bg, theme.selection_bg);
-    assert_eq!(buf[(tx(4), 1)].bg, theme.selection_bg);
+    assert_eq!(
+        buf[(tx(4), 1)].bg,
+        theme.selection_primary_bg,
+        "set_selections_for_test makes the last one primary"
+    );
     assert_eq!(
         buf[(tx(2), 1)].bg,
         theme.bg,
@@ -138,11 +142,16 @@ fn an_empty_selection_paints_nothing() {
     let mut panel = EditorPanel::from_str("abcdef\n");
     let buf = render(&mut panel, Rect::new(0, 0, 20, 5));
     for col in 0..6 {
-        assert_eq!(
-            buf[(tx(col), 1)].bg,
-            theme.bg,
-            "a caret must not highlight column {col}"
+        let bg = buf[(tx(col), 1)].bg;
+        assert_ne!(bg, theme.selection_bg, "column {col} is not selected");
+        assert_ne!(
+            bg, theme.selection_primary_bg,
+            "column {col} is not selected"
         );
+        // It does carry the current-line tint: the caret's line is highlighted
+        // as a whole, which is a different statement from "this text is
+        // selected" and is drawn in a different colour for that reason.
+        assert_eq!(bg, theme.cursor_line_bg);
     }
 }
 
@@ -167,7 +176,7 @@ fn selection_highlighting_lands_on_the_right_columns_with_wide_characters() {
         "本",
         "the selected grapheme starts two display columns in"
     );
-    assert_eq!(buf[(tx(2), 1)].bg, theme.selection_bg);
+    assert_eq!(buf[(tx(2), 1)].bg, theme.selection_primary_bg);
     // A wide grapheme owns its own cell plus a continuation cell holding a
     // space. Only the first cell carries the glyph and its style; the terminal
     // paints the double-width character across both columns from it and never

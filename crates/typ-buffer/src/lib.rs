@@ -1,3 +1,4 @@
+pub mod brackets;
 pub mod buffer;
 pub mod change;
 pub mod clipboard;
