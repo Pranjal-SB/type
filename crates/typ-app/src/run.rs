@@ -5,7 +5,7 @@ use anyhow::Result;
 use crossterm::ExecutableCommand;
 use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-    Event, KeyEventKind, MouseEventKind,
+    Event, KeyEventKind, MouseEvent, MouseEventKind,
 };
 use ratatui::layout::Rect;
 use typ_core::{AppEvent, KeyChord, Panel, PanelEvent};
@@ -142,12 +142,88 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
 /// Takes a `Vec` rather than the receiver so a test can hand it a batch without
 /// threads.
 pub fn step_batch(app: &mut App, events: Vec<AppEvent>, area: Rect) -> Result<Flow> {
-    for event in events {
+    let mut events = events.into_iter().peekable();
+
+    while let Some(event) = events.next() {
+        // Fold a run of wheel events into one scroll. Only a *consecutive*
+        // run, and only over the same panel, so nothing is reordered and
+        // nothing is discarded — the batch is a vector being folded, not a
+        // queue being drained past. The old coalescing read ahead and `break`ed
+        // on the first non-scroll, which dropped it: flick the wheel while
+        // typing and a character vanished.
+        if let Some((m, mut delta)) = as_scroll(&event) {
+            let side = app.areas(area).0.width;
+            let same_panel = |n: &MouseEvent| (n.column < side) == (m.column < side);
+            while let Some(d) = events
+                .peek()
+                .and_then(as_scroll)
+                .filter(|(n, _)| same_panel(n))
+                .map(|(_, d)| d)
+            {
+                delta += d;
+                events.next();
+            }
+            if scroll_step(app, m, delta, area)? == Flow::Quit {
+                return Ok(Flow::Quit);
+            }
+            continue;
+        }
+
         if step(app, event, area)? == Flow::Quit {
             return Ok(Flow::Quit);
         }
     }
     Ok(Flow::Continue)
+}
+
+/// A wheel event and the rows it asks for, or `None` for anything else.
+fn as_scroll(event: &AppEvent) -> Option<(MouseEvent, i32)> {
+    let AppEvent::Input(Event::Mouse(m)) = event else {
+        return None;
+    };
+    match m.kind {
+        MouseEventKind::ScrollDown => Some((*m, NOTCH)),
+        MouseEventKind::ScrollUp => Some((*m, -NOTCH)),
+        _ => None,
+    }
+}
+
+/// Rows one notch of the wheel moves.
+const NOTCH: i32 = 3;
+
+fn scroll_step(app: &mut App, m: MouseEvent, delta: i32, area: Rect) -> Result<Flow> {
+    let events = route_scroll(app, m, delta, area);
+    finish(app, events, true)
+}
+
+/// Send a scroll to whichever panel the pointer is over.
+fn route_scroll(app: &mut App, m: MouseEvent, delta: i32, area: Rect) -> Vec<PanelEvent> {
+    let (tree_area, editor_area) = app.areas(area);
+    if m.column < tree_area.width {
+        app.tree_mut().handle_scroll(delta, tree_area)
+    } else {
+        app.editor_mut().handle_scroll(delta, editor_area)
+    }
+}
+
+/// Apply what the panels asked for, settle the dirty flag, and answer.
+fn finish(app: &mut App, events: Vec<PanelEvent>, mut changed: bool) -> Result<Flow> {
+    // A panel that asked for a repaint gets one even if the caller decided
+    // otherwise: the panel is the one that knows.
+    if !events.is_empty() {
+        changed = true;
+    }
+    app.apply(events)?;
+
+    if changed {
+        app.mark_dirty();
+    }
+
+    Ok(if app.should_quit() {
+        Flow::Quit
+    } else {
+        Flow::Continue
+    })
 }
 
 /// One turn of the loop, without a terminal.
@@ -192,21 +268,14 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
 
                 match m.kind {
                     MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
-                        // One notch per event for now. The old inline drain
-                        // called `event::read()` from here, which raced the pump
-                        // thread the moment the terminal stopped being read from
-                        // one place. Coalescing comes back in Task 4, reading
-                        // the channel instead.
-                        let delta: i32 = if matches!(m.kind, MouseEventKind::ScrollDown) {
-                            3
+                        // One notch. A run of them arriving together is folded
+                        // by `step_batch` before it gets here.
+                        let delta = if matches!(m.kind, MouseEventKind::ScrollDown) {
+                            NOTCH
                         } else {
-                            -3
+                            -NOTCH
                         };
-                        events = if in_tree {
-                            app.tree_mut().handle_scroll(delta, tree_area)
-                        } else {
-                            app.editor_mut().handle_scroll(delta, editor_area)
-                        };
+                        events = route_scroll(app, m, delta, area);
                     }
                     _ => {
                         // A click both focuses the panel and is delivered to it,
@@ -225,26 +294,16 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
                     }
                 }
             }
+            // Defect 10. ratatui's `draw` autoresizes a fullscreen viewport,
+            // querying the backend and clearing into the new area, and panels
+            // learn their size at render time — so the whole fix is getting to
+            // a draw. Harmless until Task 3, and a frozen screen after it.
+            Event::Resize(..) => {}
             // An escape sequence nobody claimed, a focus report, anything the
             // terminal invented. Nothing read it, so nothing changed.
             _ => changed = false,
         },
     }
 
-    // A panel that asked for a repaint gets one even if the arm above decided
-    // otherwise: the panel is the one that knows.
-    if !events.is_empty() {
-        changed = true;
-    }
-    app.apply(events)?;
-
-    if changed {
-        app.mark_dirty();
-    }
-
-    Ok(if app.should_quit() {
-        Flow::Quit
-    } else {
-        Flow::Continue
-    })
+    finish(app, events, changed)
 }
