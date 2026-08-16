@@ -7,37 +7,159 @@ use ratatui::style::Color;
 
 use crate::{KeyChord, PanelEvent};
 
+/// The shipped palette, as a named ramp rather than a colour per widget.
+///
+/// Architecture §4 asks for "one visual system applied uniformly", and a
+/// palette assembled colour-by-colour as each widget needed one is how that
+/// promise gets broken quietly — nothing is ever *wrong*, the greys just drift
+/// apart until the editor looks assembled rather than designed.
+///
+/// So every neutral here is a step on **one ramp at one hue** — a cool
+/// blue-grey near 218° — and every accent is placed against that ramp
+/// deliberately. Widgets name a step; they never mix their own.
+///
+/// The steps are ordered dark to light and each has a job:
+///
+/// | Step | Job |
+/// |---|---|
+/// | 00 | the page |
+/// | 01 | the cursor's line — one step, felt rather than seen |
+/// | 02 | raised surfaces: the status bar |
+/// | 03 | borders and rules |
+/// | 04 | furniture text: line numbers |
+/// | 05 | quiet content: inactive status segments |
+/// | 06 | secondary content: file names |
+/// | 07 | body text |
+/// | 08 | text on a selection |
+///
+/// Contrast is checked rather than eyeballed — see `typ-core/tests/theme.rs`,
+/// which computes WCAG ratios from these channel values and fails the build if
+/// a change drops body text below 7:1 or the gutter below 3:1.
+mod palette {
+    use ratatui::style::Color;
+
+    pub const BASE_00: Color = Color::Rgb(0x10, 0x14, 0x1b);
+    pub const BASE_01: Color = Color::Rgb(0x16, 0x1c, 0x25);
+    pub const BASE_02: Color = Color::Rgb(0x1a, 0x21, 0x2c);
+    pub const BASE_03: Color = Color::Rgb(0x2a, 0x32, 0x40);
+    pub const BASE_04: Color = Color::Rgb(0x5a, 0x6a, 0x80);
+    pub const BASE_05: Color = Color::Rgb(0x6b, 0x7b, 0x91);
+    pub const BASE_06: Color = Color::Rgb(0xa8, 0xb3, 0xc4);
+    pub const BASE_07: Color = Color::Rgb(0xc8, 0xd0, 0xdc);
+    pub const BASE_08: Color = Color::Rgb(0xe6, 0xec, 0xf5);
+
+    /// The one accent. Focus, links, and anything the eye should be drawn to.
+    pub const ACCENT: Color = Color::Rgb(0x4f, 0x8c, 0xc9);
+    /// The same hue, lifted — directories in the tree.
+    pub const ACCENT_BRIGHT: Color = Color::Rgb(0x7f, 0xb3, 0xe0);
+
+    /// Selections sit on the accent's hue at two depths, so the primary reads
+    /// as "the same thing, more so" rather than as a different feature.
+    pub const SELECT: Color = Color::Rgb(0x26, 0x36, 0x4d);
+    pub const SELECT_PRIMARY: Color = Color::Rgb(0x35, 0x50, 0x7a);
+
+    /// Semantic colours. Deliberately *not* on the base hue: these mean
+    /// something, and a reader must not have to decide whether a colour is
+    /// decoration or information.
+    pub const RED: Color = Color::Rgb(0xe0, 0x6c, 0x75);
+    pub const AMBER: Color = Color::Rgb(0xe5, 0xc0, 0x7b);
+    pub const AMBER_DEEP: Color = Color::Rgb(0x3a, 0x35, 0x24);
+    pub const TEAL: Color = Color::Rgb(0x56, 0xb6, 0xc2);
+}
+
 /// The colors a panel is allowed to know about.
 ///
 /// Deliberately a small copy rather than a reference to a full theme: panels
 /// should not be able to reach into application state through their theme.
-#[derive(Debug, Clone, Copy)]
+///
+/// Modelled on Helix's `ui.*` scopes, which number 40-plus. This takes the ones
+/// TYPE has a use for now or at M3 and no more — but it does take the M3 ones,
+/// because a theme file written at M2.5 without diagnostic colours is a theme
+/// file that gets a breaking change the moment the LSP client lands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThemeColors {
     pub fg: Color,
     pub bg: Color,
+    /// The cursor's line. One step off the page — a highlight strong enough to
+    /// find deliberately is strong enough to be a stripe across the screen.
+    pub cursor_line_bg: Color,
+
+    pub gutter_fg: Color,
+    pub gutter_bg: Color,
+    pub line_number_fg: Color,
+    pub line_number_current_fg: Color,
+
     pub selection_bg: Color,
     pub selection_fg: Color,
+    /// The primary selection, the one every motion is relative to. Helix themes
+    /// this separately for exactly that reason: with thirty cursors, nothing
+    /// else says which one is being steered.
+    pub selection_primary_bg: Color,
+
+    pub bracket_match_fg: Color,
+    pub bracket_match_bg: Color,
+
     pub border: Color,
     pub border_focused: Color,
-    pub line_numbers: Color,
-    pub cursor: Color,
+
     pub status_bar_bg: Color,
     pub status_bar_fg: Color,
+    /// Segments carrying real but secondary content — filetype, line ending.
+    /// Quieter than `status_bar_fg`, never so quiet it stops being readable.
+    pub status_bar_inactive_fg: Color,
+    pub status_bar_accent: Color,
+
+    pub tree_directory_fg: Color,
+    pub tree_file_fg: Color,
+
+    /// Unused until M3. Four lines now against a breaking change to every
+    /// shipped theme file later.
+    pub diagnostic_error: Color,
+    pub diagnostic_warning: Color,
+    pub diagnostic_info: Color,
+    pub diagnostic_hint: Color,
 }
 
 impl Default for ThemeColors {
     fn default() -> Self {
+        use palette as p;
         Self {
-            fg: Color::White,
-            bg: Color::Black,
-            selection_bg: Color::Blue,
-            selection_fg: Color::White,
-            border: Color::DarkGray,
-            border_focused: Color::Cyan,
-            line_numbers: Color::DarkGray,
-            cursor: Color::Yellow,
-            status_bar_bg: Color::DarkGray,
-            status_bar_fg: Color::White,
+            fg: p::BASE_07,
+            bg: p::BASE_00,
+            cursor_line_bg: p::BASE_01,
+
+            gutter_fg: p::BASE_04,
+            // The gutter shares the page's background rather than having one of
+            // its own: a seam down the left of every file is chrome doing a job
+            // the digits already do.
+            gutter_bg: p::BASE_00,
+            line_number_fg: p::BASE_04,
+            // The current line's number matches body text — "here" is stated by
+            // being as present as the code, not by being tinted.
+            line_number_current_fg: p::BASE_07,
+
+            selection_bg: p::SELECT,
+            selection_fg: p::BASE_08,
+            selection_primary_bg: p::SELECT_PRIMARY,
+
+            bracket_match_fg: p::AMBER,
+            bracket_match_bg: p::AMBER_DEEP,
+
+            border: p::BASE_03,
+            border_focused: p::ACCENT,
+
+            status_bar_bg: p::BASE_02,
+            status_bar_fg: p::BASE_07,
+            status_bar_inactive_fg: p::BASE_05,
+            status_bar_accent: p::ACCENT,
+
+            tree_directory_fg: p::ACCENT_BRIGHT,
+            tree_file_fg: p::BASE_06,
+
+            diagnostic_error: p::RED,
+            diagnostic_warning: p::AMBER,
+            diagnostic_info: p::ACCENT,
+            diagnostic_hint: p::TEAL,
         }
     }
 }

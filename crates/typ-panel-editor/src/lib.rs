@@ -352,7 +352,11 @@ impl Panel for EditorPanel {
             })
             .collect();
         Paragraph::new(gutter_lines)
-            .style(Style::default().bg(ctx.theme.bg))
+            .style(
+                Style::default()
+                    .fg(ctx.theme.gutter_fg)
+                    .bg(ctx.theme.gutter_bg),
+            )
             .render(gutter_area, buf);
 
         let lines: Vec<Line> = (self.top_line..end)

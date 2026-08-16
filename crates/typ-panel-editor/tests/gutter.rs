@@ -122,7 +122,8 @@ fn the_cursors_line_is_styled_differently_from_the_rest() {
         current, other,
         "the cursor's line number must stand out from the others"
     );
-    assert_eq!(other, Some(theme.line_numbers));
+    assert_eq!(other, Some(theme.line_number_fg));
+    assert_eq!(current, Some(theme.line_number_current_fg));
 }
 
 #[test]

@@ -76,17 +76,21 @@ impl GutterComponent {
                 };
                 let width = digits(line_count);
                 let style = if line == cursor_line {
-                    Style::default().fg(theme.fg)
+                    Style::default().fg(theme.line_number_current_fg)
                 } else {
-                    Style::default().fg(theme.line_numbers)
+                    Style::default().fg(theme.line_number_fg)
                 };
                 // Right-aligned, so the text edge stays straight as the numbers
                 // grow a digit.
                 Span::styled(format!("{number:>width$}"), style)
             }
-            GutterComponent::Spacer | GutterComponent::Diagnostics | GutterComponent::Diff => {
-                Span::raw(" ")
+            // Reserved and empty until M3 and M5. They carry `gutter_fg` now so
+            // that filling them in is writing a glyph, not also deciding what
+            // colour the column was supposed to be.
+            GutterComponent::Diagnostics | GutterComponent::Diff => {
+                Span::styled(" ", Style::default().fg(theme.gutter_fg))
             }
+            GutterComponent::Spacer => Span::raw(" "),
         }
     }
 }

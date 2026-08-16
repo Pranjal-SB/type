@@ -100,9 +100,13 @@ fn the_selected_tree_row_is_highlighted_and_only_that_row() {
     let terminal = draw(&mut app, 60, 8);
     let buffer = terminal.backend().buffer();
 
-    assert_eq!(buffer[(1, 1)].bg, theme.selection_bg);
+    // The primary colour, not the secondary one: the tree has exactly one
+    // selected row and it is the thing being steered, which is the same job the
+    // editor's primary selection does. A tree cursor in the quieter colour
+    // would be the one selection on screen that is hard to find.
+    assert_eq!(buffer[(1, 1)].bg, theme.selection_primary_bg);
     assert_eq!(buffer[(1, 1)].fg, theme.selection_fg);
-    assert_ne!(buffer[(1, 2)].bg, theme.selection_bg);
+    assert_ne!(buffer[(1, 2)].bg, theme.selection_primary_bg);
 }
 
 #[test]
