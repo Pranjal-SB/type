@@ -1,5 +1,5 @@
 use std::io::{Write, stdout};
-use std::time::Duration;
+use std::sync::mpsc;
 
 use anyhow::Result;
 use crossterm::ExecutableCommand;
@@ -8,9 +8,27 @@ use crossterm::event::{
     Event, KeyEventKind, MouseEventKind,
 };
 use ratatui::layout::Rect;
-use typ_core::{KeyChord, Panel, PanelEvent};
+use typ_core::{AppEvent, KeyChord, Panel, PanelEvent};
 
 use crate::app::{App, Focus};
+
+/// The end of the channel a worker holds. Cloneable, and the only way a worker
+/// talks to the app — no worker is ever handed a reference to `App`.
+pub type AppSender = mpsc::Sender<AppEvent>;
+
+/// The end the loop blocks on.
+pub type AppReceiver = mpsc::Receiver<AppEvent>;
+
+pub fn channel() -> (AppSender, AppReceiver) {
+    mpsc::channel()
+}
+
+/// Whether the loop goes round again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Flow {
+    Continue,
+    Quit,
+}
 
 /// Enter/leave synchronized output (CSI 2026) around a frame so partial
 /// repaints are presented atomically. Terminals without support ignore it.
@@ -51,7 +69,29 @@ pub fn run(mut app: App) -> Result<()> {
     result
 }
 
+/// Feed terminal events into the channel from a thread of their own.
+///
+/// The thread cannot be joined on exit: it is parked inside a blocking
+/// `event::read()` that only returns when the user presses something. Detach it
+/// and let process exit collect it. Joining is a hang on quit, and it looks
+/// exactly like the editor having frozen.
+///
+/// It ends on its own when the receiver is dropped and the send fails, which is
+/// what stops it outliving the editor.
+fn spawn_input_pump(tx: AppSender) {
+    std::thread::spawn(move || {
+        while let Ok(event) = event::read() {
+            if tx.send(AppEvent::Input(event)).is_err() {
+                return;
+            }
+        }
+    });
+}
+
 fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<()> {
+    let (tx, rx) = channel();
+    spawn_input_pump(tx);
+
     loop {
         begin_frame();
         terminal.draw(|frame| app.render(frame))?;
@@ -61,9 +101,31 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
             return Ok(());
         }
 
-        let mut events: Vec<PanelEvent> = Vec::new();
+        // Every sender is gone only when the pump thread has died, which means
+        // the terminal is gone too. Nothing left to wait for.
+        let Ok(event) = rx.recv() else {
+            return Ok(());
+        };
 
-        match event::read()? {
+        let size = terminal.size()?;
+        let area = Rect::new(0, 0, size.width, size.height);
+
+        if step(app, event, area)? == Flow::Quit {
+            return Ok(());
+        }
+    }
+}
+
+/// One turn of the loop, without a terminal.
+///
+/// `run` owns the screen, so the body lives here where a test can hand it an
+/// event and an area and inspect what it did.
+pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
+    let mut events: Vec<PanelEvent> = Vec::new();
+
+    match event {
+        AppEvent::FileChanged(_) => {}
+        AppEvent::Input(input) => match input {
             // Every binding lives in the keymap now, so there is nothing left
             // here to special-case. The dispatcher owns the order.
             Event::Key(key) if key.kind == KeyEventKind::Press => {
@@ -74,30 +136,21 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
                 if matches!(m.kind, MouseEventKind::Down(_)) {
                     app.clear_transient();
                 }
-                let size = terminal.size()?;
-                let full = Rect::new(0, 0, size.width, size.height);
-                let (tree_area, editor_area) = app.areas(full);
+                let (tree_area, editor_area) = app.areas(area);
                 let in_tree = m.column < tree_area.width;
 
                 match m.kind {
-                    // Coalesce wheel events into a single scroll call so a fast
-                    // wheel does not queue one repaint per notch.
                     MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
-                        let mut delta: i32 = if matches!(m.kind, MouseEventKind::ScrollDown) {
+                        // One notch per event for now. The old inline drain
+                        // called `event::read()` from here, which raced the pump
+                        // thread the moment the terminal stopped being read from
+                        // one place. Coalescing comes back in Task 4, reading
+                        // the channel instead.
+                        let delta: i32 = if matches!(m.kind, MouseEventKind::ScrollDown) {
                             3
                         } else {
                             -3
                         };
-                        while event::poll(Duration::from_millis(0))? {
-                            match event::read()? {
-                                Event::Mouse(next) => match next.kind {
-                                    MouseEventKind::ScrollDown => delta += 3,
-                                    MouseEventKind::ScrollUp => delta -= 3,
-                                    _ => break,
-                                },
-                                _ => break,
-                            }
-                        }
                         events = if in_tree {
                             app.tree_mut().handle_scroll(delta, tree_area)
                         } else {
@@ -122,8 +175,14 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
                 }
             }
             _ => {}
-        }
-
-        app.apply(events)?;
+        },
     }
+
+    app.apply(events)?;
+
+    Ok(if app.should_quit() {
+        Flow::Quit
+    } else {
+        Flow::Continue
+    })
 }
