@@ -129,6 +129,48 @@ impl EditorPanel {
         self.buffer.save()
     }
 
+    /// Whether the file on disk is byte-for-byte what this buffer holds.
+    ///
+    /// This is what makes our own save not come back as an external change: the
+    /// watcher reports the write we just made, and the answer here is yes, so
+    /// nothing happens. No mtime bookkeeping, and no window in which a
+    /// remembered timestamp is stale.
+    ///
+    /// A file that cannot be read at all counts as differing — it has usually
+    /// just been deleted, which the caller needs to hear about.
+    pub fn matches_disk(&self) -> bool {
+        let Some(path) = self.buffer.path() else {
+            return false;
+        };
+        match std::fs::read_to_string(path) {
+            // `text_as_saved`, not `text`: the rope holds LF and a CRLF file on
+            // disk would never compare equal, so every save of a Windows file
+            // would report itself back as an external change.
+            Ok(disk) => disk == self.buffer.text_as_saved(),
+            Err(_) => false,
+        }
+    }
+
+    /// Replace the buffer with what is on disk, keeping the cursor where it can
+    /// still go.
+    ///
+    /// Undo history does not survive: it describes edits against a rope that no
+    /// longer exists, and offering to undo your way back into a file somebody
+    /// else rewrote is worse than starting clean.
+    pub fn reload(&mut self) -> Result<()> {
+        let Some(path) = self.buffer.path().map(Path::to_path_buf) else {
+            return Ok(());
+        };
+        let selections = self.selections.clone();
+        let top_line = self.top_line;
+
+        self.buffer = TextBuffer::from_path(&path)?;
+        self.selections = selections;
+        self.clamp_selections();
+        self.top_line = top_line.min(self.last_line());
+        Ok(())
+    }
+
     /// Line contents without the trailing newline.
     pub fn line_text(&self, line: usize) -> String {
         self.buffer.line_text(line)

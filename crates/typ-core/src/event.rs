@@ -1,5 +1,22 @@
 use std::path::PathBuf;
 
+/// Everything the event loop can be woken by.
+///
+/// The loop blocks on a channel of these rather than on `event::read()`, so a
+/// worker thread can deliver a result without waiting for the user to press a
+/// key. A terminal event is one variant among several, not the only input.
+///
+/// M2.5 adds `Parsed(Tree)` and M3 adds an LSP response. That is the point of
+/// the type: a new off-thread producer is a variant here and a match arm in the
+/// loop, not a change to how the loop waits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AppEvent {
+    /// Something arrived from the terminal: a key, a mouse report, a paste.
+    Input(crossterm::event::Event),
+    /// The file at this path changed on disk.
+    FileChanged(PathBuf),
+}
+
 /// Identifies a live panel instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PanelId(pub u32);

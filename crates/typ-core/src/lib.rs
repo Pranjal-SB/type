@@ -5,7 +5,7 @@ pub mod keymap;
 pub mod panel;
 
 pub use action::{Action, Direction, Motion};
-pub use event::{HandlerId, NotifyLevel, PanelEvent, PanelId};
+pub use event::{AppEvent, HandlerId, NotifyLevel, PanelEvent, PanelId};
 pub use key::KeyChord;
 pub use keymap::Keymap;
 pub use panel::{Panel, RenderContext, ThemeColors};

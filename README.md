@@ -46,10 +46,14 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.2.3, pre-alpha.** Editing works and the editor looks the part: line numbers, a truecolor
+**v0.2.4, pre-alpha.** Editing works and the editor looks the part: line numbers, a truecolor
 theme, current-line highlight, bracket matching, and multiple cursors with a visibly distinct
 primary. Search and replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line,
 undo that takes back a run of typing in one press.
+
+It is also live: the editor notices when a file changes on disk, reloads it when you have no
+unsaved work and says so when you do, and saves without flattening your line endings, your
+symlinks or your mode bits.
 
 No syntax highlighting, no LSP, no tabs or splits yet; see the roadmap. Full history in
 [CHANGELOG.md](CHANGELOG.md).
@@ -213,9 +217,9 @@ one that plainly did nothing.
 | v0.2.0 | M2 | Editing: multi-cursor, selections, word motion, search and replace | shipped |
 | v0.2.1 | M2.1 | Correctness: keystroke budgets, undo coalescing, the shift map | shipped |
 | v0.2.2 | M2.2 | Usable: clipboard, indent, new files, guarded open | shipped |
-| v0.2.3 | M2.3 | Polish: gutter, truecolor theme, current line, brackets, status segments, `Ctrl+D`, goto-line, logging | **current** |
-| v0.2.4 | M2.4 | Live: wakeable event loop, file watching, damage-driven redraw, resize, save correctness | next |
-| v0.2.5 | M2.5 | Colour: tree-sitter highlighting, themes as files, config, capability detection | |
+| v0.2.3 | M2.3 | Polish: gutter, truecolor theme, current line, brackets, status segments, `Ctrl+D`, goto-line, logging | shipped |
+| v0.2.4 | M2.4 | Live: wakeable event loop, file watching, damage-driven redraw, resize, save correctness | **current** |
+| v0.2.5 | M2.5 | Colour: tree-sitter highlighting, themes as files, config, capability detection | next |
 | v0.3.0 | M3 | Code intelligence: LSP client | |
 | v0.4.0 | M4 | Workspace: splits, tabs, sessions, command palette, project search | |
 | v0.5.0 | M5 | Terminal panel and git integration | |

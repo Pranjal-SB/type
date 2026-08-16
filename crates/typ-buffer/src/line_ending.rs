@@ -1,11 +1,7 @@
 //! Which line terminator a file uses.
 //!
-//! Detection only, for now. Writing it back is M2.5's half of the job — see
-//! `m2.1-correctness.md`'s deferred list, where "line endings not preserved,
-//! `\n` written into a CRLF file" has sat since v0.2.1. The two halves are
-//! genuinely independent: knowing what a file uses is ten lines and lets the
-//! status bar tell the truth today, and it gives M2.5 something already tested
-//! to write against.
+//! Detected on load, recorded here, and written back by `save`. The rope holds
+//! LF only, so nothing between those two points has to know about `\r`.
 
 /// The line terminator a buffer was loaded with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -28,7 +24,7 @@ impl LineEnding {
         }
     }
 
-    /// The characters themselves, for when M2.5 writes them back.
+    /// The characters themselves, as `save` writes them.
     pub fn as_str(self) -> &'static str {
         match self {
             LineEnding::Lf => "\n",

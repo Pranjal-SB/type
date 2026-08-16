@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 # Matches rust-toolchain.toml. Without it, someone on an older compiler gets a
 # wall of syntax errors from edition-2024 code and let-chains instead of cargo
@@ -18,6 +18,9 @@ categories = ["text-editors", "command-line-utilities"]
 [workspace.dependencies]
 anyhow = "1.0"
 crossterm = "0.29"
+# 8.2 stable, not the 9.0 release candidate: a data-loss guard is the last
+# place to take an RC.
+notify = "8.2"
 ratatui = "0.30.2"
 ropey = "1.6"
 toml = "1.1"
@@ -26,12 +29,12 @@ unicode-width = "0.2"
 
 # Version alongside path: cargo resolves the path locally and publishes the
 # version, and refuses to publish a crate whose dependencies carry only a path.
-typ-core = { path = "crates/typ-core", version = "0.2.3" }
-typ-buffer = { path = "crates/typ-buffer", version = "0.2.3" }
-typ-registry = { path = "crates/typ-registry", version = "0.2.3" }
-typ-panel-editor = { path = "crates/typ-panel-editor", version = "0.2.3" }
-typ-panel-tree = { path = "crates/typ-panel-tree", version = "0.2.3" }
-typ-app = { path = "crates/typ-app", version = "0.2.3" }
+typ-core = { path = "crates/typ-core", version = "0.2.4" }
+typ-buffer = { path = "crates/typ-buffer", version = "0.2.4" }
+typ-registry = { path = "crates/typ-registry", version = "0.2.4" }
+typ-panel-editor = { path = "crates/typ-panel-editor", version = "0.2.4" }
+typ-panel-tree = { path = "crates/typ-panel-tree", version = "0.2.4" }
+typ-app = { path = "crates/typ-app", version = "0.2.4" }
 
 [profile.release]
 opt-level = 3

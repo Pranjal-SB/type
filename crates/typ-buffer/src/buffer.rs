@@ -60,11 +60,25 @@ impl TextBuffer {
         }
     }
 
+    /// Read a file into a buffer.
+    ///
+    /// **CRLF is normalized to LF in the rope** and the original recorded in
+    /// `line_ending`, which `save` writes back. Keeping the `\r` in the rope
+    /// would put it inside every line as a grapheme that `col` arithmetic, word
+    /// motion and search all have to know to skip — and an editor whose whole
+    /// cursor model is "col is a grapheme index" cannot afford one grapheme
+    /// that is secretly punctuation. TermIDE takes the same approach for the
+    /// same reason.
     pub fn from_path(path: &Path) -> Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        let line_ending = LineEnding::detect(&text);
+        let text = match line_ending {
+            LineEnding::Lf => text,
+            LineEnding::Crlf => text.replace("\r\n", "\n"),
+        };
         Ok(Self {
-            line_ending: LineEnding::detect(&text),
+            line_ending,
             rope: Rope::from_str(&text),
             path: Some(path.to_path_buf()),
             dirty: false,
@@ -77,11 +91,28 @@ impl TextBuffer {
         self.rope.len_lines()
     }
 
-    /// The line terminator this file was loaded with.
+    /// The whole buffer as a `String`.
     ///
-    /// Detection only: `save` still writes LF regardless. Preserving it is
-    /// M2.5's job, and this is the half the status bar needs to stop claiming
-    /// every file is LF.
+    /// Allocates the entire text, so it is for whole-file work and never for
+    /// anything on the keystroke path.
+    pub fn text(&self) -> String {
+        self.rope.to_string()
+    }
+
+    /// The whole buffer as `save` would write it, line endings and all.
+    ///
+    /// The rope holds LF only. Comparing `text()` against a CRLF file on disk
+    /// says they differ when they do not, which would make every save of a
+    /// Windows file report itself as an external change.
+    pub fn text_as_saved(&self) -> String {
+        match self.line_ending {
+            LineEnding::Lf => self.text(),
+            LineEnding::Crlf => self.text().replace('\n', "\r\n"),
+        }
+    }
+
+    /// The line terminator this file was loaded with, and the one `save`
+    /// writes back. The rope itself holds LF only.
     pub fn line_ending(&self) -> LineEnding {
         self.line_ending
     }
@@ -366,17 +397,39 @@ impl TextBuffer {
             .context("buffer has no path to save to")?
             .clone();
 
+        // Write through a symlink rather than over it. The rename replaces
+        // whatever is at the path, so saving `~/.bashrc` when it is a link into
+        // a dotfiles repo would replace the link with a regular file and
+        // silently detach it from the repo. ttt resolves the link for the same
+        // reason; nothing else in the surveyed field does.
+        let target = resolve_symlink(&path);
+
         // Same directory, so the rename never crosses a filesystem boundary —
         // across devices it would silently become a copy, which is not atomic.
-        let temp = temp_path_beside(&path);
-        write_all_and_sync(&temp, &self.rope)
+        let temp = temp_path_beside(&target);
+        write_all_and_sync(&temp, &self.rope, self.line_ending)
             .with_context(|| format!("writing {}", temp.display()))?;
 
-        if let Err(e) = std::fs::rename(&temp, &path) {
+        // Carry the original's mode onto the temp file *before* the rename, so
+        // the file is never briefly world-readable and an executable script
+        // does not stop being executable because somebody edited it.
+        if let Err(e) = copy_permissions(&target, &temp) {
+            let _ = std::fs::remove_file(&temp);
+            return Err(e).with_context(|| format!("preserving the mode of {}", target.display()));
+        }
+
+        if let Err(e) = std::fs::rename(&temp, &target) {
             // Leave nothing behind on failure; the original is untouched.
             let _ = std::fs::remove_file(&temp);
-            return Err(e).with_context(|| format!("replacing {}", path.display()));
+            return Err(e).with_context(|| format!("replacing {}", target.display()));
         }
+
+        // A rename is not durable until the directory entry naming it is. Skip
+        // this and a power loss can leave the directory pointing at neither
+        // file — which is the zero-length-file outcome the atomic write exists
+        // to prevent, arriving by the other door. None of ttt, TermIDE or Fresh
+        // does this.
+        sync_parent_dir(&target);
 
         self.dirty = false;
         Ok(())
@@ -433,14 +486,62 @@ fn temp_path_beside(path: &Path) -> PathBuf {
 /// Without the flush, the rename can be durable while the contents are not —
 /// which produces an empty file after a power loss, the exact failure the
 /// atomic write exists to prevent.
-fn write_all_and_sync(path: &Path, rope: &Rope) -> std::io::Result<()> {
+fn write_all_and_sync(path: &Path, rope: &Rope, ending: LineEnding) -> std::io::Result<()> {
     use std::io::Write;
 
     let mut file = std::fs::File::create(path)?;
     for chunk in rope.chunks() {
-        file.write_all(chunk.as_bytes())?;
+        match ending {
+            // The rope holds LF. A chunk boundary cannot split a `\n`, so
+            // converting per chunk is safe without carrying state across them.
+            LineEnding::Lf => file.write_all(chunk.as_bytes())?,
+            LineEnding::Crlf => file.write_all(chunk.replace('\n', "\r\n").as_bytes())?,
+        }
     }
     file.flush()?;
     file.sync_all()?;
     Ok(())
+}
+
+/// The real file behind a path, if the path is a symlink.
+///
+/// Only follows when the path *is* a link: `canonicalize` on a plain path is a
+/// syscall for nothing, and on Windows it returns a `\\?\` form that is worth
+/// not introducing where it is not needed.
+fn resolve_symlink(path: &Path) -> PathBuf {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+        }
+        _ => path.to_path_buf(),
+    }
+}
+
+/// Give `to` the permissions `from` has, when `from` exists.
+///
+/// A file being created for the first time has nothing to copy, which is not a
+/// failure.
+fn copy_permissions(from: &Path, to: &Path) -> std::io::Result<()> {
+    let Ok(meta) = std::fs::metadata(from) else {
+        return Ok(());
+    };
+    std::fs::set_permissions(to, meta.permissions())
+}
+
+/// fsync the directory holding `path`, so the rename that named the file is
+/// durable and not only the bytes inside it.
+///
+/// Best-effort: opening a directory for this is not portable — Windows has no
+/// equivalent and returns an error — and a save that worked must not be
+/// reported as failed because the extra durability step was unavailable.
+fn sync_parent_dir(path: &Path) {
+    let Some(parent) = path.parent() else { return };
+    let parent = if parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        parent
+    };
+    if let Ok(dir) = std::fs::File::open(parent) {
+        let _ = dir.sync_all();
+    }
 }

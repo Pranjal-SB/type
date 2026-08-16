@@ -5,6 +5,43 @@ Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-08-16 (M2.4, live)
+
+The milestone that makes the editor live and correct: able to be woken by something other than
+a keypress, able to notice the file changing underneath it, and able to save without quietly
+destroying what it did not write.
+
+### Added
+- **The event loop blocks on one channel** rather than on the terminal. A worker thread can
+  now deliver a result without waiting for the user to press a key, which is the prerequisite
+  for tree-sitter at v0.2.5 and LSP at v0.3.0. A detached thread pumps crossterm into the same
+  channel.
+- **File watching.** A file changed on disk while open was a data-loss bug: TYPE neither
+  reloaded nor warned, and the next save overwrote the other writer. Now a clean buffer
+  reloads silently, a dirty one warns and is left alone, and a deleted file leaves the buffer
+  standing as the only copy. The watch is on the parent directory, because a rename-over
+  destroys the inode a file watch is pinned to.
+
+### Changed
+- **A frame is drawn because state changed, not because the loop went round.** The loop drains
+  everything queued behind the event it woke on and draws once. On a 50k-line file an idle
+  wakeup costs 425 ns against a 513 µs frame, and a 30-event burst dispatches in 268 µs and
+  draws a single frame.
+- Scroll coalescing folds only consecutive wheel events over the same panel, in the batch. The
+  version it replaces read ahead in the queue and dropped anything that was not a scroll, so a
+  key pressed mid-flick vanished.
+
+### Fixed
+- **Saving preserves line endings, symlinks and mode bits.** CRLF is normalized to LF in the
+  rope and written back on save, so a typed newline no longer puts an LF into a Windows file.
+  A symlink is resolved and written through rather than replaced by a regular file. The
+  original mode is carried onto the temp file before the rename, so an executable script stays
+  executable and a `0600` file is never briefly world-readable.
+- **The parent directory is fsynced after the rename.** A rename is not durable until the
+  directory entry naming it is. None of ttt, TermIDE or Fresh does this.
+- Resize is handled. It was harmless only while the loop repainted unconditionally; once
+  redraw became damage-driven it was a frozen screen.
+
 ## [0.2.3] - 2026-08-16 (M2.3, polish)
 
 The milestone that makes TYPE *look* like a finished program. M2.2 made it usable and did
@@ -128,7 +165,8 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.4
 [0.2.3]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.3
 [0.2.2]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.2
 [0.2.1]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.1

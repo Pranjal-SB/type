@@ -3,13 +3,13 @@ type: design
 status: living
 area: spec
 verified: 2026-08-16
-verified-against: v0.2.3
+verified-against: v0.2.4
 ---
 
 # TYPE — Terminal-Yoked Programming Environment
 
-**Status:** approved; M0–M2.3 built against it
-**Date:** 2026-08-10, last verified against the tree 2026-08-16 at v0.2.3
+**Status:** approved; M0–M2.4 built against it
+**Date:** 2026-08-10, last verified against the tree 2026-08-16 at v0.2.4
 **Binary:** `typ` · **Crate:** `typ-editor` · **Repo:** `type`
 
 ---

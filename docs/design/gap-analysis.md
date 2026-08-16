@@ -3,12 +3,12 @@ type: design
 status: living
 area: audit
 verified: 2026-08-16
-verified-against: v0.2.3
+verified-against: v0.2.4
 ---
 
 # Gap analysis — TYPE against itself and against the field
 
-**Status:** living document · **Written at:** v0.2.1 · **Re-verified at:** v0.2.3 · **Date:** 2026-08-16
+**Status:** living document · **Written at:** v0.2.1 · **Re-verified at:** v0.2.4 · **Date:** 2026-08-16
 
 Two questions, answered together because they turn out to be the same question:
 
@@ -38,10 +38,14 @@ and says which half remains, because striking it would lose the rest.
 | ~~4~~ | LOW | Save temp file uses a fixed name, `.{name}.typ-tmp`. Two instances saving the same file race each other, and a kill mid-save leaves the file behind. Wants a pid or nonce. | `typ-buffer/src/buffer.rs:320` | v0.2.2 |
 | 5 | LOW | `typ a.rs b.rs` silently ignores everything after the first path. Honest until tabs exist, a real bug the moment they do. | `typ/src/main.rs:54` | v0.4.0 |
 | 6 | LOW | No tty check. `typ | cat` renders escape sequences into a pipe. | `typ/src/main.rs` | v1.0.0 (M6) |
+| 40 | MED | **An atomic save gives the file the saving user's ownership.** `rename` puts a new inode at the path, and only root or the owner can `chown` it back, so editing a file you have write access to but do not own — a root-owned config, a shared file in a group-writable directory — silently transfers it to you. Found by reading Fresh, the only project in the field that handles it: `should_use_inplace_write` writes in place when `!fs.is_owner(dest_path)`, and because an in-place write is not crash-safe it carries a recovery temp file plus recovery metadata, with a `SudoSaveRequired { temp_path, dest_path, uid, gid, mode }` escalation path behind it. Unix-only, and the recovery machinery is larger than the rest of M2.4 put together, which is why v0.2.4 preserves mode bits and symlinks and leaves this. | `typ-buffer/src/buffer.rs` `save` | unowned |
 
-Already recorded as deliberate deferrals in `m2.1-correctness.md`, still true: line endings not
-preserved (`\n` written into a CRLF file), `save` drops POSIX mode bits and replaces symlinks,
-no parent-dir fsync, non-UTF-8 files fail to open.
+Recorded as deliberate deferrals in `m2.1-correctness.md`. ~~Line endings not preserved (`\n`
+written into a CRLF file), `save` drops POSIX mode bits and replaces symlinks, no parent-dir
+fsync~~ — **all four closed at v0.2.4**: CRLF is normalized to LF in the rope and written back
+on save, the mode is carried onto the temp file before the rename, a symlink is resolved and
+written through, and the parent directory is fsynced after the rename, which none of ttt,
+TermIDE or Fresh does. Still true: non-UTF-8 files fail to open, and the new #40.
 
 ### Table stakes that are simply absent
 
@@ -50,7 +54,7 @@ no parent-dir fsync, non-UTF-8 files fail to open.
 | ~~7~~ | **CRITICAL** | **No clipboard. At all.** No `Copy`, `Cut` or `Paste` in `Action`, no OS clipboard dependency, zero matches in the tree. `Ctrl+C` currently does nothing at all. | `typ-core/src/action.rs:59-75` |
 | ~~8~~ | **HIGH** | **Tab cannot indent.** `("tab", Action::FocusNext)` is the only Tab binding, and no `Indent`/`Outdent` action exists. A code editor where Tab does not indent is not yet a code editor. | `typ-core/src/keymap.rs:230` |
 | ~~9~~ | HIGH | **Bracketed paste is not enabled.** A terminal paste arrives as N separate key events: N loop passes, N repaints, and any chord inside the pasted text executes as a command rather than being inserted. `Event::Paste` is unhandled. | `typ-app/src/run.rs:59` |
-| 10 | MED | **`Event::Resize` is unhandled.** Harmless *today* only because the loop repaints unconditionally. The moment M2.4 makes redraw damage-driven this becomes a frozen screen on resize. Scheduled for M2.4 alongside the dropped keystroke, and for the same reason: both are the loop losing input. | `typ-app/src/run.rs:116` |
+| ~~10~~ | MED | ~~**`Event::Resize` is unhandled.**~~ **Fixed at v0.2.4**, and the prediction held exactly: it stayed harmless until damage-driven redraw landed in the same milestone, at which point the test went red as a frozen screen. The fix is one match arm marking the frame dirty — ratatui's `draw` autoresizes a fullscreen viewport and TYPE's panels learn their size at render time, so there was no plumbing to add. | `typ-app/src/run.rs` |
 | 11 | MED | Drag past the viewport edge does not autoscroll; the selection stops at the last visible row. | `typ-panel-editor/src/lib.rs:388` |
 | 12 | MED | **Partly fixed at v0.2.3**: ~~no goto-line~~ shipped. **Still absent: move-line, duplicate-line, comment toggle** — all cheap, all unowned. | — |
 | 13 | LOW | `last_click` is never cleared by keyboard motion, so click → arrow away → click the same cell selects a word rather than placing a caret. | `typ-panel-editor/src/lib.rs:358` |
@@ -77,11 +81,12 @@ imagined it, and the furniture below is absent because the **audit** only imagin
 | 29 | MED | **The sidebar is a fixed 30 columns and cannot be resized.** ttt drags its dividers with the mouse. Invariant 8 says mouse and keyboard are peers; a layout that cannot be adjusted by either is not yet a layout. | `layout.rs:4` |
 | 30 | LOW | **Partly fixed at v0.2.3**: directories and files are now coloured apart, so the shape of a project is readable without reading the names. **Still absent: icons, and git status colouring** — the latter needs `typ-git` and is M5, the former is a Nerd Font question that belongs with the symbol presets at M2.5. | `typ-panel-tree/src/lib.rs:188` |
 
-**The structural cause underneath all of it:** the render path draws every cell on every loop
-pass and the loop blocks on `event::read()`. There is no headroom to *add* visual richness
-without making an already-unconditional redraw more expensive, which is part of why none of it
-has accumulated. M2.4 is the prerequisite for the ambitious half of this list — it is what buys the render path any headroom at all — and none of the
-cheap half needs to wait for it.
+**The structural cause underneath all of it, and its removal.** As written at v0.2.2: the
+render path drew every cell on every loop pass and the loop blocked on `event::read()`, so
+there was no headroom to *add* visual richness without making an already-unconditional redraw
+more expensive. **v0.2.4 removed both halves.** The loop blocks on a channel, drains what is
+queued and draws only when something changed, so an idle wakeup costs 425 ns against a 513 µs
+frame. The headroom this list was waiting on now exists.
 
 **Architecture, not just appearance.** Helix's gutter is a *list* of components —
 `GutterType::{LineNumbers, Diagnostics, Diff, Spacer, CodeActionHint}` — each with a `width()`
@@ -95,7 +100,7 @@ Found by reading TermIDE's 45 crate names and ttt's feature list rather than the
 
 | # | Sev | Defect |
 |---|---|---|
-| 31 | **HIGH — data loss** | **No file watching.** If a file changes on disk while open — a rebase, a formatter, another editor — TYPE neither reloads nor warns, and the next save silently overwrites. This is the same class as the open-over-dirty-buffer bug just fixed, and architecture §4 mentions file watching as a worker-thread concern while **no milestone owns it**. TermIDE has a whole `watcher` crate. |
+| ~~31~~ | **HIGH — data loss** | ~~**No file watching.**~~ **Fixed at v0.2.4.** Clean buffer reloads silently, dirty buffer warns and is left alone, deleted file leaves the buffer standing as the only copy. `notify` 8.2, watching the **parent directory** rather than the file, because writing by rename-over destroys the inode a file watch is pinned to and leaves it silent while the file keeps changing. Our own save is filtered by comparing the file against the buffer rather than by remembering an mtime — nothing to keep in sync, and no window where the remembered value is stale. |
 | ~~32~~ | HIGH | ~~**No logging, anywhere.**~~ **Fixed at v0.2.3** — `TYP_LOG` names a file, off otherwise. A file and a mutex rather than `tracing`, which earns its weight when there are spans to correlate across the worker threads arriving at M2.4. Original: No `log`, no `tracing`, no log file. A TUI owns the screen, so `println!` debugging is unavailable by construction — the one place logging is not optional is the one place we have none. TermIDE has a `logger` crate. |
 | ~~33~~ | HIGH | ~~**No select-next-occurrence.**~~ **Fixed at v0.2.3**, and searching from the cursor rather than filtering `find_all` — 3.89 µs per press on a 50k-line file. Original: `Ctrl+D` in VS Code, Sublime and ttt; `Ctrl+K L` for all occurrences. TYPE has add-cursor-above/below only, which is the *rarer* half of multi-cursor. This is the idiom people mean when they say multi-cursor. |
 | 34 | MED | **No `.editorconfig`, no indent detection.** `TAB_WIDTH` is a hardcoded `const` and indentation is always spaces. ttt reads `.editorconfig` and auto-detects indent from content, with a status-bar override. TYPE will silently reformat a tab-indented project. |
