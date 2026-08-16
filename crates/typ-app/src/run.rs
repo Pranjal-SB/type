@@ -93,9 +93,15 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
     spawn_input_pump(tx);
 
     loop {
-        begin_frame();
-        terminal.draw(|frame| app.render(frame))?;
-        end_frame();
+        // `Terminal::draw` diffs against the previous buffer and emits only the
+        // cells that changed, so a redundant draw costs no terminal traffic —
+        // but it still costs the whole render pass, which is 439 µs deep in a
+        // 50k-line file. That is what the flag is for.
+        if app.take_dirty() {
+            begin_frame();
+            terminal.draw(|frame| app.render(frame))?;
+            end_frame();
+        }
 
         if app.should_quit() {
             return Ok(());
@@ -103,17 +109,45 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
 
         // Every sender is gone only when the pump thread has died, which means
         // the terminal is gone too. Nothing left to wait for.
-        let Ok(event) = rx.recv() else {
+        let Ok(first) = rx.recv() else {
             return Ok(());
         };
+
+        // Block for one, then take everything already queued behind it. One
+        // frame for the batch rather than one per event.
+        let mut batch = vec![first];
+        batch.extend(rx.try_iter());
 
         let size = terminal.size()?;
         let area = Rect::new(0, 0, size.width, size.height);
 
-        if step(app, event, area)? == Flow::Quit {
+        if step_batch(app, batch, area)? == Flow::Quit {
             return Ok(());
         }
     }
+}
+
+/// Dispatch a batch of events, then answer once.
+///
+/// Taken from yazi, which blocks for one event and then drains everything else
+/// already queued before rendering. The alternative — draw per event — costs a
+/// full render pass for every notch of a scroll, every character of a paste and
+/// every event of a watcher burst.
+///
+/// Not taken from yazi: its 10 ms minimum between frames. That bounds the frame
+/// rate under a burst, which draining already does, and pays up to 10 ms of
+/// latency on every keystroke to do it. Against a 16 ms keystroke-to-glyph
+/// budget that is most of the budget spent on a problem already solved.
+///
+/// Takes a `Vec` rather than the receiver so a test can hand it a batch without
+/// threads.
+pub fn step_batch(app: &mut App, events: Vec<AppEvent>, area: Rect) -> Result<Flow> {
+    for event in events {
+        if step(app, event, area)? == Flow::Quit {
+            return Ok(Flow::Quit);
+        }
+    }
+    Ok(Flow::Continue)
 }
 
 /// One turn of the loop, without a terminal.
@@ -123,18 +157,35 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
 pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
     let mut events: Vec<PanelEvent> = Vec::new();
 
+    // Default to marking the frame dirty, and be explicit about the few paths
+    // that changed nothing. A path that forgets to mark itself is an invisible
+    // missing repaint; a path that marks itself needlessly costs one frame
+    // nobody sees. Helix draws the same line, returning false for key releases
+    // and for escape sequences it did not understand.
+    let mut changed = true;
+
     match event {
-        AppEvent::FileChanged(path) => app.handle_external_change(&path)?,
+        AppEvent::FileChanged(path) => changed = app.handle_external_change(&path)?,
         AppEvent::Input(input) => match input {
             // Every binding lives in the keymap now, so there is nothing left
             // here to special-case. The dispatcher owns the order.
             Event::Key(key) if key.kind == KeyEventKind::Press => {
                 app.handle_chord(KeyChord::from_event(key))?;
             }
+            // A release is the other half of a press already handled. Under the
+            // kitty keyboard protocol these arrive for every key, so repainting
+            // on them doubles the frame count for nothing.
+            Event::Key(_) => changed = false,
             Event::Paste(text) => app.handle_paste(text)?,
             Event::Mouse(m) => {
                 if matches!(m.kind, MouseEventKind::Down(_)) {
                     app.clear_transient();
+                }
+                // Motion with no button held changes nothing and arrives on
+                // every cell the pointer crosses. At M0 these were being
+                // counted as frames, which quietly flattered both p50 and p99.
+                if matches!(m.kind, MouseEventKind::Moved) {
+                    changed = false;
                 }
                 let (tree_area, editor_area) = app.areas(area);
                 let in_tree = m.column < tree_area.width;
@@ -174,11 +225,22 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
                     }
                 }
             }
-            _ => {}
+            // An escape sequence nobody claimed, a focus report, anything the
+            // terminal invented. Nothing read it, so nothing changed.
+            _ => changed = false,
         },
     }
 
+    // A panel that asked for a repaint gets one even if the arm above decided
+    // otherwise: the panel is the one that knows.
+    if !events.is_empty() {
+        changed = true;
+    }
     app.apply(events)?;
+
+    if changed {
+        app.mark_dirty();
+    }
 
     Ok(if app.should_quit() {
         Flow::Quit

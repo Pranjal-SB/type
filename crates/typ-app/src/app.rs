@@ -61,6 +61,10 @@ pub struct App {
     /// The watch on the open file. Dropping it stops the watching, so opening
     /// another file replaces this rather than accumulating watches.
     watch: Option<typ_buffer::FileWatch>,
+    /// Something changed and the screen does not show it yet.
+    ///
+    /// Starts true: the first frame has to be painted.
+    dirty: bool,
 }
 
 /// Between status segments. Two spaces rather than a glyph separator: a
@@ -90,7 +94,21 @@ impl App {
             last_query: None,
             sender: None,
             watch: None,
+            dirty: true,
         })
+    }
+
+    /// Something changed that the screen does not show yet.
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    /// Whether to draw, clearing the flag.
+    ///
+    /// The loop asks this once per batch rather than once per event, so a burst
+    /// of thirty events costs one frame.
+    pub fn take_dirty(&mut self) -> bool {
+        std::mem::replace(&mut self.dirty, false)
     }
 
     /// Give the app the channel workers report through.
@@ -127,9 +145,11 @@ impl App {
     /// Reloading a dirty buffer discards the user's edits; ignoring the change
     /// discards the other writer's on the next save. Only the user knows which
     /// matters, so the only thing to do is say so and touch nothing.
-    pub fn handle_external_change(&mut self, path: &Path) -> Result<()> {
+    /// Returns whether anything on screen changed, so the loop can decline to
+    /// repaint for a watcher event that turned out to be our own save.
+    pub fn handle_external_change(&mut self, path: &Path) -> Result<bool> {
         if self.editor.path() != Some(path) {
-            return Ok(());
+            return Ok(false);
         }
 
         if !path.exists() {
@@ -137,13 +157,13 @@ impl App {
                 "{} was deleted on disk. Ctrl+S writes it back.",
                 self.editor.file_name()
             ));
-            return Ok(());
+            return Ok(true);
         }
 
         // Covers our own save: the watcher reports the write, and what is on
         // disk is what we have, so there is nothing to do.
         if self.editor.matches_disk() {
-            return Ok(());
+            return Ok(false);
         }
 
         if self.editor.is_dirty() {
@@ -151,11 +171,11 @@ impl App {
                 "{} changed on disk. Your unsaved changes are kept; Ctrl+S overwrites it.",
                 self.editor.file_name()
             ));
-            return Ok(());
+            return Ok(true);
         }
 
         self.editor.reload()?;
-        Ok(())
+        Ok(true)
     }
 
     pub fn status(&self) -> Option<&str> {
