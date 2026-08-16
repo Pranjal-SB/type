@@ -141,21 +141,26 @@ fn every_default_binding_resolves_to_something_that_handles_it() {
     // A binding nobody handles is a key that does nothing when pressed, and it
     // looks identical to a bug. Search actions are handled by the app, editing
     // ones by the panel; nothing in the default table should fall through both.
+    // Actions the *app* owns rather than the panel. They are listed rather than
+    // probed because probing them means running them: this test would quit,
+    // save every fixture, and open four prompts. Adding an app action means
+    // adding a line here, and forgetting to is what this test then reports.
+    const APP_OWNED: &[typ_core::Action] = &[
+        typ_core::Action::Save,
+        typ_core::Action::Quit,
+        typ_core::Action::FocusNext,
+        typ_core::Action::GotoLine,
+        typ_core::Action::SearchOpen,
+        typ_core::Action::SearchNext,
+        typ_core::Action::SearchPrevious,
+        typ_core::Action::ReplaceOpen,
+    ];
+
     let mut a = app("bindings");
     let unhandled: Vec<&str> = typ_core::Action::ALL
         .iter()
         .filter(|action| {
-            a.editor_mut().apply_action(**action).is_none()
-                && !matches!(
-                    action,
-                    typ_core::Action::Save
-                        | typ_core::Action::Quit
-                        | typ_core::Action::FocusNext
-                        | typ_core::Action::SearchOpen
-                        | typ_core::Action::SearchNext
-                        | typ_core::Action::SearchPrevious
-                        | typ_core::Action::ReplaceOpen
-                )
+            a.editor_mut().apply_action(**action).is_none() && !APP_OWNED.contains(action)
         })
         .map(|action| action.name())
         .collect();

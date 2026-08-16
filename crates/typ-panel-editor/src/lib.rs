@@ -285,6 +285,27 @@ impl EditorPanel {
         self.scroll_to_cursor();
     }
 
+    /// Put the caret at the start of a line and centre it in the viewport.
+    ///
+    /// Centred rather than merely scrolled into view: `scroll_to_cursor` moves
+    /// the minimum, which after a jump leaves the target line on whichever edge
+    /// it entered from. That is technically visible and useless — you jumped
+    /// there to read *around* it, and half the context is off-screen.
+    ///
+    /// Out-of-range clamps to the last line. Someone typing 9999 means the end
+    /// of the file, and erroring at them is pedantry rather than correctness.
+    pub fn goto_line(&mut self, line: usize) {
+        let line = line.min(self.last_line());
+        self.set_caret(Position { line, col: 0 });
+
+        if self.height > 0 {
+            // Saturating: near the top of the file there is nothing above to
+            // scroll into, and the first screenful is its own context.
+            self.top_line = line.saturating_sub(self.height / 2);
+        }
+        self.scroll_to_cursor();
+    }
+
     /// Replace every match, as one undo step. Returns how many.
     pub fn replace_all(&mut self, query: &SearchQuery, replacement: &str) -> usize {
         let hits = self.buffer.find_all(query);

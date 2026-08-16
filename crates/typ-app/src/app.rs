@@ -359,6 +359,7 @@ impl App {
             Search(String),
             AskReplacement(String),
             Replace { needle: String, replacement: String },
+            Goto(String),
         }
 
         // A chord is never text, in the prompt exactly as in the buffer —
@@ -395,6 +396,7 @@ impl App {
                         needle: prompt.pending_needle().unwrap_or_default().to_string(),
                         replacement: input,
                     },
+                    PromptKind::GotoLine => Outcome::Goto(input),
                 }
             }
             _ => Outcome::Stay,
@@ -419,6 +421,23 @@ impl App {
             } => {
                 self.prompt = None;
                 self.run_replace_all(&needle, &replacement);
+            }
+            Outcome::Goto(input) => {
+                if input.is_empty() {
+                    // Answering nothing is answering "never mind".
+                    self.prompt = None;
+                } else if let Some(line) = parse_line_number(&input) {
+                    self.prompt = None;
+                    self.editor.goto_line(line);
+                } else {
+                    // Rejected, and the prompt stays open with the input still
+                    // in it: closing on a typo throws the answer away and makes
+                    // the user reopen and retype it.
+                    self.status = Some(format!("Not a line number: {input}"));
+                    if let Some(prompt) = self.prompt.as_mut() {
+                        prompt.restore_input(input);
+                    }
+                }
             }
         }
         Ok(())
@@ -494,6 +513,7 @@ impl App {
                 // A save that fails silently is how work gets lost.
                 Err(e) => self.status = Some(format!("Save failed: {e:#}")),
             },
+            Action::GotoLine => self.prompt = Some(Prompt::new(PromptKind::GotoLine)),
             Action::SearchOpen => self.prompt = Some(Prompt::new(PromptKind::Search)),
             Action::ReplaceOpen => {
                 let mut prompt = Prompt::new(PromptKind::Search);
@@ -645,4 +665,13 @@ impl App {
             Focus::Editor => &mut self.editor,
         }
     }
+}
+
+/// A 1-based line number typed into the goto prompt, as a 0-based index.
+///
+/// Line 0 is line 1: a user who types `0` means the top of the file, and there
+/// is no other thing they could have meant.
+fn parse_line_number(input: &str) -> Option<usize> {
+    let n: usize = input.trim().parse().ok()?;
+    Some(n.saturating_sub(1))
 }
