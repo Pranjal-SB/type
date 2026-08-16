@@ -1,0 +1,57 @@
+name: Bug report
+description: Something behaves differently from what the README or the docs say it does.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        TYPE is pre-alpha, so plenty is missing rather than broken — the
+        [roadmap](https://github.com/Pranjal-SB/type#roadmap) says what has not
+        landed yet, and
+        [`docs/design/gap-analysis.md`](https://github.com/Pranjal-SB/type/blob/main/docs/design/gap-analysis.md)
+        is the register of defects already known.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+      placeholder: |
+        1. typ src/main.rs
+        2. Ctrl+D twice
+        3. Expected two cursors; got one and a beep.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`typ --version`, or the commit if you built from source."
+      placeholder: "typ-editor 0.2.3"
+    validations:
+      required: true
+
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal and OS
+      description: >
+        Which emulator, and whether it is inside tmux, zellij or an SSH session.
+        Nearly every input and rendering bug in this project so far has turned
+        out to be terminal-specific.
+      placeholder: "Windows Terminal 1.24 on Windows 11 / kitty 0.36 on Arch, inside tmux"
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >
+        Run with `TYP_LOG=/tmp/typ.log typ .`, reproduce, and paste the file.
+        The clipboard-provider line is usually the answer for copy and paste
+        problems.
+      render: text
+    validations:
+      required: false

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Known defects
+    url: https://github.com/Pranjal-SB/type/blob/main/docs/design/gap-analysis.md
+    about: The defect register, with severities and file locations. Check before filing.
+  - name: Questions and ideas
+    url: https://github.com/Pranjal-SB/type/discussions
+    about: For anything that is not yet a bug or a specific request.
