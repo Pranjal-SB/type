@@ -41,34 +41,20 @@ no editing primitives of its own and the core never depends on it.
 
 ## Status
 
-**v0.2.3 — pre-alpha.** The milestone that made TYPE look like a finished program rather than
-a working one.
+**v0.2.3 — pre-alpha.** Editing works and the editor looks the part: line numbers, a truecolor
+theme, current-line highlight, bracket matching, and multiple cursors with a visibly distinct
+primary. Search and replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line,
+undo that takes back a run of typing in one press.
 
-There is a **gutter** with line numbers, built as an ordered list of components so the
-diagnostics and git-diff markers arriving at M3 and M5 land in a column that already exists.
-The palette is **truecolor** — one ramp at one hue, with contrast ratios checked by test rather
-than by eye, so body text holds 7:1 and no diagnostic colour falls below 4.5:1. The cursor's
-line is tinted, matching brackets are highlighted, and the **primary selection is drawn
-differently from the rest**, which is what tells you which of thirty cursors every motion is
-relative to.
+No syntax highlighting, no LSP, no tabs or splits yet — see the roadmap. Full history in
+[CHANGELOG.md](CHANGELOG.md).
 
-`Ctrl+D` selects the next occurrence of the word under the cursor, and `Ctrl+G` jumps to a
-line. The status bar went from three things to seven. `TYP_LOG` names a log file.
-
-Underneath: selections, multiple cursors, word-wise motion, drag to select, horizontal
-scrolling, literal search and replace, clipboard with OSC 52 so it works over SSH, Tab indent,
-and creating new files — alongside the file tree, focus cycling, undo/redo, save and rebindable
-keys. Every editing primitive is a named action and every key is a table row, so a command
+Every editing primitive is a named action and every key binding is a table row, so a command
 palette and an opt-in vim layer are configuration rather than a rewrite.
-
-No syntax highlighting, no LSP, no splits or tabs yet — see the roadmap.
-
-Quitting with unsaved changes asks before discarding them. Undo takes back a run of typing in
-one press rather than one character at a time, and puts the cursor back where the edit was
-made.
 
 - [Architecture and design rationale](docs/design/architecture.md)
 - [Gap analysis — known defects and how TYPE measures against the field](docs/design/gap-analysis.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Install
 

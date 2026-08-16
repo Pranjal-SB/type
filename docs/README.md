@@ -19,13 +19,3 @@ and are not published.
 
 [`../spikes/m0-feel/FINDINGS.md`](../spikes/m0-feel/FINDINGS.md) is kept for its numbers — the
 M0 spike's code is gone, its measurements are not.
-
-## Conventions
-
-- **Frontmatter, not wikilinks.** YAML frontmatter is read by Obsidian and hidden by GitHub, so
-  it costs nothing on either surface. Obsidian's `[[wikilinks]]` render as literal text on
-  GitHub, and these documents are read there — so links stay relative Markdown.
-- **A living document states what it was verified against.** The drift this repository has
-  actually suffered — a closed question still listed as open, a README describing a missing
-  feature that shipped — was invisible precisely because nothing recorded when anyone last
-  looked.
