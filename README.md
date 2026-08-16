@@ -72,14 +72,13 @@ cargo install typ-editor
 typ .
 ```
 
-The crate is `typ-editor`; the binary it installs is `typ`. That is the only install channel
-today, so it reaches you only if you already have a Rust toolchain. Prebuilt binaries,
-checksums and a one-line installer are planned and not yet built.
+The crate is `typ-editor`; the binary it installs is `typ`. crates.io serves 0.2.4, the same
+version as this tree.
 
-**crates.io currently serves 0.2.1, two versions behind this tree.** Publishing is a manual
-step and it has lagged. Until it catches up, `cargo install` gets you an editor with no
-clipboard, no Tab indent and no gutter. Build from source for what the Status section above
-describes.
+That channel reaches you only if you already have a Rust toolchain. Tagged builds for Linux
+x86_64, macOS x86_64 and aarch64, and Windows x86_64 are attached to each
+[release](https://github.com/Pranjal-SB/type/releases) with a SHA-256 beside them. A one-line
+installer is not built yet.
 
 ## Build from source
 
