@@ -128,6 +128,11 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.3
 [0.2.2]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.2
 [0.2.1]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.1
+
+<!-- 0.2.0 and 0.1.0 have no link because they have no tag: tagging began at
+     v0.2.1, when the versioning scheme was adopted. -->
+
