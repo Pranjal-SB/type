@@ -118,8 +118,8 @@ same time.
 | 17 | **Theming is hardcoded.** `ThemeColors::default()` is constructed inline in `App::new`. `typ-ui` and `typ-config` do not exist; 7 of 14 planned crates do. No theme file, no task, no milestone owned this — see [Part 5](#part-5--pretty-as-fuck-what-a-terminal-can-and-cannot-do). |
 | 18 | **CI never runs the perf tests.** They are `#[ignore]`d with no scheduled job, so a budget regression is caught only when a human remembers to look. M6 promises "budgets enforced in CI" and nothing is currently walking toward it. |
 | 39 | **Comment density is 22.7% of source lines** — 1,454 of 6,412 at v0.2.3, which is roughly double what idiomatic Rust carries. The rationale-carrying ones earn their place: *why* the first line terminator decides, *why* `find_next` exists instead of filtering `find_all`, *why* the gutter is a component list. The rest restate the code beneath them or argue a point already settled, and every one of those is a line that can rot out of step with what it describes. Trim toward ~12%, keeping the *why* and cutting the *what*. Mechanical, low risk, no milestone — good filler work between tasks. |
-| 19 | No `cargo deny` / `cargo audit`, and **no MSRV job** — though the MSRV itself is now declared, `rust-version = "1.96"` in `[workspace.package]`, so cargo names the compiler it needs instead of emitting a wall of edition-2024 syntax errors. Declaring it and testing it are different things: nothing builds against 1.96 on any push, so it can rot without anyone noticing. Low urgency at 7 crates and a small dependency set; cheap to add before the dependency count grows. |
-| 20 | **There is no install story and no release pipeline.** CI builds and tests; nothing produces a binary. No release workflow, no packaging, no install script, no checksums. The README's "Build" section is clone-and-`cargo build`, which is a contributor instruction wearing an installation instruction's clothes. **Now with evidence:** publishing is a manual step and has already drifted — crates.io serves **0.2.1** while the tree and the tag are at **0.2.2**. A release that depends on someone remembering is a release that lags by however long they forget. See [Part 7](#part-7--install-and-first-launch). |
+| ~~19~~ | ~~No `cargo deny` / `cargo audit`, and no MSRV job.~~ **Closed.** `cargo deny check advisories licenses bans sources` runs in CI against a `deny.toml` that lists every license currently in the graph by name rather than by wildcard, so a dependency arriving with something unexpected fails the build instead of sliding in. The MSRV half was **already covered and the row was wrong about it**: `rust-toolchain.toml` pins `1.96.0`, CI installs exactly that with `rustup show`, and `rust-version = "1.96"` names the same compiler — every CI run *is* the MSRV build. A separate job would have tested the same toolchain twice. |
+| 20 | **Partly fixed.** ~~No release pipeline.~~ `.github/workflows/release.yml` builds four targets on a tag — Linux x86_64, macOS x86_64 and aarch64, Windows x86_64 — packages each with checksums and opens a draft release, and `docs/releasing.md` records the crate publish order that the manual half kept getting wrong. Hand-written rather than `cargo-dist`: readable at 120 lines, and the installer, Homebrew and winget channels cargo-dist adds are worth adopting when those channels matter rather than before. **Still open: nothing has been released.** The three tags carry no release, crates.io still serves **0.2.1** against a tree at **0.2.3**, and there is no install script and no one-line installer. The pipeline exists; the first run of it has not happened. See [Part 7](#part-7--install-and-first-launch). |
 | ~~21~~ | ~~**Crate metadata is too thin to publish.**~~ **Fixed at v0.2.2.** `repository`, `homepage`, `keywords`, `categories`, `readme` and `rust-version` are all inherited from `[workspace.package]`, and every internal dependency carries a version alongside its path — which cargo requires before it will publish at all. `typ-editor` is on crates.io. The row stays because #20 does not: metadata made `cargo install` possible, and a **release pipeline is still the missing half** — nothing produces a binary for anyone who does not already have a Rust toolchain. |
 | 22 | **There is no first run.** No config directory is created, no `keys.toml` is scaffolded, no capability report, no `--doctor`, no welcome state. `load_keymap` treats a missing config as "the normal case, not a problem worth a message" — correct for the config, but it means the first launch and the thousandth are indistinguishable. |
 
@@ -710,9 +710,9 @@ metadata that would generate them.
 | Channel | Priority | Notes |
 |---|---|---|
 | `cargo install typ-editor` | **1** | **Done at v0.2.2** — metadata filled in, name held, published. The one channel that works today, and it reaches only people who already have a Rust toolchain |
-| GitHub Releases, prebuilt binaries | **1** | Tagged builds for the three CI platforms plus aarch64. `cargo-dist` generates the workflow, the installers and the checksums; the release job is the missing half of a CI that already builds on all three |
-| Shell / PowerShell one-liner | 2 | Falls out of `cargo-dist` free |
-| Homebrew, Scoop, winget | 3 | Also generated by `cargo-dist`; matters most on Windows, where the OS-association differentiator lives |
+| GitHub Releases, prebuilt binaries | **1** | **Workflow built at v0.2.3**, hand-written: Linux x86_64, macOS x86_64 and aarch64, Windows x86_64, with SHA-256s, on a tag. aarch64 Linux is left out because it needs a cross linker. Nothing has been released through it yet |
+| Shell / PowerShell one-liner | 2 | The one thing `cargo-dist` would add for free that the hand-written workflow does not |
+| Homebrew, Scoop, winget | 3 | Generated by `cargo-dist`; matters most on Windows, where the OS-association differentiator lives — which is the point at which adopting it pays for itself |
 | AUR, nixpkgs, Debian | 4 | Community territory once there is a tagged release to package |
 
 The versioning scheme adopted at v0.2.1 is the precondition for all of this, and it now has a
@@ -728,11 +728,12 @@ goes there; this is more of what "there" means.
 Three exceptions pulled earlier, because they are cheap and they compound:
 
 - ~~**Crate metadata and the crates.io name reservation: now.**~~ **Done at v0.2.2.**
-- **`cargo-dist` release workflow: slipped past v0.2.2, still unowned.** It was scheduled for
-  the milestone where self-hosting starts and there is a reason to hand someone a binary. That
-  milestone shipped without it, and the manual publish has already fallen a version behind
-  (#20). It needs a milestone rather than a good intention — the natural home is **M2.4's
-  close-out**, which is the next one to land.
+- ~~**`cargo-dist` release workflow: slipped past v0.2.2, still unowned.**~~ **Built at v0.2.3,
+  by hand rather than generated.** `release.yml` turns a tag into four platform archives with
+  checksums and a draft release; `docs/releasing.md` carries the close-out and the publish
+  order. cargo-dist remains the upgrade path for the installer, Homebrew and winget channels —
+  taken when Windows association at M6 makes them earn their keep. **What is still owed is the
+  first run**: three tags exist with no release behind any of them.
 - **Capability probing: v0.2.5**, because tree-sitter highlighting needs to know whether it can
   emit truecolor, and `--doctor` is then nearly free.
 - **Symbol presets and terminal light/dark following: v0.2.5**, with the theme system. Both are
