@@ -1,5 +1,10 @@
 # TYPE
 
+[![CI](https://github.com/Pranjal-SB/type/actions/workflows/ci.yml/badge.svg)](https://github.com/Pranjal-SB/type/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/typ-editor.svg)](https://crates.io/crates/typ-editor)
+[![MSRV](https://img.shields.io/badge/rustc-1.96%2B-blue.svg)](rust-toolchain.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **T**erminal-**Y**oked **P**rogramming **E**nvironment — a full IDE that runs in your terminal.
 
 Not a terminal text editor with some IDE features bolted on. The full surface — code
