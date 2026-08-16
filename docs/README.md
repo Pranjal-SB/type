@@ -23,10 +23,11 @@ copy of that history.
 |---|---|
 | [`design/architecture.md`](design/architecture.md) | The spec. Goals, invariants, budgets, the panel contract, milestones. Deviating from it needs a stated reason. |
 | [`design/gap-analysis.md`](design/gap-analysis.md) | Known defects, how TYPE measures against other editors, and the install and first-launch design. Re-run at each milestone. |
+| [`plans/m2.4-live.md`](plans/m2.4-live.md) | The current plan — M2.4, written and not yet started. |
 | [`../README.md`](../README.md) | The public face. Status, keys, roadmap, versioning. |
 
-No plan is currently live. The next one is M2.5 — file watching first, because it is a data-loss
-bug, then the event-loop rework, tree-sitter and themes as files.
+A plan is living until its first commit lands and frozen once its last one does; between those
+it is the only document allowed to change on the basis of what the code turns out to be.
 
 ## Records
 

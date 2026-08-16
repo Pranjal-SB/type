@@ -225,7 +225,8 @@ worse than one that plainly did nothing.
 | v0.2.1 | M2.1 | Correctness — keystroke budgets, undo coalescing, the shift map | shipped |
 | v0.2.2 | M2.2 | Usable — clipboard, indent, new files, guarded open | shipped |
 | v0.2.3 | M2.3 | Polish — gutter, truecolor theme, current line, brackets, status segments, `Ctrl+D`, goto-line, logging | **current** |
-| v0.2.5 | M2.5 | File watching, damage-driven redraw, wakeable event loop, tree-sitter, themes as files | |
+| v0.2.4 | M2.4 | Live — wakeable event loop, file watching, damage-driven redraw, resize, save correctness | next |
+| v0.2.5 | M2.5 | Colour — tree-sitter highlighting, themes as files, config, capability detection | |
 | v0.3.0 | M3 | Code intelligence — LSP client | |
 | v0.4.0 | M4 | Workspace — splits, tabs, sessions, command palette, project search | |
 | v0.5.0 | M5 | Terminal panel and git integration | |
