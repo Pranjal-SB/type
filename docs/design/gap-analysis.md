@@ -2,13 +2,13 @@
 type: design
 status: living
 area: audit
-verified: 2026-08-15
+verified: 2026-08-16
 verified-against: v0.2.2
 ---
 
 # Gap analysis — TYPE against itself and against the field
 
-**Status:** living document · **Written at:** v0.2.1 · **Re-verified at:** v0.2.2 · **Date:** 2026-08-15
+**Status:** living document · **Written at:** v0.2.1 · **Re-verified at:** v0.2.2 · **Date:** 2026-08-16
 
 Two questions, answered together because they turn out to be the same question:
 
@@ -35,7 +35,7 @@ means v0.2.2 fixed it**; the row stays so the record of what was wrong survives 
 | ~~3~~ | HIGH | **`typ newfile.md` refuses to start** — `bail!("does not exist")`. There is no way to create a file. Every editor in the field opens an empty buffer at that path and creates it on save. | `typ/src/main.rs:59` | v0.2.2 |
 | ~~4~~ | LOW | Save temp file uses a fixed name, `.{name}.typ-tmp`. Two instances saving the same file race each other, and a kill mid-save leaves the file behind. Wants a pid or nonce. | `typ-buffer/src/buffer.rs:320` | v0.2.2 |
 | 5 | LOW | `typ a.rs b.rs` silently ignores everything after the first path. Honest until tabs exist, a real bug the moment they do. | `typ/src/main.rs:54` | v0.4.0 |
-| 6 | LOW | No tty check. `typ | cat` renders escape sequences into a pipe. | `typ/src/main.rs` | v0.6 polish |
+| 6 | LOW | No tty check. `typ | cat` renders escape sequences into a pipe. | `typ/src/main.rs` | v1.0.0 (M6) |
 
 Already recorded as deliberate deferrals in `m2.1-correctness.md`, still true: line endings not
 preserved (`\n` written into a CRLF file), `save` drops POSIX mode bits and replaces symlinks,
@@ -101,17 +101,22 @@ Found by reading TermIDE's 45 crate names and ttt's feature list rather than the
 | 36 | MED | No goto-line (`Ctrl+G`), already listed as #12 and reconfirmed as universal across the field. |
 | 37 | LOW | No multi-root workspaces. ttt has Add Folder to Workspace and switches the status-bar git branch by which root the active file belongs to. Ours is one root. |
 
+### Project and process gaps
 
+Not defects in the editor — defects in the things around it: documents that no longer describe
+the tree, work no milestone owns, and the entire surface between "the code is correct" and
+"someone can install it". They are numbered in the same sequence because they compete for the
+same time.
 
 | # | Finding |
 |---|---|
-| 15 | **Architecture §10 still lists the config format as an open question.** It was decided by shipping: `keys.toml` is TOML. Close it in the doc or it gets re-litigated at M4. |
+| ~~15~~ | ~~**Architecture §10 still lists the config format as an open question.**~~ **Closed in the doc at v0.2.2** — §10 now records TOML as decided-by-shipping, and §9 carries the milestone corrections this document forced. |
 | 16 | **§7 capability detection does not exist.** Truecolor, the kitty keyboard protocol, image protocols — none are probed. Synchronized output is emitted unconditionally rather than detected. No plan document owns this work. The kitty protocol is a stated prerequisite for VS Code-grade bindings, and without it `Ctrl+I` and `Tab` are literally the same byte — which is half of why defect #8 is awkward to fix cleanly. |
 | 17 | **Theming is hardcoded.** `ThemeColors::default()` is constructed inline in `App::new`. `typ-ui` and `typ-config` do not exist; 7 of 14 planned crates do. No theme file, no task, no milestone owned this — see [Part 5](#part-5--pretty-as-fuck-what-a-terminal-can-and-cannot-do). |
 | 18 | **CI never runs the perf tests.** They are `#[ignore]`d with no scheduled job, so a budget regression is caught only when a human remembers to look. M6 promises "budgets enforced in CI" and nothing is currently walking toward it. |
-| 19 | No `cargo deny` / `cargo audit`, no MSRV job. Low urgency at 7 crates and a small dependency set; cheap to add before the dependency count grows. |
-| 20 | **There is no install story and no release pipeline.** CI builds and tests; nothing produces a binary. No release workflow, no packaging, no install script, no checksums. The README's "Build" section is clone-and-`cargo build`, which is a contributor instruction wearing an installation instruction's clothes. See [Part 7](#part-7--install-and-first-launch). |
-| 21 | **Crate metadata is too thin to publish.** `crates/typ/Cargo.toml` carries `description` and nothing else — no `repository`, `homepage`, `keywords`, `categories`, `readme`. `cargo install` is the single most likely path for the first hundred users and it is currently closed. |
+| 19 | No `cargo deny` / `cargo audit`, and **no MSRV job** — though the MSRV itself is now declared, `rust-version = "1.96"` in `[workspace.package]`, so cargo names the compiler it needs instead of emitting a wall of edition-2024 syntax errors. Declaring it and testing it are different things: nothing builds against 1.96 on any push, so it can rot without anyone noticing. Low urgency at 7 crates and a small dependency set; cheap to add before the dependency count grows. |
+| 20 | **There is no install story and no release pipeline.** CI builds and tests; nothing produces a binary. No release workflow, no packaging, no install script, no checksums. The README's "Build" section is clone-and-`cargo build`, which is a contributor instruction wearing an installation instruction's clothes. **Now with evidence:** publishing is a manual step and has already drifted — crates.io serves **0.2.1** while the tree and the tag are at **0.2.2**. A release that depends on someone remembering is a release that lags by however long they forget. See [Part 7](#part-7--install-and-first-launch). |
+| ~~21~~ | ~~**Crate metadata is too thin to publish.**~~ **Fixed at v0.2.2.** `repository`, `homepage`, `keywords`, `categories`, `readme` and `rust-version` are all inherited from `[workspace.package]`, and every internal dependency carries a version alongside its path — which cargo requires before it will publish at all. `typ-editor` is on crates.io. The row stays because #20 does not: metadata made `cargo install` possible, and a **release pipeline is still the missing half** — nothing produces a binary for anyone who does not already have a Rust toolchain. |
 | 22 | **There is no first run.** No config directory is created, no `keys.toml` is scaffolded, no capability report, no `--doctor`, no welcome state. `load_keymap` treats a missing config as "the normal case, not a problem worth a message" — correct for the config, but it means the first launch and the thousandth are indistinguishable. |
 
 ### Why the plans could not catch these
@@ -692,7 +697,7 @@ metadata that would generate them.
 
 | Channel | Priority | Notes |
 |---|---|---|
-| `cargo install typ-editor` | **1** | The default expectation for a Rust CLI, and currently impossible — needs #21 fixed and the name reserved on crates.io **now**, before someone else takes it |
+| `cargo install typ-editor` | **1** | **Done at v0.2.2** — metadata filled in, name held, published. The one channel that works today, and it reaches only people who already have a Rust toolchain |
 | GitHub Releases, prebuilt binaries | **1** | Tagged builds for the three CI platforms plus aarch64. `cargo-dist` generates the workflow, the installers and the checksums; the release job is the missing half of a CI that already builds on all three |
 | Shell / PowerShell one-liner | 2 | Falls out of `cargo-dist` free |
 | Homebrew, Scoop, winget | 3 | Also generated by `cargo-dist`; matters most on Windows, where the OS-association differentiator lives |
@@ -710,9 +715,12 @@ goes there; this is more of what "there" means.
 
 Three exceptions pulled earlier, because they are cheap and they compound:
 
-- **Crate metadata and the crates.io name reservation: now.** Names are first-come.
-- **`cargo-dist` release workflow: at v0.2.2**, when self-hosting starts and there is a reason
-  to hand someone a binary.
+- ~~**Crate metadata and the crates.io name reservation: now.**~~ **Done at v0.2.2.**
+- **`cargo-dist` release workflow: slipped past v0.2.2, still unowned.** It was scheduled for
+  the milestone where self-hosting starts and there is a reason to hand someone a binary. That
+  milestone shipped without it, and the manual publish has already fallen a version behind
+  (#20). It needs a milestone rather than a good intention — the natural home is M2.5's
+  close-out, since M2.5 is the first milestone whose output anyone would want to install.
 - **Capability probing: v0.2.5**, because tree-sitter highlighting needs to know whether it can
   emit truecolor, and `--doctor` is then nearly free.
 - **Symbol presets and terminal light/dark following: v0.2.5**, with the theme system. Both are

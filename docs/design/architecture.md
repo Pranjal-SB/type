@@ -2,14 +2,14 @@
 type: design
 status: living
 area: spec
-verified: 2026-08-15
-verified-against: v0.2.1
+verified: 2026-08-16
+verified-against: v0.2.2
 ---
 
 # TYPE — Terminal-Yoked Programming Environment
 
-**Status:** approved; M0–M2.1 built against it
-**Date:** 2026-08-10, last verified against the tree 2026-08-15 at v0.2.1
+**Status:** approved; M0–M2.2 built against it
+**Date:** 2026-08-10, last verified against the tree 2026-08-16 at v0.2.2
 **Binary:** `typ` · **Crate:** `typ-editor` · **Repo:** `type`
 
 ---
@@ -503,6 +503,12 @@ is bumped in the close-out task alongside the README.
 
 Post-v1 follows the same shape: the plugin host is v1.1, DAP is v1.2.
 
+The list below is the **shape** of the plan — the six numbered milestones and what each is for.
+It is deliberately not the schedule. Patch milestones (M2.1, M2.2, M2.3, M2.5) are inserted
+between them as defects and gaps are found, and keeping their list here as well as in two other
+places is how three copies disagree. The live roadmap is the README's table, and the reasoning
+behind each insertion is [`gap-analysis.md`](gap-analysis.md) Part 6.
+
 
 **M0 — Feel spike (throwaway, ~1 week).**
 The riskiest unknown is not "can an editor be written," it is "will the terminal feel good
@@ -522,7 +528,15 @@ tree panel. A vertical slice through the real architecture. The `$EDITOR` invari
 hold from here on — `typ <file>` opens, blocks, exits clean, reports honest exit codes.
 
 **M2 — Editing is real.** `typ-buffer` complete: multi-cursor, selections, undo, search and
-replace. `typ-syntax` highlighting. Self-hosting begins — TYPE edits TYPE.
+replace.
+
+*Recorded after the fact:* two of this milestone's claims moved. `typ-syntax` highlighting did
+not ship at M2 and is now M2.5 — it needs a theme to map capture names onto, and that theme is
+the same work (see [`gap-analysis.md`](gap-analysis.md) Part 5). Self-hosting was declared to
+begin here and did not: the clipboard, Tab indent and the guard on opening over a dirty buffer
+were all absent, and it began at **M2.2** once those landed. The correction is left visible
+rather than edited out, because "the mechanism meant to keep every later milestone honest was
+declared on and was off" is the most expensive thing this document has been wrong about.
 
 **M3 — Code intelligence.** `typ-lsp`. Completion, diagnostics, goto-definition, rename,
 code actions. This is the milestone where it becomes an IDE.

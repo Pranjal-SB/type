@@ -64,7 +64,22 @@ the cursor back where the edit was made.
 - [Gap analysis — known defects and how TYPE measures against the field](docs/design/gap-analysis.md)
 - [Current implementation plan](docs/plans/m2.3-polish.md)
 
-## Build
+## Install
+
+```bash
+cargo install typ-editor
+typ .
+```
+
+The crate is `typ-editor`; the binary it installs is `typ`. That is the only install channel
+today, so it reaches you only if you already have a Rust toolchain — prebuilt binaries,
+checksums and a one-line installer are planned and not yet built.
+
+**crates.io currently serves 0.2.1, one version behind this tree.** Publishing is a manual step
+and it has lagged. Until it catches up, `cargo install` gets you an editor with no clipboard and
+no Tab indent — build from source for what the Status section above describes.
+
+## Build from source
 
 ```bash
 cargo build --release
