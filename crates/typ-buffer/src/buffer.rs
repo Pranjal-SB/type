@@ -221,6 +221,54 @@ impl TextBuffer {
         hits
     }
 
+    /// The first match strictly after `after`, wrapping to the top of the
+    /// buffer if there is none below it.
+    ///
+    /// This exists so `Ctrl+D` is not `find_all` with a filter on it. `find_all`
+    /// scans the whole buffer — measured at ~7 ms on 50k lines, against a 16 ms
+    /// keystroke budget — and select-next-occurrence is a key people *hold*, so
+    /// one scan per press is not a cost that can be paid. Stopping at the first
+    /// hit is both the faster thing and the simpler one.
+    ///
+    /// Wrapping is unconditional, and it is load-bearing rather than a
+    /// convenience: coming back round to a match the caller already holds is how
+    /// `Ctrl+D` knows every occurrence is selected and it is time to stop.
+    pub fn find_next(&self, query: &SearchQuery, after: Position) -> Option<Selection> {
+        if query.needle.is_empty() {
+            return None;
+        }
+        let needle: Vec<&str> = query.needle.graphemes(true).collect();
+
+        let line_count = self.rope.len_lines();
+        let first_on_line = |line: usize, min_col: Option<usize>| -> Option<Selection> {
+            self.with_line_str(line, |text| {
+                crate::search::find_in_line_with(text, &needle, query)
+                    .into_iter()
+                    .find(|(start, _)| min_col.is_none_or(|min| *start > min))
+                    .map(|(start, end)| Selection {
+                        anchor: Position { line, col: start },
+                        head: Position { line, col: end },
+                    })
+            })
+        };
+
+        // Forward from the cursor's line to the end...
+        for line in after.line..line_count {
+            let min_col = (line == after.line).then_some(after.col);
+            if let Some(hit) = first_on_line(line, min_col) {
+                return Some(hit);
+            }
+        }
+        // ...then round to the top and back up to it, inclusive, so a lone match
+        // behind the cursor is still found.
+        for line in 0..=after.line.min(line_count.saturating_sub(1)) {
+            if let Some(hit) = first_on_line(line, None) {
+                return Some(hit);
+            }
+        }
+        None
+    }
+
     /// Replace the text between two positions as a single undo step.
     ///
     /// An empty range inserts, so callers can express insertion, deletion and

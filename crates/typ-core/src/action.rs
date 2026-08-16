@@ -58,14 +58,24 @@ impl Motion {
 /// clothes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Action {
-    Move { motion: Motion, extend: bool },
-    Delete { direction: Direction, by_word: bool },
+    Move {
+        motion: Motion,
+        extend: bool,
+    },
+    Delete {
+        direction: Direction,
+        by_word: bool,
+    },
     InsertNewline,
     InsertChar(char),
     Undo,
     Redo,
     SelectAll,
     SelectLine,
+    /// Select the word under the cursor, then each next occurrence of it.
+    SelectNextOccurrence,
+    /// Select every occurrence at once.
+    SelectAllOccurrences,
     CollapseSelections,
     AddCursor(Direction),
     Save,
@@ -202,6 +212,8 @@ impl Action {
         Action::Redo,
         Action::SelectAll,
         Action::SelectLine,
+        Action::SelectNextOccurrence,
+        Action::SelectAllOccurrences,
         Action::CollapseSelections,
         Action::AddCursor(Direction::Backward),
         Action::AddCursor(Direction::Forward),
@@ -273,6 +285,8 @@ impl Action {
             Action::Redo => "redo",
             Action::SelectAll => "select_all",
             Action::SelectLine => "select_line",
+            Action::SelectNextOccurrence => "select_next_occurrence",
+            Action::SelectAllOccurrences => "select_all_occurrences",
             Action::CollapseSelections => "collapse_selections",
             Action::AddCursor(Direction::Backward) => "add_cursor_above",
             Action::AddCursor(Direction::Forward) => "add_cursor_below",

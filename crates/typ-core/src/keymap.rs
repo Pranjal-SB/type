@@ -222,6 +222,11 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("ctrl+y", Action::Redo),
     ("ctrl+a", Action::SelectAll),
     ("ctrl+l", Action::SelectLine),
+    // VS Code, Sublime and ttt all put select-next-occurrence on Ctrl+D. TYPE
+    // has no chord *sequences*, so Ctrl+K L for select-all is unavailable and
+    // this takes VS Code's other binding for it.
+    ("ctrl+d", Action::SelectNextOccurrence),
+    ("ctrl+shift+l", Action::SelectAllOccurrences),
     ("esc", Action::CollapseSelections),
     ("ctrl+alt+up", Action::AddCursor(Direction::Backward)),
     ("ctrl+alt+down", Action::AddCursor(Direction::Forward)),
