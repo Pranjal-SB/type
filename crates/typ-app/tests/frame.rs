@@ -70,7 +70,11 @@ fn the_opening_frame_draws_both_panels_and_the_status_bar() {
         "│                            ││                            │",
         "│                            ││                            │",
         "└────────────────────────────┘└────────────────────────────┘",
-        "Tab focus  ·  Enter open  ·  Ctrl+S save  ·    untitled  1:1",
+        // The hint is truncated to whatever the segments leave: the right half
+        // is the fixed cost, so a message can never shove the position off the
+        // end of the bar. Sixty columns is a tight terminal and this is what
+        // tight looks like.
+        "Tab focus  ·  Enter open  untitled  LF  Spaces: 4  1:1  100%",
     ];
     assert_eq!(rows, expected);
 }
@@ -201,7 +205,10 @@ fn a_long_message_is_truncated_rather_than_shoving_the_position_off_screen() {
     let rows = rows(&terminal);
     let status = &rows[7];
     assert_eq!(status.chars().count(), 60);
-    assert!(status.ends_with("main.rs  1:1"), "status was: {status}");
+    assert!(
+        status.ends_with("main.rs  rs  LF  Spaces: 4  1:1  33%"),
+        "status was: {status}"
+    );
 }
 
 #[test]
@@ -290,7 +297,11 @@ fn an_open_prompt_takes_over_the_left_of_the_status_bar() {
     let terminal = draw(&mut app, 60, 8);
     let rows = rows(&terminal);
     assert!(rows[7].starts_with("Search: main"), "status: {}", rows[7]);
-    assert!(rows[7].ends_with("main.rs  1:1"), "status: {}", rows[7]);
+    assert!(
+        rows[7].ends_with("main.rs  rs  LF  Spaces: 4  1:1  33%"),
+        "status: {}",
+        rows[7]
+    );
 }
 
 #[test]

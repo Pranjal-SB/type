@@ -9,8 +9,8 @@ use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Paragraph, Widget};
 use typ_buffer::{
-    EditKind, Position, SearchQuery, Selection, Selections, TextBuffer, display_to_grapheme_col,
-    grapheme_to_display_col,
+    EditKind, LineEnding, Position, SearchQuery, Selection, Selections, TextBuffer,
+    display_to_grapheme_col, grapheme_to_display_col,
 };
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
 
@@ -20,7 +20,13 @@ pub mod render;
 
 use crate::gutter::Gutter;
 
-pub(crate) const TAB_WIDTH: usize = 4;
+/// Columns a tab occupies, and the width one level of indent inserts.
+///
+/// Public because the status bar states it on screen — `Spaces: 4` — and a
+/// value shown to the user that the shower has to guess at is how the shown
+/// value and the real one drift apart. `.editorconfig` and indent detection at
+/// M2.5 replace the constant, not its readers.
+pub const TAB_WIDTH: usize = 4;
 
 /// Lines beyond the viewport a bracket search may walk before giving up.
 ///
@@ -129,6 +135,35 @@ impl EditorPanel {
 
     pub fn line_count(&self) -> usize {
         self.buffer.line_count()
+    }
+
+    // The app asks through these rather than reaching into `self.buffer`. A
+    // panel's internals are not application state — the same rule
+    // `RenderContext` enforces pointing the other way.
+
+    pub fn path(&self) -> Option<&Path> {
+        self.buffer.path()
+    }
+
+    /// The file's name with no dirty marker on it.
+    ///
+    /// `title()` is what a panel border shows and carries the `*`; the status
+    /// bar draws that state as colour instead, so it needs the bare name.
+    pub fn file_name(&self) -> String {
+        self.buffer
+            .path()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("untitled")
+            .to_string()
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.buffer.is_dirty()
+    }
+
+    pub fn line_ending(&self) -> LineEnding {
+        self.buffer.line_ending()
     }
 
     /// Collapse to a single caret at `at`, clearing the goal column.
