@@ -5,12 +5,12 @@ Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 
 ## [Unreleased]
 
-## [0.2.3] — 2026-08-16 — M2.3, polish
+## [0.2.3] - 2026-08-16 (M2.3, polish)
 
 The milestone that makes TYPE *look* like a finished program. M2.2 made it usable and did
 nothing for how it reads; this is the answer to "feels very prototypey compared to ttt and
-TermIDE". Every item closes a defect from the gap analysis's "Reads as unfinished" class —
-the class the first audit had no rows for, because it compared feature lists and never asked
+TermIDE". Every item closes a defect from the gap analysis's "Reads as unfinished" class, the
+class the first audit had no rows for, because it compared feature lists and never asked
 whether the thing looks finished.
 
 ### Added
@@ -29,10 +29,10 @@ whether the thing looks finished.
   empty selections tint their line. The bracket search is bounded by the viewport plus a
   margin and gives up rather than exceeding it, because it runs on the render path.
 - **`Ctrl+D` selects the next occurrence**, `Ctrl+Shift+L` selects all of them. Case
-  sensitive, unlike `Ctrl+F` — matching an identifier is a different job from finding prose.
+  sensitive, unlike `Ctrl+F`: matching an identifier is a different job from finding prose.
 - **`Ctrl+G` jumps to a line**, centring it rather than merely scrolling it into view.
 - **Seven status segments** instead of three: name, filetype, line ending, indent, cursor
-  count, position, percentage — each with an emphasis, so unsaved changes and a cursor count
+  count, position, percentage, each with an emphasis, so unsaved changes and a cursor count
   above one are accented rather than lost in a strip of even text.
 - **A log file.** `TYP_LOG` names a path; unset, logging costs a branch. A TUI owns the
   screen, so `println!` debugging is unavailable by construction.
@@ -45,7 +45,7 @@ whether the thing looks finished.
 - The tree's selected row uses the primary selection colour: it is the one thing being
   steered, the same job the editor's primary does.
 - Perf tests take a mutex and the `find_all` budget takes best-of-five. Adding two render
-  benchmarks made `InsertChar` read 32 µs against the 1.9 µs it actually costs — cargo runs
+  benchmarks made `InsertChar` read 32 µs against the 1.9 µs it actually costs. Cargo runs
   tests in parallel threads, so the older tests were being timed while a sibling saturated a
   core. It took a bisect against v0.2.2 to establish that the 20x was a phantom.
 
@@ -54,10 +54,10 @@ whether the thing looks finished.
   painted glyph*, and every perf test measured edits only. A frame deep in a 50k-line file
   costs 439 µs against 16 ms.
 
-## [0.2.2] — 2026-08-15 — M2.2, usable
+## [0.2.2] - 2026-08-15 (M2.2, usable)
 
 The milestone that makes TYPE able to edit TYPE. Every item here closes a defect found by
-reading the tree rather than by planning — none was named by any earlier plan, which is the
+reading the tree rather than by planning. None was named by any earlier plan, which is the
 finding underneath the findings.
 
 ### Added
@@ -90,7 +90,7 @@ finding underneath the findings.
 - Architecture §10 no longer lists the config format as an open question. It is TOML, decided
   when `keys.toml` shipped.
 
-## [0.2.1] — 2026-08-15 — M2.1, correctness
+## [0.2.1] - 2026-08-15 (M2.1, correctness)
 
 ### Fixed
 - `InsertChar` cost 33.8 ms on a 50k-line file against a 16 ms budget. `TextBuffer::line_text`
@@ -104,7 +104,7 @@ finding underneath the findings.
 - Performance tests behind the budgets in architecture §4, run by hand with `--release
   --ignored`. A budget stated in prose with nothing measuring it is how the above shipped.
 
-## [0.2.0] — 2026-08-15 — M2, editing is real
+## [0.2.0] - 2026-08-15 (M2, editing is real)
 
 ### Added
 - Selections as the only cursor model — a caret is an empty selection, and every editing path
@@ -118,13 +118,13 @@ finding underneath the findings.
 - `keys.toml` rebinding, from the platform config directory or `TYP_CONFIG_DIR`. A bad file
   warns and keeps the defaults rather than refusing to start.
 
-## [0.1.0] — 2026-08-14 — M1, walking skeleton
+## [0.1.0] - 2026-08-14 (M1, walking skeleton)
 
 ### Added
 - Event loop, `Panel` trait, editor panel, file tree panel, status bar.
 - `$EDITOR` invariants: `typ <file>` opens that file, blocks until closed, exits with an honest
   code, never detaches.
-- Atomic save — write to a sibling temp file, fsync, rename over the target.
+- Atomic save: write to a sibling temp file, fsync, rename over the target.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
