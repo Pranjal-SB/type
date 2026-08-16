@@ -50,7 +50,7 @@ no parent-dir fsync, non-UTF-8 files fail to open.
 | ~~7~~ | **CRITICAL** | **No clipboard. At all.** No `Copy`, `Cut` or `Paste` in `Action`, no OS clipboard dependency, zero matches in the tree. `Ctrl+C` currently does nothing at all. | `typ-core/src/action.rs:59-75` |
 | ~~8~~ | **HIGH** | **Tab cannot indent.** `("tab", Action::FocusNext)` is the only Tab binding, and no `Indent`/`Outdent` action exists. A code editor where Tab does not indent is not yet a code editor. | `typ-core/src/keymap.rs:230` |
 | ~~9~~ | HIGH | **Bracketed paste is not enabled.** A terminal paste arrives as N separate key events: N loop passes, N repaints, and any chord inside the pasted text executes as a command rather than being inserted. `Event::Paste` is unhandled. | `typ-app/src/run.rs:59` |
-| 10 | MED | **`Event::Resize` is unhandled.** Harmless *today* only because the loop repaints unconditionally. The moment M2.5 makes redraw damage-driven this becomes a frozen screen on resize. Must be written into the M2.5 plan, not rediscovered. | `typ-app/src/run.rs:116` |
+| 10 | MED | **`Event::Resize` is unhandled.** Harmless *today* only because the loop repaints unconditionally. The moment M2.4 makes redraw damage-driven this becomes a frozen screen on resize. **Written into the M2.4 plan as Task 4**, in the same task as the dropped keystroke and for the same reason: it is the loop dropping input. | `typ-app/src/run.rs:116` |
 | 11 | MED | Drag past the viewport edge does not autoscroll; the selection stops at the last visible row. | `typ-panel-editor/src/lib.rs:388` |
 | 12 | MED | **Partly fixed at v0.2.3**: ~~no goto-line~~ shipped. **Still absent: move-line, duplicate-line, comment toggle** — all cheap, all unowned. | — |
 | 13 | LOW | `last_click` is never cleared by keyboard motion, so click → arrow away → click the same cell selects a word rather than placing a caret. | `typ-panel-editor/src/lib.rs:358` |
@@ -80,7 +80,7 @@ imagined it, and the furniture below is absent because the **audit** only imagin
 **The structural cause underneath all of it:** the render path draws every cell on every loop
 pass and the loop blocks on `event::read()`. There is no headroom to *add* visual richness
 without making an already-unconditional redraw more expensive, which is part of why none of it
-has accumulated. M2.5 is the prerequisite for the ambitious half of this list, and none of the
+has accumulated. M2.4 is the prerequisite for the ambitious half of this list — it is what buys the render path any headroom at all — and none of the
 cheap half needs to wait for it.
 
 **Architecture, not just appearance.** Helix's gutter is a *list* of components —
@@ -96,7 +96,7 @@ Found by reading TermIDE's 45 crate names and ttt's feature list rather than the
 | # | Sev | Defect |
 |---|---|---|
 | 31 | **HIGH — data loss** | **No file watching.** If a file changes on disk while open — a rebase, a formatter, another editor — TYPE neither reloads nor warns, and the next save silently overwrites. This is the same class as the open-over-dirty-buffer bug just fixed, and architecture §4 mentions file watching as a worker-thread concern while **no milestone owns it**. TermIDE has a whole `watcher` crate. |
-| ~~32~~ | HIGH | ~~**No logging, anywhere.**~~ **Fixed at v0.2.3** — `TYP_LOG` names a file, off otherwise. A file and a mutex rather than `tracing`, which earns its weight when there are spans to correlate across the worker threads arriving at M2.5. Original: No `log`, no `tracing`, no log file. A TUI owns the screen, so `println!` debugging is unavailable by construction — the one place logging is not optional is the one place we have none. TermIDE has a `logger` crate. |
+| ~~32~~ | HIGH | ~~**No logging, anywhere.**~~ **Fixed at v0.2.3** — `TYP_LOG` names a file, off otherwise. A file and a mutex rather than `tracing`, which earns its weight when there are spans to correlate across the worker threads arriving at M2.4. Original: No `log`, no `tracing`, no log file. A TUI owns the screen, so `println!` debugging is unavailable by construction — the one place logging is not optional is the one place we have none. TermIDE has a `logger` crate. |
 | ~~33~~ | HIGH | ~~**No select-next-occurrence.**~~ **Fixed at v0.2.3**, and searching from the cursor rather than filtering `find_all` — 3.89 µs per press on a 50k-line file. Original: `Ctrl+D` in VS Code, Sublime and ttt; `Ctrl+K L` for all occurrences. TYPE has add-cursor-above/below only, which is the *rarer* half of multi-cursor. This is the idiom people mean when they say multi-cursor. |
 | 34 | MED | **No `.editorconfig`, no indent detection.** `TAB_WIDTH` is a hardcoded `const` and indentation is always spaces. ttt reads `.editorconfig` and auto-detects indent from content, with a status-bar override. TYPE will silently reformat a tab-indented project. |
 | 35 | MED | **No file operations in the tree.** No new file, new folder, rename, delete. ttt puts them on a right-click context menu. The tree is currently a viewer, not a manager. |
@@ -474,11 +474,20 @@ Changes from the roadmap in the README, with reasons.
 |---|---|---|---|
 | ~~v0.2.2~~ | **M2.2 — Usable** | clipboard, indent/outdent, dirty guard on open, new-file creation, undo cap, bracketed paste, temp-file nonce | **shipped** — turned on self-hosting |
 | ~~v0.2.3~~ | **M2.3 — Polish** | the gutter and line numbers, truecolor theme surface, current-line highlight, distinguishable primary selection, bracket matching, status-bar segments, `Ctrl+D` select-next-occurrence, goto-line, logging | **shipped** — all eight tasks, plus line-ending detection and the first measurement of the render path |
-| v0.2.5 | M2.5 — Loop and colour | **file watching first — it is a data-loss bug**, damage-driven redraw, wakeable channel, resize handling, dropped-keystroke fix, line endings, save metadata, tree-sitter highlighting, themes as files and `typ-config`, `.editorconfig` and indent detection | watcher added and promoted |
+| v0.2.4 | M2.4 — Live | wakeable channel, **file watching — a data-loss bug**, damage-driven redraw, resize handling, dropped-keystroke fix, line-ending preservation, save metadata | **split from M2.5 at v0.2.3** |
+| v0.2.5 | M2.5 — Colour | tree-sitter highlighting, `typ-config`, themes as files, capability detection, `.editorconfig` and indent detection, indent guides and whitespace rendering | the other half of the split |
 | v0.3.0 | M3 — Code intelligence | LSP: completion, diagnostics, goto-def, rename, code actions, **+ undercurl, + peek definition** | two additions |
 | v0.4.0 | M4 — Workspace | splits, **tabs** (with per-tab dirty guard), sessions, **one composed Goto-Anything finder**, project search, **+ minimap, + sticky scroll**, capability detection | finder composed, polish pulled in |
 | v0.5.0 | M5 — Terminal and git | PTY panel, git gutter/status/diff/blame | unchanged |
 | v1.0.0 | M6 — Association and polish | OS association, launcher shim **and its font/terminal choice**, single-instance routing, perf budgets in CI | shim's typography role named |
+
+**Why M2.5 was split.** As scoped above it was three milestones wearing one number: the event
+loop, file and save correctness, and syntax plus theming. The bundling is actively harmful —
+the loop rework is the riskiest change in the project and tying it to the largest new subsystem
+means neither half ships if either goes badly. The seam was already there: everything in M2.4
+is about the editor being *live and correct* and none of it needs a theme, while every item in
+M2.5 wants the worker channel M2.4 builds. Split at v0.2.3, plan at
+[`../plans/m2.4-live.md`](../plans/m2.4-live.md).
 
 Post-v1 unchanged: plugin host v1.1, DAP v1.2, viewer panels. Add **multibuffer** as a design
 constraint on M4 rather than a feature: do not build tabs in a way that precludes it.
@@ -722,8 +731,8 @@ Three exceptions pulled earlier, because they are cheap and they compound:
 - **`cargo-dist` release workflow: slipped past v0.2.2, still unowned.** It was scheduled for
   the milestone where self-hosting starts and there is a reason to hand someone a binary. That
   milestone shipped without it, and the manual publish has already fallen a version behind
-  (#20). It needs a milestone rather than a good intention — the natural home is M2.5's
-  close-out, since M2.5 is the first milestone whose output anyone would want to install.
+  (#20). It needs a milestone rather than a good intention — the natural home is **M2.4's
+  close-out**, which is the next one to land.
 - **Capability probing: v0.2.5**, because tree-sitter highlighting needs to know whether it can
   emit truecolor, and `--doctor` is then nearly free.
 - **Symbol presets and terminal light/dark following: v0.2.5**, with the theme system. Both are
