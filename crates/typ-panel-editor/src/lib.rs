@@ -15,7 +15,9 @@ use typ_buffer::{
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
 
 pub mod actions;
+mod edit;
 pub mod gutter;
+mod occurrence;
 pub mod render;
 
 use crate::gutter::Gutter;
