@@ -69,7 +69,6 @@ made.
 
 - [Architecture and design rationale](docs/design/architecture.md)
 - [Gap analysis — known defects and how TYPE measures against the field](docs/design/gap-analysis.md)
-- [Current implementation plan](docs/plans/m2.3-polish.md)
 
 ## Install
 

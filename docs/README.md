@@ -6,39 +6,19 @@ verified: 2026-08-16
 
 # TYPE documentation
 
-Two kinds of document live here, and they are maintained differently.
-
-**Living documents** are kept true. If one disagrees with the tree, the document is wrong and
-gets fixed. Each carries a `verified` date in its frontmatter saying when that was last
-checked.
-
-**Records** are frozen once their milestone ships. A plan document is the account of what was
-attempted, what actually happened, and where the two diverged — the "Actual:" lines are the
-point of it. Editing one after the fact to match what the code became would destroy the only
-copy of that history.
-
-## Living
+Two documents, both kept true against the tree. If one disagrees with the code, the document is
+wrong and gets fixed. Each carries a `verified` date saying when that was last checked.
 
 | Document | What it is |
 |---|---|
 | [`design/architecture.md`](design/architecture.md) | The spec. Goals, invariants, budgets, the panel contract, milestones. Deviating from it needs a stated reason. |
-| [`design/gap-analysis.md`](design/gap-analysis.md) | Known defects, how TYPE measures against other editors, and the install and first-launch design. Re-run at each milestone. |
-| [`plans/m2.4-live.md`](plans/m2.4-live.md) | The current plan — M2.4, written and not yet started. |
-| [`../README.md`](../README.md) | The public face. Status, keys, roadmap, versioning. |
+| [`design/gap-analysis.md`](design/gap-analysis.md) | Known defects, and how TYPE measures against other editors. Re-run at each milestone. |
 
-A plan is living until its first commit lands and frozen once its last one does; between those
-it is the only document allowed to change on the basis of what the code turns out to be.
+The roadmap lives in the [README](../README.md). Per-milestone task lists are working documents
+and are not published.
 
-## Records
-
-| Document | Milestone | Version |
-|---|---|---|
-| [`plans/m0-m1-foundation.md`](plans/m0-m1-foundation.md) | M0 feel spike, M1 walking skeleton | v0.1.0 |
-| [`plans/m2-editing.md`](plans/m2-editing.md) | M2 editing — selections, multi-cursor, search | v0.2.0 |
-| [`plans/m2.1-correctness.md`](plans/m2.1-correctness.md) | M2.1 keystroke budgets, undo coalescing | v0.2.1 |
-| [`plans/m2.2-usable.md`](plans/m2.2-usable.md) | M2.2 clipboard, indent, guarded open | v0.2.2 |
-| [`plans/m2.3-polish.md`](plans/m2.3-polish.md) | M2.3 polish — gutter, truecolor theme, status segments, `Ctrl+D`, goto-line, logging | v0.2.3 |
-| [`../spikes/m0-feel/FINDINGS.md`](../spikes/m0-feel/FINDINGS.md) | M0 measurements — the spike's code is gone, its numbers are not | — |
+[`../spikes/m0-feel/FINDINGS.md`](../spikes/m0-feel/FINDINGS.md) is kept for its numbers — the
+M0 spike's code is gone, its measurements are not.
 
 ## Conventions
 
@@ -49,5 +29,3 @@ it is the only document allowed to change on the basis of what the code turns ou
   actually suffered — a closed question still listed as open, a README describing a missing
   feature that shipped — was invisible precisely because nothing recorded when anyone last
   looked.
-- **One plan per milestone**, tasks ordered, each ending in a commit. See any of the records for
-  the shape.
