@@ -143,7 +143,10 @@ impl EditorPanel {
             return false;
         };
         match std::fs::read_to_string(path) {
-            Ok(disk) => disk == self.buffer.text(),
+            // `text_as_saved`, not `text`: the rope holds LF and a CRLF file on
+            // disk would never compare equal, so every save of a Windows file
+            // would report itself back as an external change.
+            Ok(disk) => disk == self.buffer.text_as_saved(),
             Err(_) => false,
         }
     }

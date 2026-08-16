@@ -37,11 +37,15 @@ and says which half remains, because striking it would lose the rest.
 | ~~3~~ | HIGH | **`typ newfile.md` refuses to start** — `bail!("does not exist")`. There is no way to create a file. Every editor in the field opens an empty buffer at that path and creates it on save. | `typ/src/main.rs:59` | v0.2.2 |
 | ~~4~~ | LOW | Save temp file uses a fixed name, `.{name}.typ-tmp`. Two instances saving the same file race each other, and a kill mid-save leaves the file behind. Wants a pid or nonce. | `typ-buffer/src/buffer.rs:320` | v0.2.2 |
 | 5 | LOW | `typ a.rs b.rs` silently ignores everything after the first path. Honest until tabs exist, a real bug the moment they do. | `typ/src/main.rs:54` | v0.4.0 |
+| 40 | MED | **An atomic save gives the file the saving user's ownership.** `rename` puts a new inode at the path, and only root or the owner can `chown` it back, so editing a file you have write access to but do not own — a root-owned config, a shared file in a group-writable directory — silently transfers it to you. Found by reading Fresh, the only project in the field that handles it: `should_use_inplace_write` writes in place when `!fs.is_owner(dest_path)`, and because an in-place write is not crash-safe it carries a recovery temp file plus recovery metadata, with a `SudoSaveRequired { temp_path, dest_path, uid, gid, mode }` escalation path behind it. Unix-only, and the recovery machinery is larger than the rest of M2.4 put together, which is why v0.2.4 preserves mode bits and symlinks and leaves this. | `typ-buffer/src/buffer.rs` `save` | unowned |
 | 6 | LOW | No tty check. `typ | cat` renders escape sequences into a pipe. | `typ/src/main.rs` | v1.0.0 (M6) |
 
-Already recorded as deliberate deferrals in `m2.1-correctness.md`, still true: line endings not
-preserved (`\n` written into a CRLF file), `save` drops POSIX mode bits and replaces symlinks,
-no parent-dir fsync, non-UTF-8 files fail to open.
+Recorded as deliberate deferrals in `m2.1-correctness.md`. ~~Line endings not preserved (`\n`
+written into a CRLF file), `save` drops POSIX mode bits and replaces symlinks, no parent-dir
+fsync~~ — **all four closed at v0.2.4**: CRLF is normalized to LF in the rope and written back
+on save, the mode is carried onto the temp file before the rename, a symlink is resolved and
+written through, and the parent directory is fsynced after the rename, which none of ttt,
+TermIDE or Fresh does. Still true: non-UTF-8 files fail to open, and the new #40.
 
 ### Table stakes that are simply absent
 
