@@ -1,0 +1,32 @@
+name: Feature request
+description: Something TYPE should do and does not.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [roadmap](https://github.com/Pranjal-SB/type#roadmap) first —
+        LSP, tabs, splits, a terminal panel, git and syntax highlighting are all
+        planned and have milestones. An issue that says "sooner than M4" is
+        useful; one that says "add tabs" is already written down.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: >
+        The task, not the feature. "I cannot see which of thirty cursors is
+        primary" produced a better answer than "add a primary cursor colour"
+        would have.
+    validations:
+      required: true
+
+  - type: textarea
+    id: prior-art
+    attributes:
+      label: Who else does this, and how
+      description: >
+        Prior art is evidence here, not authority — but a working
+        implementation to measure against is worth more than a description.
+    validations:
+      required: false

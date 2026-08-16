@@ -1,6 +1,11 @@
 # TYPE
 
-**T**erminal-**Y**oked **P**rogramming **E**nvironment — a full IDE that runs in your terminal.
+[![CI](https://github.com/Pranjal-SB/type/actions/workflows/ci.yml/badge.svg)](https://github.com/Pranjal-SB/type/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/typ-editor.svg)](https://crates.io/crates/typ-editor)
+[![MSRV](https://img.shields.io/badge/rustc-1.96%2B-blue.svg)](rust-toolchain.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+**T**erminal-**Y**oked **P**rogramming **E**nvironment. A full IDE that runs in your terminal.
 
 Not a terminal text editor with some IDE features bolted on. The full surface — code
 intelligence, debugging, git, integrated terminal, project search — delivered through a
@@ -26,9 +31,9 @@ keyboard-purist in a way that never made room for a mouse.
 
 TYPE targets the gap: **non-modal by default, full mouse parity, panel-rich, extensible.**
 Familiar immediately if you're arriving from a GUI editor, without giving up capability to get
-there. Modal editing is a setting rather than a fork — an opt-in vim layer translates modes,
-counts and operators into the same named actions the non-modal path already calls, so it owns
-no editing primitives of its own and the core never depends on it.
+there. Modal editing is a setting. An opt-in vim layer translates modes, counts and operators into
+the same named actions the non-modal path already calls, so it owns no editing primitives of
+its own and the core never depends on it.
 
 ## Design goals
 
@@ -36,24 +41,24 @@ no editing primitives of its own and the core never depends on it.
 |---|---|
 | Fast | Cold start under 100 ms; keystroke to painted glyph under 16 ms at p99 |
 | Clean | No chrome without a job; one visual system across every panel |
-| Mature | Every action reachable three ways — keybinding, command palette, mouse |
+| Mature | Every action reachable three ways: keybinding, command palette, mouse |
 | Complete | LSP, DAP, and tree-sitter clients, so language capability arrives by protocol |
 
 ## Status
 
-**v0.2.3 — pre-alpha.** Editing works and the editor looks the part: line numbers, a truecolor
+**v0.2.3, pre-alpha.** Editing works and the editor looks the part: line numbers, a truecolor
 theme, current-line highlight, bracket matching, and multiple cursors with a visibly distinct
 primary. Search and replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line,
 undo that takes back a run of typing in one press.
 
-No syntax highlighting, no LSP, no tabs or splits yet — see the roadmap. Full history in
+No syntax highlighting, no LSP, no tabs or splits yet; see the roadmap. Full history in
 [CHANGELOG.md](CHANGELOG.md).
 
 Every editing primitive is a named action and every key binding is a table row, so a command
 palette and an opt-in vim layer are configuration rather than a rewrite.
 
 - [Architecture and design rationale](docs/design/architecture.md)
-- [Gap analysis — known defects and how TYPE measures against the field](docs/design/gap-analysis.md)
+- [Gap analysis: known defects, and how TYPE measures against the field](docs/design/gap-analysis.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Install
@@ -64,12 +69,12 @@ typ .
 ```
 
 The crate is `typ-editor`; the binary it installs is `typ`. That is the only install channel
-today, so it reaches you only if you already have a Rust toolchain — prebuilt binaries,
+today, so it reaches you only if you already have a Rust toolchain. Prebuilt binaries,
 checksums and a one-line installer are planned and not yet built.
 
 **crates.io currently serves 0.2.1, two versions behind this tree.** Publishing is a manual
 step and it has lagged. Until it catches up, `cargo install` gets you an editor with no
-clipboard, no Tab indent and no gutter — build from source for what the Status section above
+clipboard, no Tab indent and no gutter. Build from source for what the Status section above
 describes.
 
 ## Build from source
@@ -133,7 +138,7 @@ the selection touches, and the selection survives so you can press it again.
 | `Ctrl+V` | `Shift+Insert` | middle-click | Paste |
 
 `Ctrl+Shift+C`/`X`/`V` are bound too, but most terminals claim them for their own copy and
-paste and never pass them on — and in the legacy key encoding a `Ctrl`+letter chord carries no
+paste and never pass them on. In the legacy key encoding a `Ctrl`+letter chord also carries no
 shift bit for the terminal to report. They work on Windows today, and elsewhere once terminal
 capability detection lands.
 
@@ -164,9 +169,8 @@ Unsaved changes and a cursor count above one are accented, because both are stat
 forget you are in.
 
 Keybindings are non-modal, and will stay usable that way. Every binding is a row in a table
-rather than a branch in a match, so rebinding is configuration. A vim layer — modes, counts,
-operators, composable motions — is planned as an opt-in setting, not as the default and not
-as a fork of the editor core.
+rather than a branch in a match, so rebinding is configuration. A vim layer (modes, counts,
+operators, composable motions) is planned as an opt-in setting.
 
 ## Debugging
 
@@ -196,41 +200,41 @@ same name; everything else keeps its default.
 ```
 
 A binding whose action name is unknown is reported in the status bar at startup and the
-defaults are kept — a typo here never stops the editor opening. One bad line rejects the
-whole file rather than half-applying it, because a keymap you cannot tell the state of is
-worse than one that plainly did nothing.
+defaults are kept. A typo here never stops the editor opening. One bad line rejects the whole
+file rather than half-applying it, because a keymap you cannot tell the state of is worse than
+one that plainly did nothing.
 
 ## Roadmap
 
 | Version | Milestone | Scope | State |
 |---|---|---|---|
-| — | M0 | Feel spike — measure input latency, frame timing, unicode correctness | shipped |
-| v0.1.0 | M1 | Walking skeleton — event loop, panel contract, editor and file tree | shipped |
-| v0.2.0 | M2 | Editing — multi-cursor, selections, word motion, search and replace | shipped |
-| v0.2.1 | M2.1 | Correctness — keystroke budgets, undo coalescing, the shift map | shipped |
-| v0.2.2 | M2.2 | Usable — clipboard, indent, new files, guarded open | shipped |
-| v0.2.3 | M2.3 | Polish — gutter, truecolor theme, current line, brackets, status segments, `Ctrl+D`, goto-line, logging | **current** |
-| v0.2.4 | M2.4 | Live — wakeable event loop, file watching, damage-driven redraw, resize, save correctness | next |
-| v0.2.5 | M2.5 | Colour — tree-sitter highlighting, themes as files, config, capability detection | |
-| v0.3.0 | M3 | Code intelligence — LSP client | |
-| v0.4.0 | M4 | Workspace — splits, tabs, sessions, command palette, project search | |
+| — | M0 | Feel spike: measure input latency, frame timing, unicode correctness | shipped |
+| v0.1.0 | M1 | Walking skeleton: event loop, panel contract, editor and file tree | shipped |
+| v0.2.0 | M2 | Editing: multi-cursor, selections, word motion, search and replace | shipped |
+| v0.2.1 | M2.1 | Correctness: keystroke budgets, undo coalescing, the shift map | shipped |
+| v0.2.2 | M2.2 | Usable: clipboard, indent, new files, guarded open | shipped |
+| v0.2.3 | M2.3 | Polish: gutter, truecolor theme, current line, brackets, status segments, `Ctrl+D`, goto-line, logging | **current** |
+| v0.2.4 | M2.4 | Live: wakeable event loop, file watching, damage-driven redraw, resize, save correctness | next |
+| v0.2.5 | M2.5 | Colour: tree-sitter highlighting, themes as files, config, capability detection | |
+| v0.3.0 | M3 | Code intelligence: LSP client | |
+| v0.4.0 | M4 | Workspace: splits, tabs, sessions, command palette, project search | |
 | v0.5.0 | M5 | Terminal panel and git integration | |
 | v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |
 
 Then: extension host (v1.1), then debugger (v1.2).
 
-**Versioning.** `0.<milestone>.<patch milestone>` — the minor is the milestone number, the
+**Versioning.** `0.<milestone>.<patch milestone>`: the minor is the milestone number, the
 patch is a correctness milestone landing on top of it. One version for the whole workspace;
 every crate inherits it and `typ --version` prints it. v1.0.0 is M6, the point at which the
-author stops using another editor. Milestones stay the working unit — plans, tasks and
-commits are still organised by M-number; the version is what that milestone is called once it
+author stops using another editor. Milestones stay the working unit. Plans, tasks and commits
+are still organised by M-number, and the version is what that milestone is called once it
 lands.
 
 ## Non-goals
 
 Collaborative editing, notebooks, HTML-rendering extensions, an extension marketplace, and a
-GPU renderer. Remote development is not a goal either — you already have SSH, and that is a
-structural advantage of living in a terminal rather than a gap to close.
+GPU renderer. Remote development is not a goal either. You already have SSH, and that is a
+structural advantage of living in a terminal.
 
 ## License
 
