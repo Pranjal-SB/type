@@ -35,6 +35,10 @@ cargo test --release -p typ-panel-editor --test perf -- --ignored --nocapture
 
 Paste the numbers in the PR. A budget with nothing measuring it is a budget nobody has.
 
+If you add a dependency, CI also runs `cargo deny check advisories licenses bans sources`
+against `deny.toml`. A license not already in the allow list fails the build on purpose —
+add it there, with the crate that needs it named beside it.
+
 ## The rules that are not negotiable
 
 The reasoning is in [the architecture doc](docs/design/architecture.md). The ones that catch
