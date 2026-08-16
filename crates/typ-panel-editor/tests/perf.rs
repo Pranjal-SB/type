@@ -3,6 +3,7 @@
 //!
 //!     cargo test --release -p typ-panel-editor --test perf -- --ignored --nocapture
 
+use std::sync::{Mutex, MutexGuard};
 use std::time::Instant;
 
 use ratatui::buffer::Buffer;
@@ -18,9 +19,33 @@ fn big_editor() -> EditorPanel {
 
 const BUDGET_US: u128 = 16_000;
 
+/// Perf tests run one at a time.
+///
+/// cargo runs tests in parallel threads inside one process, and a wall-clock
+/// measurement taken while a sibling test is saturating another core is not a
+/// measurement of anything. This is not hypothetical: adding two render
+/// benchmarks here made `InsertChar` read **32 µs** against the 1.9 µs it
+/// actually costs, a 20x phantom regression that took a bisect against v0.2.2
+/// to disprove.
+///
+/// A mutex rather than a documented `--test-threads=1`, for the same reason the
+/// clipboard tests carry one: an instruction in a doc comment is followed by
+/// whoever read it, and the ordinary `cargo test` invocation must not be able to
+/// produce a wrong number.
+static EXCLUSIVE: Mutex<()> = Mutex::new(());
+
+fn exclusive() -> MutexGuard<'static, ()> {
+    // A panicking test poisons the lock; the data is `()` and the next test's
+    // measurement is still valid, so recover rather than cascading failures.
+    EXCLUSIVE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[test]
 #[ignore = "wall-clock budget; run with --release --ignored"]
 fn typing_a_character_into_a_large_file_fits_in_a_frame() {
+    let _guard = exclusive();
     let mut editor = big_editor();
     editor.perform(Action::InsertChar('x')); // warm
 
@@ -40,6 +65,7 @@ fn typing_a_character_into_a_large_file_fits_in_a_frame() {
 #[test]
 #[ignore = "wall-clock budget; run with --release --ignored"]
 fn undo_and_redo_on_a_large_file_fit_in_a_frame() {
+    let _guard = exclusive();
     let mut editor = big_editor();
     for _ in 0..20 {
         editor.perform(Action::InsertChar('x'));
@@ -86,6 +112,7 @@ fn draw_frame(editor: &mut EditorPanel, area: Rect) {
 #[test]
 #[ignore = "wall-clock budget; run with --release --ignored"]
 fn drawing_a_frame_deep_in_a_large_file_fits_in_a_frame() {
+    let _guard = exclusive();
     let mut editor = big_editor();
     let area = Rect::new(0, 0, 120, 40);
 
@@ -114,6 +141,7 @@ fn drawing_a_frame_deep_in_a_large_file_fits_in_a_frame() {
 #[test]
 #[ignore = "wall-clock budget; run with --release --ignored"]
 fn an_unmatched_bracket_does_not_walk_the_file() {
+    let _guard = exclusive();
     // The pathological case for Task 3: the cursor sits on a bracket whose
     // partner does not exist, so the search runs to its bound every frame. If
     // the bound were ever removed this is the test that would notice.

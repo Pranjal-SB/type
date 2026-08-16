@@ -100,6 +100,7 @@ Found by reading TermIDE's 45 crate names and ttt's feature list rather than the
 | 35 | MED | **No file operations in the tree.** No new file, new folder, rename, delete. ttt puts them on a right-click context menu. The tree is currently a viewer, not a manager. |
 | 36 | MED | No goto-line (`Ctrl+G`), already listed as #12 and reconfirmed as universal across the field. |
 | 37 | LOW | No multi-root workspaces. ttt has Add Folder to Workspace and switches the status-bar git branch by which root the active file belongs to. Ours is one root. |
+| 38 | MED | **`find_all` sits at half the keystroke budget and no milestone owns fixing it.** Measured at v0.2.3 on a 50k-line file: 5.4–8.7 ms best-of-five against 16 ms, and single samples on an idle laptop ranged 6.9–18.7 ms. Architecture §4 already states the answer — "search is viewport-first with the remainder completed off-thread, a design constraint, not a number to optimise toward" — but the constraint is written down in the spec and owned by no task. M2's search box calls `find_all` on Enter, which is fine; M4's project search and any highlight-as-you-type is where it stops being fine. **The number to watch, watched:** M2.1 recorded 10.5 ms and said so in as many words. |
 
 ### Project and process gaps
 
