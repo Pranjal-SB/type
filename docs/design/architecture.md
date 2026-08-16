@@ -3,13 +3,13 @@ type: design
 status: living
 area: spec
 verified: 2026-08-16
-verified-against: v0.2.2
+verified-against: v0.2.3
 ---
 
 # TYPE — Terminal-Yoked Programming Environment
 
-**Status:** approved; M0–M2.2 built against it
-**Date:** 2026-08-10, last verified against the tree 2026-08-16 at v0.2.2
+**Status:** approved; M0–M2.3 built against it
+**Date:** 2026-08-10, last verified against the tree 2026-08-16 at v0.2.3
 **Binary:** `typ` · **Crate:** `typ-editor` · **Repo:** `type`
 
 ---
@@ -116,6 +116,15 @@ One thing the tests establish that the budget alone does not: a whole-buffer sca
 match on every line of a large file does not fit in a frame at any constant factor. Search is
 therefore viewport-first with the remainder completed off-thread — a design constraint, not a
 number to optimise toward.
+
+**The budget is keystroke to painted glyph, so the paint is measured too.** Until v0.2.3 every
+perf test measured edits and none measured rendering, which is half a number — and M2.3 put a
+gutter, a bracket search and a per-grapheme paint decision on that path. A frame drawn deep in
+a 50k-line file costs 439 µs. Two further cautions were learned by getting them wrong: these
+tests take a mutex, because cargo's parallel threads made one read 32 µs against the 1.9 µs it
+actually cost, and the `find_all` budget takes best-of-five, because it is the one number here
+with less than an order of magnitude of headroom and a single sample of it measures the
+scheduler.
 
 ### Clean
 
