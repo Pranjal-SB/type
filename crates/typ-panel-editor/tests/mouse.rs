@@ -15,10 +15,17 @@ const AREA: Rect = Rect {
     height: 10,
 };
 
+/// A mouse event at a screen cell, with the gutter's width already added.
+///
+/// Every test below states coordinates the way it always has — column 1 is the
+/// first cell inside the border — and this shifts them past the gutter that now
+/// sits between the border and the text. Every fixture here is two or three
+/// lines, so the gutter is one digit and a spacer.
 fn at(kind: MouseEventKind, column: u16, row: u16, modifiers: KeyModifiers) -> MouseEvent {
+    const GUTTER: u16 = 2;
     MouseEvent {
         kind,
-        column,
+        column: column + GUTTER,
         row,
         modifiers,
     }

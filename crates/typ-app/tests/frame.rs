@@ -59,9 +59,12 @@ fn the_opening_frame_draws_both_panels_and_the_status_bar() {
     let rows = rows(&terminal);
 
     // Sidebar is the fixed 30 columns at this width; the editor takes the rest.
+    // The editor's `1` is the gutter: an empty buffer is still one line long,
+    // and numbering it from the first frame is what makes the column furniture
+    // rather than something that appears once there is text.
     let expected = [
         "┌opening─────────────────────┐┌untitled────────────────────┐",
-        "│> src                       ││                            │",
+        "│> src                       ││1                           │",
         "│  main.rs                   ││                            │",
         "│                            ││                            │",
         "│                            ││                            │",
@@ -128,11 +131,12 @@ fn an_open_file_renders_its_text_with_the_cursor_on_it() {
     let mut terminal = draw(&mut app, 60, 8);
     let rows = rows(&terminal);
     assert!(rows[0].contains("main.rs"), "title missing: {}", rows[0]);
-    assert_eq!(cols(&rows[1], 30, 60), "│fn main() {}                │");
-    assert_eq!(cols(&rows[2], 30, 60), "│let x = 1;                  │");
+    assert_eq!(cols(&rows[1], 30, 60), "│1 fn main() {}              │");
+    assert_eq!(cols(&rows[2], 30, 60), "│2 let x = 1;                │");
 
-    // Editor text starts at column 31 (sidebar 30 + border), row 1.
-    assert_eq!(terminal.get_cursor_position().unwrap(), (32, 2).into());
+    // Sidebar 30, border 1, gutter 2: editor text starts at column 33. The
+    // cursor is one line down and one grapheme in.
+    assert_eq!(terminal.get_cursor_position().unwrap(), (34, 2).into());
 }
 
 #[test]
@@ -146,7 +150,7 @@ fn wide_characters_do_not_push_the_border_out_of_line() {
     // A wide grapheme occupies its cell plus a blank continuation cell, so one
     // char here is one column — which is the whole point: if the width maths
     // were wrong, the trailing border would move.
-    assert_eq!(cols(&rows[1], 30, 60), "│日 本 語  ok                   │");
+    assert_eq!(cols(&rows[1], 30, 60), "│1 日 本 語  ok                 │");
     for row in &rows[1..6] {
         assert!(row.ends_with('│'), "border broke on: {row}");
     }
@@ -160,8 +164,8 @@ fn the_cursor_lands_past_a_wide_character_not_inside_it() {
     app.handle_chord(key(KeyCode::Right)).unwrap();
 
     let mut terminal = draw(&mut app, 60, 8);
-    // One CJK grapheme is two columns: 31 + 2.
-    assert_eq!(terminal.get_cursor_position().unwrap(), (33, 1).into());
+    // Text starts at 33 and one CJK grapheme is two columns: 33 + 2.
+    assert_eq!(terminal.get_cursor_position().unwrap(), (35, 1).into());
 }
 
 #[test]
@@ -231,13 +235,18 @@ fn a_selection_is_visible_in_the_rendered_frame() {
 
     let terminal = draw(&mut app, 60, 8);
     let theme = ThemeColors::default();
-    // Editor text begins at column 31.
-    assert_eq!(bg(&terminal, 31, 1), Some(theme.selection_bg));
-    assert_eq!(bg(&terminal, 32, 1), Some(theme.selection_bg));
+    // Editor text begins at column 33: sidebar 30, border 1, gutter 2.
+    assert_eq!(bg(&terminal, 33, 1), Some(theme.selection_bg));
+    assert_eq!(bg(&terminal, 34, 1), Some(theme.selection_bg));
     assert_eq!(
-        bg(&terminal, 33, 1),
+        bg(&terminal, 35, 1),
         Some(theme.bg),
         "the highlight must stop where the selection does"
+    );
+    assert_eq!(
+        bg(&terminal, 31, 1),
+        Some(theme.bg),
+        "and it must not bleed back into the gutter"
     );
 }
 

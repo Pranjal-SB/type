@@ -15,7 +15,10 @@ use typ_buffer::{
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
 
 pub mod actions;
+pub mod gutter;
 pub mod render;
+
+use crate::gutter::Gutter;
 
 pub(crate) const TAB_WIDTH: usize = 4;
 
@@ -41,6 +44,9 @@ pub struct EditorPanel {
     /// The last cell clicked, so a second click in the same place can mean
     /// "select the word" without a double-click timer.
     last_click: Option<Position>,
+    /// The gutter. Owned by the panel because its width is a function of this
+    /// buffer's line count, and that width narrows the text area.
+    pub(crate) gutter: Gutter,
 }
 
 impl EditorPanel {
@@ -71,6 +77,7 @@ impl EditorPanel {
             width: 0,
             drag_anchor: None,
             last_click: None,
+            gutter: Gutter::default(),
         }
     }
 
@@ -130,9 +137,42 @@ impl EditorPanel {
         self.goal_col = None;
     }
 
-    /// The text area inside the panel's border.
-    fn text_area(area: Rect) -> Rect {
+    /// Cells the gutter occupies for this buffer.
+    pub(crate) fn gutter_width(&self) -> usize {
+        self.gutter.width(self.buffer.line_count())
+    }
+
+    /// The area inside the border, before the gutter is taken out of it.
+    fn inner_area(area: Rect) -> Rect {
         Block::bordered().inner(area)
+    }
+
+    /// The text area: inside the border, and to the right of the gutter.
+    ///
+    /// This is an instance method rather than a free function precisely because
+    /// the gutter's width depends on the buffer. Three callers convert between
+    /// screen cells and buffer positions — `render`, `handle_mouse` and
+    /// `cursor_position` — and every one of them must subtract the same number.
+    /// Routing all three through here is what stops a click landing
+    /// `gutter_width` graphemes to the left of the pointer, which is a failure
+    /// no test of the gutter's own output would catch.
+    fn text_area(&self, area: Rect) -> Rect {
+        let inner = Self::inner_area(area);
+        let gutter = (self.gutter_width() as u16).min(inner.width);
+        Rect {
+            x: inner.x + gutter,
+            width: inner.width - gutter,
+            ..inner
+        }
+    }
+
+    /// The gutter's own area, to the left of the text.
+    fn gutter_area(&self, area: Rect) -> Rect {
+        let inner = Self::inner_area(area);
+        Rect {
+            width: (self.gutter_width() as u16).min(inner.width),
+            ..inner
+        }
     }
 
     pub(crate) fn line_grapheme_count(&self, line: usize) -> usize {
@@ -283,14 +323,38 @@ impl Panel for EditorPanel {
         let block = Block::bordered()
             .border_style(Style::default().fg(border))
             .title(self.title());
-        let inner = block.inner(area);
         block.render(area, buf);
 
-        self.height = inner.height as usize;
-        self.width = inner.width as usize;
-        let end = (self.top_line + self.height).min(self.buffer.line_count());
+        let text_area = self.text_area(area);
+        let gutter_area = self.gutter_area(area);
+
+        // Height and width are learned here, and the width is the *text* width:
+        // horizontal scrolling measures against the columns text can occupy,
+        // not against the ones the gutter has already taken.
+        self.height = text_area.height as usize;
+        self.width = text_area.width as usize;
+
+        let line_count = self.buffer.line_count();
+        let end = (self.top_line + self.height).min(line_count);
         let selections: Vec<Selection> = self.selections.iter().copied().collect();
         let left_col = self.left_col;
+        let cursor_line = self.cursor().line;
+
+        // The gutter is furniture, not text: it is drawn into its own area and
+        // never windowed by `left_col`, so scrolling a long line sideways moves
+        // the code and leaves the numbers standing.
+        let gutter_lines: Vec<Line> = (self.top_line..end)
+            .map(|i| {
+                Line::from(
+                    self.gutter
+                        .render_line(i, cursor_line, line_count, ctx.theme),
+                )
+            })
+            .collect();
+        Paragraph::new(gutter_lines)
+            .style(Style::default().bg(ctx.theme.bg))
+            .render(gutter_area, buf);
+
         let lines: Vec<Line> = (self.top_line..end)
             .map(|i| {
                 self.buffer.with_line_str(i, |text| {
@@ -300,7 +364,7 @@ impl Panel for EditorPanel {
             .collect();
         Paragraph::new(lines)
             .style(Style::default().fg(ctx.theme.fg).bg(ctx.theme.bg))
-            .render(inner, buf);
+            .render(text_area, buf);
     }
 
     fn apply_action(&mut self, action: typ_core::Action) -> Option<Vec<PanelEvent>> {
@@ -308,7 +372,7 @@ impl Panel for EditorPanel {
     }
 
     fn cursor_position(&self, panel_area: Rect) -> Option<(u16, u16)> {
-        let inner = Self::text_area(panel_area);
+        let inner = self.text_area(panel_area);
         let cursor = self.cursor();
         let row = cursor.line.checked_sub(self.top_line)?;
         if row >= inner.height as usize {
@@ -337,7 +401,10 @@ impl Panel for EditorPanel {
 
     fn handle_mouse(&mut self, event: MouseEvent, panel_area: Rect) -> Vec<PanelEvent> {
         let at = |panel: &Self, event: &MouseEvent| {
-            let inner = Self::text_area(panel_area);
+            // The text area, gutter already subtracted — so a click in the
+            // gutter saturates to column 0 and selects the line its number
+            // labels, which is what clicking a line number means everywhere.
+            let inner = panel.text_area(panel_area);
             let row = event.row.saturating_sub(inner.y) as usize;
             // Both offsets apply: a click is at a screen cell, and the text
             // under it is `top_line` rows down and `left_col` columns across.
