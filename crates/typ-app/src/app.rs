@@ -333,6 +333,18 @@ impl App {
         self.keymap = keymap;
     }
 
+    /// Use a loaded palette instead of the compiled-in default.
+    ///
+    /// Separate from `new` for the same reason `set_keymap` is: config lives in
+    /// files the app has to go and read, and a test that wants a known palette
+    /// should not have to arrange a config directory to get one.
+    ///
+    /// The palette arrives already degraded to the terminal's colour depth. No
+    /// panel branches on depth, and none should — see `config::load_theme`.
+    pub fn set_theme(&mut self, theme: ThemeColors) {
+        self.theme = theme;
+    }
+
     /// Route one keypress.
     ///
     /// Order matters and is deliberate:

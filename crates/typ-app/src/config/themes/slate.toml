@@ -1,0 +1,80 @@
+# TYPE Slate — the shipped default.
+#
+# Every neutral is a step on one ramp at one hue, a cool blue-grey near 218°,
+# and every accent is placed against that ramp deliberately. Widgets name a
+# step; they never mix their own. A palette assembled colour-by-colour as each
+# widget needed one is how "one visual system" gets broken quietly — nothing is
+# ever wrong, the greys just drift apart until the editor looks assembled
+# rather than designed.
+#
+# Contrast is checked rather than eyeballed: typ-core/tests/theme.rs computes
+# WCAG ratios from these values and fails the build if body text drops below
+# 7:1 or the gutter below 3:1.
+
+name = "TYPE Slate"
+kind = "dark"
+
+[palette]
+# Dark to light, each step with a job.
+base00 = "#10141b"  # the page
+base01 = "#161c25"  # the cursor's line — one step, felt rather than seen
+base02 = "#1a212c"  # raised surfaces: the status bar
+base03 = "#2a3240"  # borders and rules
+base04 = "#5a6a80"  # furniture text: line numbers
+base05 = "#6b7b91"  # quiet content: inactive status segments
+base06 = "#a8b3c4"  # secondary content: file names
+base07 = "#c8d0dc"  # body text
+base08 = "#e6ecf5"  # text on a selection
+
+# The one accent. Focus, links, anything the eye should be drawn to.
+accent = "#4f8cc9"
+accent_bright = "#7fb3e0"  # the same hue, lifted — directories in the tree
+
+# Selections sit on the accent's hue at two depths, so the primary reads as
+# "the same thing, more so" rather than as a different feature.
+select = "#26364d"
+select_primary = "#35507a"
+
+# Semantic colours, deliberately off the base hue: these mean something, and a
+# reader must not have to decide whether a colour is decoration or information.
+red = "#e06c75"
+amber = "#e5c07b"
+amber_deep = "#3a3524"
+teal = "#56b6c2"
+
+[ui]
+fg = "base07"
+bg = "base00"
+cursor_line_bg = "base01"
+
+# The gutter shares the page's background rather than having one of its own: a
+# seam down the left of every file is chrome doing a job the digits already do.
+gutter_fg = "base04"
+gutter_bg = "base00"
+line_number_fg = "base04"
+# The current line's number matches body text — "here" is stated by being as
+# present as the code, not by being tinted.
+line_number_current_fg = "base07"
+
+selection_bg = "select"
+selection_fg = "base08"
+selection_primary_bg = "select_primary"
+
+bracket_match_fg = "amber"
+bracket_match_bg = "amber_deep"
+
+border = "base03"
+border_focused = "accent"
+
+status_bar_bg = "base02"
+status_bar_fg = "base07"
+status_bar_inactive_fg = "base05"
+status_bar_accent = "accent"
+
+tree_directory_fg = "accent_bright"
+tree_file_fg = "base06"
+
+diagnostic_error = "red"
+diagnostic_warning = "amber"
+diagnostic_info = "accent"
+diagnostic_hint = "teal"
