@@ -127,6 +127,8 @@ fn real_main() -> Result<()> {
         "clipboard provider: {}",
         typ_buffer::clipboard::provider_name()
     );
+    // And the one to look at when somebody reports that the colours are wrong.
+    typ_app::log_info!("colour depth: {:?}", typ_app::capability::detect());
 
     let (keymap, warning) = typ_app::config::load_keymap(typ_app::config::config_path().as_deref());
     app.set_keymap(keymap);
