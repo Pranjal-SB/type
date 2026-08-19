@@ -480,3 +480,45 @@ fn the_rules_reject_a_palette_that_earns_it() {
         "an invisible foreground has to be reported, got: {bad:?}"
     );
 }
+
+#[test]
+fn the_cursor_line_floor_follows_the_ground() {
+    // The one rule in `audit` that branches on the kind of palette, and the
+    // branch is worth a test of its own: both probes below put `fg` at the same
+    // ~6.8 against their own cursor line, and that single ratio is a pass on a
+    // pale ground and a failure on a dark one.
+    //
+    // Only reachable when `fg on bg` is itself near 7. A palette with room to
+    // spare cannot get here at all — the `cursor_line vs bg < 1.5` ceiling caps
+    // how far the tint can travel before the text-legibility floor is in
+    // danger. That is why the exemption is narrow enough to be worth making.
+    let failed_on_cursor_line = |theme: &ThemeColors| {
+        audit(theme)
+            .iter()
+            .any(|f| f.starts_with("fg on cursor_line_bg"))
+    };
+
+    // Catppuccin Latte's real values: body text at 7.06, so any tint at all
+    // costs more than the dark floor allows.
+    let mut pale = light_fixture();
+    pale.fg = Color::Rgb(0x4c, 0x4f, 0x69);
+    pale.bg = Color::Rgb(0xef, 0xf1, 0xf5);
+    pale.cursor_line_bg = Color::Rgb(0xea, 0xec, 0xf1); // 6.76 against fg
+
+    assert!(
+        !failed_on_cursor_line(&pale),
+        "6.76 clears the 6.5 floor a pale ground gets"
+    );
+
+    let dark = ThemeColors {
+        fg: Color::Rgb(0x9e, 0xa4, 0xac),
+        cursor_line_bg: Color::Rgb(0x17, 0x1c, 0x25), // 6.80 against fg
+        ..ThemeColors::default()
+    };
+
+    assert!(
+        failed_on_cursor_line(&dark),
+        "6.80 misses the 7.0 floor a dark ground keeps — a dark palette has \
+         somewhere else to go, so it does not get the exemption"
+    );
+}
