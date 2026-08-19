@@ -235,7 +235,7 @@ fn parse_palette(table: &toml::Table) -> Result<BTreeMap<String, Color>> {
 /// Destructured exhaustively and without `..` on purpose: a field added to
 /// `ThemeColors` fails to compile here until it is given a name, which is what
 /// stops a new colour from being unreachable from a theme file.
-fn ui_pairs(colors: &ThemeColors) -> [(&'static str, Color); 24] {
+pub(crate) fn ui_pairs(colors: &ThemeColors) -> [(&'static str, Color); 24] {
     let ThemeColors {
         fg,
         bg,
