@@ -4,17 +4,10 @@
 //! palette brought down to something it can, and that decision has to be made
 //! once at startup rather than per cell.
 
-/// How many colours the terminal can be asked for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Depth {
-    /// 24-bit. Themes render as written.
-    TrueColor,
-    /// The 6×6×6 cube plus the grey ramp. Every theme colour is quantised.
-    Ansi256,
-    /// The sixteen the user's terminal defines. TYPE cannot tune these at all —
-    /// whatever "blue" means here is whatever they set it to.
-    Ansi16,
-}
+/// Re-exported so callers detecting a depth and callers degrading a palette
+/// name the same type. The enum lives in `typ-core` beside the degradation that
+/// consumes it, because `typ-core` cannot depend on this crate.
+pub use typ_core::Depth;
 
 /// Decide from the two variables that carry the answer.
 ///
@@ -46,15 +39,22 @@ pub fn depth_from(colorterm: Option<&str>, term: Option<&str>) -> Depth {
     let claims_truecolor = colorterm.is_some_and(|value| {
         value.eq_ignore_ascii_case("truecolor") || value.eq_ignore_ascii_case("24bit")
     });
-    if claims_truecolor {
+    // terminfo's convention for a direct-colour entry: `xterm-direct`,
+    // `konsole-direct`, `vte-direct`. Unlike a `256color` suffix this is an
+    // unambiguous 24-bit claim, and it is the one thing `TERM` says about colour
+    // that can be relied on.
+    let direct_colour_entry = term.is_some_and(|value| value.contains("-direct"));
+
+    if claims_truecolor || direct_colour_entry {
         return Depth::TrueColor;
     }
 
-    if term.is_some_and(|value| value.contains("256color")) {
-        return Depth::Ansi256;
-    }
-
-    Depth::Ansi16
+    // Everything else, including "nothing set at all". 256 is the floor rather
+    // than a 16-colour path, because there is no sane mapping onto the sixteen —
+    // see `typ_core::colour::downgrade`. A terminal that cannot manage 256
+    // cannot manage the rest of this editor either, so there is nothing below
+    // this to fall back to.
+    Depth::Ansi256
 }
 
 /// The only thing here that reads the environment.

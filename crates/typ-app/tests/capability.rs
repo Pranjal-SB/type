@@ -32,6 +32,20 @@ fn colorterm_outranks_term() {
 }
 
 #[test]
+fn a_direct_colour_terminfo_entry_is_a_truecolor_claim() {
+    // terminfo's `-direct` entries mean 24-bit, and unlike a `256color` suffix
+    // that is unambiguous. It is the one thing TERM says about colour worth
+    // acting on.
+    for term in ["xterm-direct", "konsole-direct", "vte-direct"] {
+        assert_eq!(
+            depth_from(None, Some(term)),
+            Depth::TrueColor,
+            "TERM={term} is a direct-colour entry"
+        );
+    }
+}
+
+#[test]
 fn a_256_colour_term_without_colorterm_gets_256() {
     for term in ["xterm-256color", "screen-256color", "tmux-256color"] {
         assert_eq!(
@@ -43,17 +57,21 @@ fn a_256_colour_term_without_colorterm_gets_256() {
 }
 
 #[test]
-fn anything_else_falls_back_to_the_sixteen() {
-    assert_eq!(depth_from(None, Some("dumb")), Depth::Ansi16);
-    assert_eq!(depth_from(None, Some("xterm")), Depth::Ansi16);
-    assert_eq!(depth_from(None, Some("vt100")), Depth::Ansi16);
+fn a_terminal_that_advertises_nothing_still_gets_256() {
+    // 256 is the floor, not a fallback to something smaller. There is no
+    // 16-colour depth to fall back *to*: nothing maps twenty-four designed
+    // colours onto seven hues at two lightnesses without breaking somewhere,
+    // and a terminal that cannot do 256 cannot do the rest of this editor.
+    assert_eq!(depth_from(None, Some("dumb")), Depth::Ansi256);
+    assert_eq!(depth_from(None, Some("xterm")), Depth::Ansi256);
+    assert_eq!(depth_from(None, Some("vt100")), Depth::Ansi256);
 }
 
 #[test]
 fn nothing_set_at_all_is_the_safe_answer() {
     // A cron job, a CI runner, a pipe. Claiming 24-bit here and being wrong
-    // produces a screen of escape sequences.
-    assert_eq!(depth_from(None, None), Depth::Ansi16);
+    // produces a screen of escape sequences; claiming 256 does not.
+    assert_eq!(depth_from(None, None), Depth::Ansi256);
 }
 
 #[test]
@@ -62,7 +80,7 @@ fn an_empty_colorterm_is_not_a_claim() {
     // says nothing. Treating it as truthy is how a 16-colour terminal gets sent
     // 24-bit sequences.
     assert_eq!(depth_from(Some(""), Some("xterm-256color")), Depth::Ansi256);
-    assert_eq!(depth_from(Some(""), None), Depth::Ansi16);
+    assert_eq!(depth_from(Some(""), None), Depth::Ansi256);
 }
 
 #[test]
@@ -73,5 +91,5 @@ fn an_unrecognised_colorterm_value_does_not_claim_truecolor() {
         depth_from(Some("rxvt-xpm"), Some("xterm-256color")),
         Depth::Ansi256
     );
-    assert_eq!(depth_from(Some("gnome-terminal"), None), Depth::Ansi16);
+    assert_eq!(depth_from(Some("gnome-terminal"), None), Depth::Ansi256);
 }

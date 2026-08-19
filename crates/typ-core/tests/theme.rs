@@ -522,3 +522,38 @@ fn the_cursor_line_floor_follows_the_ground() {
          somewhere else to go, so it does not get the exemption"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The same rules, after the palette has been quantised
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_colour_lands_on_the_nearest_thing_the_cube_can_say() {
+    // The page background, which is the hardest class of colour to quantise:
+    // near-black, slightly blue, and sitting in the part of RGB space where
+    // equal numeric steps are least equal perceptually.
+    assert_eq!(
+        typ_core::downgrade(Color::Rgb(0x10, 0x14, 0x1b), typ_core::Depth::Ansi256),
+        Color::Rgb(0x12, 0x12, 0x12),
+        "index 233 on the grey ramp is the closest the 256-colour set gets"
+    );
+}
+
+#[test]
+fn truecolor_leaves_a_palette_exactly_as_written() {
+    let theme = ThemeColors::default();
+    assert_eq!(
+        typ_core::colour::downgrade_theme(&theme, typ_core::Depth::TrueColor),
+        theme
+    );
+}
+
+#[test]
+fn the_shipped_palette_still_reads_at_256_colours() {
+    // Nobody in the field checks this, so nobody knows whether their theme is
+    // legible on a 256-colour terminal. The rubric is the same; only the
+    // palette has changed underneath it.
+    let degraded =
+        typ_core::colour::downgrade_theme(&ThemeColors::default(), typ_core::Depth::Ansi256);
+    assert_clean("the default theme at 256 colours", &degraded);
+}

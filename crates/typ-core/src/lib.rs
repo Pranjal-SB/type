@@ -1,10 +1,12 @@
 pub mod action;
+pub mod colour;
 pub mod event;
 pub mod key;
 pub mod keymap;
 pub mod panel;
 
 pub use action::{Action, Direction, Motion};
+pub use colour::{Depth, downgrade};
 pub use event::{AppEvent, HandlerId, NotifyLevel, PanelEvent, PanelId};
 pub use key::KeyChord;
 pub use keymap::Keymap;
