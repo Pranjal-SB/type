@@ -76,6 +76,7 @@ fn light_fixture() -> ThemeColors {
         // Darker than the unfocused border, for the same reason.
         border_focused: Color::Rgb(0x1f, 0x5f, 0xa8),
 
+        chrome_bg: Color::Rgb(0xf0, 0xf0, 0xed),
         status_bar_bg: Color::Rgb(0xf0, 0xf0, 0xed),
         status_bar_fg: Color::Rgb(0x1a, 0x1c, 0x20),
         status_bar_inactive_fg: Color::Rgb(0x5f, 0x62, 0x68),

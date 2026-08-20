@@ -99,6 +99,18 @@ pub struct ThemeColors {
     pub bracket_match_fg: Color,
     pub bracket_match_bg: Color,
 
+    /// The surface chrome sits on: the sidebar, and anything else that frames
+    /// the work rather than being it.
+    ///
+    /// **Distinct from `bg` on purpose.** The tree, the gutter and the editor
+    /// were all `bg`, so three regions shared one colour and no amount of
+    /// border made them read as separate things. Chrome is raised, content is
+    /// the floor — the same two levels the status bar was already using alone.
+    ///
+    /// The gutter stays on `bg`: it is content, not chrome, and it has its own
+    /// reason recorded on `gutter_bg`.
+    pub chrome_bg: Color,
+
     pub border: Color,
     pub border_focused: Color,
 
@@ -144,6 +156,12 @@ impl Default for ThemeColors {
 
             bracket_match_fg: p::AMBER,
             bracket_match_bg: p::AMBER_DEEP,
+
+            // The same step the status bar uses. Chrome is one surface, not a
+            // ladder of them: a third level would have to be `base01`, which is
+            // the cursor-line tint, and a sidebar the exact colour of the
+            // current-line stripe is a collision waiting to confuse.
+            chrome_bg: p::BASE_02,
 
             border: p::BASE_03,
             border_focused: p::ACCENT,

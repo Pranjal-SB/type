@@ -63,6 +63,11 @@ selection_primary_bg = "select_primary"
 bracket_match_fg = "amber"
 bracket_match_bg = "amber_deep"
 
+# Chrome sits one surface above the page: the sidebar and the status bar share
+# it, and the editor keeps base00. Three regions in one colour is why the tree
+# and the editor used to read as a single space no matter what the border did.
+chrome_bg = "base02"
+
 border = "base03"
 border_focused = "accent"
 

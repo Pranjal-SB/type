@@ -242,19 +242,32 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         theme.tree_file_fg,
         "the tree has to distinguish directories from files",
     );
+    // Against `chrome_bg`, not `bg`: the sidebar draws on the raised surface,
+    // and an audit checking the wrong background is worse than no audit — it
+    // reports a ratio nobody ever sees.
     at_least(
         &mut bad,
-        "tree_directory_fg on bg",
+        "tree_directory_fg on chrome_bg",
         theme.tree_directory_fg,
-        theme.bg,
+        theme.chrome_bg,
         4.5,
     );
     at_least(
         &mut bad,
-        "tree_file_fg on bg",
+        "tree_file_fg on chrome_bg",
         theme.tree_file_fg,
-        theme.bg,
+        theme.chrome_bg,
         4.5,
+    );
+    // And the surface has to actually be a surface. Chrome and content sharing
+    // one colour is the defect this field exists to fix, and a theme that sets
+    // them equal has silently undone it.
+    differ(
+        &mut bad,
+        "chrome_bg vs bg",
+        theme.chrome_bg,
+        theme.bg,
+        "chrome and content have to be tellable apart",
     );
 
     for (name, colour) in [

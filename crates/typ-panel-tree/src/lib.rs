@@ -186,7 +186,11 @@ impl Panel for TreePanel {
     }
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, ctx: &RenderContext) {
-        typ_core::chrome::frame(area, buf, &self.title(), ctx, ctx.theme.bg);
+        // The sidebar is chrome, not content: it frames the work rather than
+        // being it, so it sits on the raised surface with the status bar and
+        // leaves `bg` to the editor. Before this the tree, the gutter and the
+        // editor were all one colour and no border made them read as separate.
+        typ_core::chrome::frame(area, buf, &self.title(), ctx, ctx.theme.chrome_bg);
         let inner = Self::list_area(area);
 
         self.height = inner.height as usize;
@@ -226,7 +230,7 @@ impl Panel for TreePanel {
             })
             .collect();
         Paragraph::new(lines)
-            .style(Style::default().bg(ctx.theme.bg))
+            .style(Style::default().bg(ctx.theme.chrome_bg))
             .render(inner, buf);
     }
 
