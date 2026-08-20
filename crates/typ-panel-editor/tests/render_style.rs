@@ -75,13 +75,39 @@ fn other_lines_are_left_alone() {
 }
 
 #[test]
-fn the_highlight_stops_at_the_gutter() {
+fn the_highlight_runs_the_whole_row_including_the_gutter() {
+    // **This reverses an earlier decision, deliberately.** The rule used to be
+    // that the tint stopped at the gutter, on the argument that the current
+    // line's number is already brightened and tinting its background too is
+    // "two answers to one question".
+    //
+    // That argument is about redundant *signals*, and it holds. What it misses
+    // is that a background tint is not a signal, it is a shape: its job is to
+    // say which row the caret is on, and a band that begins three cells in does
+    // not draw a row, it draws a rectangle floating inside one. Seen on a real
+    // terminal rather than in an assertion, that reads as a rendering fault —
+    // the same ragged-edge complaint `the_cursors_line_is_tinted_across_the_
+    // whole_text_width` already fixed at the right-hand end, arriving from the
+    // left.
+    //
+    // The number keeps its brighter foreground. Two answers, but to two
+    // different questions: the colour says "this line", the shape says "this
+    // row".
     let theme = ThemeColors::default();
     let mut panel = EditorPanel::from_str("ab\ncd\n");
     let buf = render(&mut panel, AREA);
-    // The line number already marks the current line in the gutter; tinting it
-    // as well is two answers to one question.
-    assert_eq!(buf[(1, ty(0))].bg, theme.gutter_bg);
+
+    // Every cell from the frame's edge to the end of the text.
+    for x in 1..AREA.width - 1 {
+        assert_eq!(
+            buf[(x, ty(0))].bg,
+            theme.cursor_line_bg,
+            "column {x} of the cursor's row should be tinted"
+        );
+    }
+    // And the row below, which has no caret, keeps the gutter's own background
+    // — otherwise the tint says nothing.
+    assert_eq!(buf[(1, ty(1))].bg, theme.gutter_bg);
 }
 
 #[test]

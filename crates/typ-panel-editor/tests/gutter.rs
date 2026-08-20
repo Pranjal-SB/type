@@ -8,7 +8,7 @@
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use typ_buffer::Position;
+use typ_buffer::{Position, Selection};
 use typ_core::{Panel, RenderContext, ThemeColors};
 use typ_panel_editor::EditorPanel;
 use typ_panel_editor::gutter::{Gutter, GutterComponent};
@@ -249,4 +249,20 @@ fn relative_numbering_is_off_by_default() {
         .content
         .to_string();
     assert_eq!(absolute.trim(), "4");
+}
+
+#[test]
+fn a_line_carrying_a_selection_does_not_tint_its_gutter() {
+    // The text does not tint a line that has a real selection on it — the
+    // selection already says where the user is. The gutter has to agree, or the
+    // number lights up on a row whose text stayed plain.
+    let mut panel = EditorPanel::from_str("alpha\nbeta\n");
+    let theme = ThemeColors::default();
+    panel.set_selections_for_test(vec![Selection {
+        anchor: Position { line: 0, col: 0 },
+        head: Position { line: 0, col: 3 },
+    }]);
+    let buf = render(&mut panel, Rect::new(0, 0, 30, 6));
+
+    assert_eq!(buf[(1, 1)].bg, theme.gutter_bg);
 }

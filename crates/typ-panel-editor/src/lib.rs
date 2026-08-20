@@ -228,6 +228,20 @@ impl EditorPanel {
         self.gutter.width(self.buffer.line_count())
     }
 
+    /// A line with a caret on it and nothing selected.
+    ///
+    /// The only lines that take the current-line tint. A method rather than a
+    /// condition written twice, because the gutter and the text both need it
+    /// and two copies would drift: a line carrying a selection is deliberately
+    /// *not* tinted — the selection already says where the user is — and a
+    /// gutter that forgot would light the number on a row whose text stayed
+    /// plain.
+    pub(crate) fn is_cursor_line(&self, line: usize) -> bool {
+        self.selections
+            .iter()
+            .any(|s| s.is_empty() && s.head.line == line)
+    }
+
     /// The area inside the border, before the gutter is taken out of it.
     fn inner_area(area: Rect) -> Rect {
         Block::bordered().inner(area)
@@ -458,10 +472,19 @@ impl Panel for EditorPanel {
         // the code and leaves the numbers standing.
         let gutter_lines: Vec<Line> = (self.top_line..end)
             .map(|i| {
-                Line::from(
-                    self.gutter
-                        .render_line(i, cursor_line, line_count, ctx.theme),
-                )
+                let line =
+                    Line::from(
+                        self.gutter
+                            .render_line(i, cursor_line, line_count, ctx.theme),
+                    );
+                // The same predicate the text uses, so the tint cannot cover one
+                // and miss the other. The spans carry a foreground only, so a
+                // background set here survives underneath them.
+                if self.is_cursor_line(i) {
+                    line.style(Style::default().bg(ctx.theme.cursor_line_bg))
+                } else {
+                    line
+                }
             })
             .collect();
         Paragraph::new(gutter_lines)
@@ -488,10 +511,7 @@ impl Panel for EditorPanel {
             .map(|i| {
                 // Only carets tint their line; a line carrying a real selection
                 // is already saying where the user is.
-                let cursor_line = self
-                    .selections
-                    .iter()
-                    .any(|s| s.is_empty() && s.head.line == i);
+                let cursor_line = self.is_cursor_line(i);
                 let style = crate::render::LineStyle {
                     line: i,
                     left_col,
