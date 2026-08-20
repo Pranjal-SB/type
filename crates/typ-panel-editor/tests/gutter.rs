@@ -86,12 +86,12 @@ fn line_numbers_start_at_one() {
     let mut panel = EditorPanel::from_str("alpha\nbeta\n");
     let buf = render(&mut panel, AREA);
     assert!(
-        row(&buf, 1).starts_with(" 1 alpha"),
+        row(&buf, 1).starts_with("│1 alpha"),
         "row 1 was: {}",
         row(&buf, 1)
     );
     assert!(
-        row(&buf, 2).starts_with(" 2 beta"),
+        row(&buf, 2).starts_with("│2 beta"),
         "row 2 was: {}",
         row(&buf, 2)
     );
@@ -104,7 +104,7 @@ fn numbers_are_right_aligned_so_the_text_edge_stays_straight() {
     let buf = render(&mut panel, AREA);
     // Two-digit file: line 1 pads to " 1", line 10 does not pad.
     assert!(
-        row(&buf, 1).starts_with("  1 line 1"),
+        row(&buf, 1).starts_with("│ 1 line 1"),
         "row 1 was: {}",
         row(&buf, 1)
     );
@@ -137,7 +137,7 @@ fn the_number_column_does_not_scroll_sideways_with_the_text() {
     let buf = render(&mut panel, AREA);
     assert!(panel.left_col() > 0, "the text must have scrolled");
     assert!(
-        row(&buf, 1).starts_with(" 1 "),
+        row(&buf, 1).starts_with("│1 "),
         "the gutter is fixed furniture, not part of the scrolled text: {}",
         row(&buf, 1)
     );

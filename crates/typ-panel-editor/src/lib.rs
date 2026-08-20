@@ -442,7 +442,7 @@ impl Panel for EditorPanel {
     }
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, ctx: &RenderContext) {
-        typ_core::chrome::bracket(area, buf, &self.title(), ctx);
+        typ_core::chrome::frame(area, buf, &self.title(), ctx, ctx.theme.bg);
 
         let text_area = self.text_area(area);
         let gutter_area = self.gutter_area(area);

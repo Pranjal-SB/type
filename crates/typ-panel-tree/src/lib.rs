@@ -186,7 +186,7 @@ impl Panel for TreePanel {
     }
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, ctx: &RenderContext) {
-        typ_core::chrome::bracket(area, buf, &self.title(), ctx);
+        typ_core::chrome::frame(area, buf, &self.title(), ctx, ctx.theme.bg);
         let inner = Self::list_area(area);
 
         self.height = inner.height as usize;

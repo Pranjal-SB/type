@@ -680,8 +680,6 @@ impl App {
             terminal_width: w,
             terminal_height: h,
         };
-        self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
-
         let editor_ctx = RenderContext {
             theme: &self.theme,
             is_focused: self.focus == Focus::Editor,
@@ -689,8 +687,26 @@ impl App {
             terminal_width: w,
             terminal_height: h,
         };
-        self.editor
-            .render(editor_area, frame.buffer_mut(), &editor_ctx);
+
+        // The focused panel draws last.
+        //
+        // The two rects share a column — see `layout::split` — so one cell
+        // carries both panels' border, and a shared border cannot be two
+        // colours. Drawing the focused panel second gives that cell its colour,
+        // which is the right answer: the focused panel's box is the complete
+        // one, and the unfocused panel is the one that gives ground.
+        match self.focus {
+            Focus::Editor => {
+                self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
+                self.editor
+                    .render(editor_area, frame.buffer_mut(), &editor_ctx);
+            }
+            Focus::Tree => {
+                self.editor
+                    .render(editor_area, frame.buffer_mut(), &editor_ctx);
+                self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
+            }
+        }
 
         self.render_status(status_area, frame.buffer_mut());
 

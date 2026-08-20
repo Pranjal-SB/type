@@ -40,7 +40,7 @@ fn a_short_line_is_not_scrolled() {
     let mut p = EditorPanel::from_str("abc\n");
     let buf = render(&mut p, AREA);
     assert_eq!(p.left_col(), 0);
-    assert_eq!(row(&buf, 1), " 1 abc      ");
+    assert_eq!(row(&buf, 1), "│1 abc     │");
 }
 
 #[test]
