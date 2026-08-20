@@ -8,7 +8,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Paragraph, Widget};
+use ratatui::widgets::{Paragraph, Widget};
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
 
 /// One visible row of the tree.
@@ -127,9 +127,9 @@ impl TreePanel {
         }
     }
 
-    /// The list area inside the panel's border.
+    /// The list area inside the panel's frame.
     fn list_area(area: Rect) -> Rect {
-        Block::bordered().inner(area)
+        typ_core::chrome::inner(area)
     }
 }
 
@@ -186,16 +186,8 @@ impl Panel for TreePanel {
     }
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, ctx: &RenderContext) {
-        let border = if ctx.is_focused {
-            ctx.theme.border_focused
-        } else {
-            ctx.theme.border
-        };
-        let block = Block::bordered()
-            .border_style(Style::default().fg(border))
-            .title(self.title());
-        let inner = block.inner(area);
-        block.render(area, buf);
+        typ_core::chrome::bracket(area, buf, &self.title(), ctx);
+        let inner = Self::list_area(area);
 
         self.height = inner.height as usize;
         let end = (self.top_line + self.height).min(self.entries.len());

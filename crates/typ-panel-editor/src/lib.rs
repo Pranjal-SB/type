@@ -7,7 +7,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Paragraph, Widget};
+use ratatui::widgets::{Paragraph, Widget};
 use typ_buffer::{
     EditKind, LineEnding, Position, SearchQuery, Selection, Selections, TextBuffer,
     display_to_grapheme_col, grapheme_to_display_col,
@@ -242,9 +242,9 @@ impl EditorPanel {
             .any(|s| s.is_empty() && s.head.line == line)
     }
 
-    /// The area inside the border, before the gutter is taken out of it.
+    /// The area inside the frame, before the gutter is taken out of it.
     fn inner_area(area: Rect) -> Rect {
-        Block::bordered().inner(area)
+        typ_core::chrome::inner(area)
     }
 
     /// The text area: inside the border, and to the right of the gutter.
@@ -442,15 +442,7 @@ impl Panel for EditorPanel {
     }
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, ctx: &RenderContext) {
-        let border = if ctx.is_focused {
-            ctx.theme.border_focused
-        } else {
-            ctx.theme.border
-        };
-        let block = Block::bordered()
-            .border_style(Style::default().fg(border))
-            .title(self.title());
-        block.render(area, buf);
+        typ_core::chrome::bracket(area, buf, &self.title(), ctx);
 
         let text_area = self.text_area(area);
         let gutter_area = self.gutter_area(area);

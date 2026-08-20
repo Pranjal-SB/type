@@ -1,5 +1,6 @@
 pub mod action;
 pub mod audit;
+pub mod chrome;
 pub mod colour;
 pub mod event;
 pub mod key;
