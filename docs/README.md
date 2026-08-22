@@ -1,7 +1,7 @@
 ---
 type: index
 status: living
-verified: 2026-08-16
+verified: 2026-08-22
 ---
 
 # TYPE documentation
@@ -13,6 +13,7 @@ fixed. Each carries a `verified` date saying when that was last checked.
 |---|---|
 | [`design/architecture.md`](design/architecture.md) | The spec. Goals, invariants, budgets, the panel contract, milestones. Deviating from it needs a stated reason. |
 | [`design/gap-analysis.md`](design/gap-analysis.md) | Known defects, and how TYPE measures against other editors. Re-run at each milestone. |
+| [`design/themes.md`](design/themes.md) | The theme format, the 25 slots, and the contrast rubric every palette is measured against. |
 | [`releasing.md`](releasing.md) | Cutting a release: the close-out, the tag, and the order the seven crates publish in. |
 
 The roadmap lives in the [README](../README.md). Per-milestone task lists are working documents
