@@ -123,3 +123,42 @@ fn the_status_bar_marks_an_unsaved_buffer() {
     let app = app_with_edits("marker");
     assert!(app.status_right().contains('*'));
 }
+
+/// `Spaces: 2` has to mean two spaces were measured, not that the number four
+/// was replaced by a different constant.
+#[test]
+fn the_status_bar_states_the_width_the_file_uses() {
+    let dir = fixture("indent-detected");
+    std::fs::write(
+        dir.join("two.rs"),
+        "fn main() {\n  let a = 1;\n  if a {\n    b();\n  }\n}\n",
+    )
+    .unwrap();
+    let mut app = App::new(&dir).unwrap();
+    app.open_path(&dir.join("two.rs")).unwrap();
+
+    assert!(
+        app.status_right().contains("Spaces: 2"),
+        "status: {}",
+        app.status_right()
+    );
+}
+
+#[test]
+fn a_configured_indent_width_wins_over_the_measurement() {
+    let dir = fixture("indent-override");
+    std::fs::write(
+        dir.join("two.rs"),
+        "fn main() {\n  let a = 1;\n  if a {\n    b();\n  }\n}\n",
+    )
+    .unwrap();
+    let mut app = App::new(&dir).unwrap();
+    app.set_indent_width(Some(8));
+    app.open_path(&dir.join("two.rs")).unwrap();
+
+    assert!(
+        app.status_right().contains("Spaces: 8"),
+        "the setting has to survive opening a file, status: {}",
+        app.status_right()
+    );
+}

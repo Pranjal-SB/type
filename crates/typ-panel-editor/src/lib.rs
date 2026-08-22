@@ -21,13 +21,20 @@ pub mod render;
 
 use crate::gutter::Gutter;
 
-/// Columns a tab occupies, and the width one level of indent inserts.
+/// The width to use when the file will not say.
 ///
-/// Public because the status bar states it on screen — `Spaces: 4` — and a
-/// value shown to the user that the shower has to guess at is how the shown
-/// value and the real one drift apart. `.editorconfig` and indent detection at
-/// M2.5 replace the constant, not its readers.
-pub const TAB_WIDTH: usize = 4;
+/// Not public any more, and not read by anything outside this crate: what the
+/// status bar states on screen is `EditorPanel::tab_width`, which is what the
+/// editor is actually using. A constant readable from outside is a constant
+/// somebody displays instead of the measurement.
+const FALLBACK_TAB_WIDTH: usize = 4;
+
+/// Lines the indent scan reads before it settles for what it has.
+///
+/// VS Code's number. Detection runs once per file open and a cold start has a
+/// 100 ms budget, so the cap is what keeps opening a generated 400k-line file
+/// from costing the same as opening a source file.
+const INDENT_SCAN_LINES: usize = 10_000;
 
 /// Lines beyond the viewport a bracket search may walk before giving up.
 ///
@@ -62,6 +69,11 @@ pub struct EditorPanel {
     /// The gutter. Owned by the panel because its width is a function of this
     /// buffer's line count, and that width narrows the text area.
     pub(crate) gutter: Gutter,
+    /// Columns a tab occupies, and the width one level of indent inserts.
+    ///
+    /// Measured from the buffer at load and settled there: re-measuring as the
+    /// user types would let deleting a line change what Tab does.
+    pub(crate) tab_width: usize,
 }
 
 impl EditorPanel {
@@ -82,8 +94,10 @@ impl EditorPanel {
     }
 
     fn new(buffer: TextBuffer) -> Self {
+        let tab_width = typ_buffer::detect_indent_width(buffer.lines_str(INDENT_SCAN_LINES))
+            .unwrap_or(FALLBACK_TAB_WIDTH);
         Self {
-            buffer,
+            tab_width,
             selections: Selections::default(),
             top_line: 0,
             left_col: 0,
@@ -93,7 +107,21 @@ impl EditorPanel {
             drag_anchor: None,
             last_click: None,
             gutter: Gutter::default(),
+            buffer,
         }
+    }
+
+    /// The indent width in force, measured from the file unless overridden.
+    pub fn tab_width(&self) -> usize {
+        self.tab_width
+    }
+
+    /// Override the measurement — `indent_width` in `config.toml`.
+    ///
+    /// A heuristic can be wrong on a file that mixes units, and the user needs
+    /// somewhere to say so that is not "edit the file until it agrees".
+    pub fn set_tab_width(&mut self, width: usize) {
+        self.tab_width = width.max(1);
     }
 
     pub fn selections(&self) -> &Selections {
@@ -311,7 +339,7 @@ impl EditorPanel {
     /// The display column a cursor sits at, tabs expanded.
     fn cursor_display_col(&self, cursor: Position) -> usize {
         self.buffer.with_line_str(cursor.line, |line| {
-            grapheme_to_display_col(line, cursor.col, TAB_WIDTH)
+            grapheme_to_display_col(line, cursor.col, self.tab_width)
         })
     }
 
@@ -508,7 +536,7 @@ impl Panel for EditorPanel {
                     line: i,
                     left_col,
                     width: text_width,
-                    tab_width: TAB_WIDTH,
+                    tab_width: self.tab_width,
                     selections: &selections,
                     primary,
                     cursor_line,
@@ -569,9 +597,9 @@ impl Panel for EditorPanel {
             let line = (panel.top_line + row).min(panel.last_line());
             Position {
                 line,
-                col: panel
-                    .buffer
-                    .with_line_str(line, |text| display_to_grapheme_col(text, col, TAB_WIDTH)),
+                col: panel.buffer.with_line_str(line, |text| {
+                    display_to_grapheme_col(text, col, panel.tab_width)
+                }),
             }
         };
 

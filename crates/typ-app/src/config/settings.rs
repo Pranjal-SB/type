@@ -21,6 +21,12 @@ pub struct Settings {
     /// separates a tmux configured to forward truecolor from one that mangles
     /// it, so the answer is a setting rather than a cleverer guess.
     pub color_depth: Option<Depth>,
+    /// Indent width, overriding what the open file measures as.
+    ///
+    /// `None` means measure it. Detection is a heuristic and a file that mixes
+    /// units can defeat it, so there has to be somewhere to state the answer
+    /// that is not "edit the file until the heuristic agrees".
+    pub indent_width: Option<usize>,
 }
 
 impl Default for Settings {
@@ -28,6 +34,7 @@ impl Default for Settings {
         Self {
             theme: "slate".to_string(),
             color_depth: None,
+            indent_width: None,
         }
     }
 }
@@ -74,6 +81,15 @@ pub fn load_settings(path: Option<&Path>) -> (Settings, Option<String>) {
                 Some(depth) => settings.color_depth = Some(depth),
                 None => complaints.push(format!(
                     "color_depth {value} is not \"truecolor\" or \"256\""
+                )),
+            },
+            // Zero is a width nothing can insert, so it is rejected rather
+            // than clamped: a setting that appears to take effect and does
+            // not is worse than one that says it was ignored.
+            "indent_width" => match value.as_integer().filter(|n| (1..=16).contains(n)) {
+                Some(width) => settings.indent_width = Some(width as usize),
+                None => complaints.push(format!(
+                    "indent_width {value} is not a whole number of columns from 1 to 16"
                 )),
             },
             other => complaints.push(format!("{other} is not a setting this editor has")),

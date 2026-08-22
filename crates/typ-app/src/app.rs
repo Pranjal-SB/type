@@ -65,6 +65,11 @@ pub struct App {
     ///
     /// Starts true: the first frame has to be painted.
     dirty: bool,
+    /// `indent_width` from `config.toml`, if it was set.
+    ///
+    /// Held here rather than pushed into the editor once, because opening a
+    /// file builds a new `EditorPanel` and the setting has to survive that.
+    indent_width: Option<usize>,
 }
 
 /// Between status segments. Two spaces rather than a glyph separator: a
@@ -95,6 +100,7 @@ impl App {
             sender: None,
             watch: None,
             dirty: true,
+            indent_width: None,
         })
     }
 
@@ -217,7 +223,7 @@ impl App {
             modified: self.editor.is_dirty(),
             file_type: file_type.as_deref(),
             line_ending: self.editor.line_ending().label(),
-            indent_width: typ_panel_editor::TAB_WIDTH,
+            indent_width: self.editor.tab_width(),
             selection_count: self.editor.selections().len(),
             line: cursor.line,
             col: cursor.col,
@@ -319,6 +325,7 @@ impl App {
         } else {
             EditorPanel::new_at(path)
         };
+        self.apply_indent_width();
         self.focus = Focus::Editor;
         self.open_pending = None;
         self.rewatch();
@@ -327,6 +334,18 @@ impl App {
 
     pub fn keymap(&self) -> &Keymap {
         &self.keymap
+    }
+
+    /// The configured indent width, or `None` to measure each file.
+    pub fn set_indent_width(&mut self, width: Option<usize>) {
+        self.indent_width = width;
+        self.apply_indent_width();
+    }
+
+    fn apply_indent_width(&mut self) {
+        if let Some(width) = self.indent_width {
+            self.editor.set_tab_width(width);
+        }
     }
 
     pub fn set_keymap(&mut self, keymap: Keymap) {

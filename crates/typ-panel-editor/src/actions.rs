@@ -12,7 +12,7 @@ use typ_buffer::{
 };
 use typ_core::{Action, Direction, Motion, PanelEvent};
 
-use crate::{EditorPanel, TAB_WIDTH};
+use crate::EditorPanel;
 
 impl EditorPanel {
     /// Move one selection according to a motion.
@@ -140,10 +140,10 @@ impl EditorPanel {
     /// Vertical movement, preserving the goal column through short lines.
     fn vertical(&self, from: Position, delta: i64) -> Position {
         let goal = self.goal_col.unwrap_or_else(|| {
-            grapheme_to_display_col(&self.buffer.line_text(from.line), from.col, TAB_WIDTH)
+            grapheme_to_display_col(&self.buffer.line_text(from.line), from.col, self.tab_width)
         });
         let line = (from.line as i64 + delta).clamp(0, self.last_line() as i64) as usize;
-        let col = display_to_grapheme_col(&self.buffer.line_text(line), goal, TAB_WIDTH);
+        let col = display_to_grapheme_col(&self.buffer.line_text(line), goal, self.tab_width);
         Position { line, col }
     }
 
@@ -238,6 +238,8 @@ impl EditorPanel {
     /// without a shift map — the edits are disjoint and each sits at the start
     /// of its own line, which is a much smaller problem than the general one.
     fn shift_lines(&mut self, indent: bool) -> Option<Vec<PanelEvent>> {
+        // Copied out so the per-line closure below borrows only the buffer.
+        let tab_width = self.tab_width;
         let mut lines: Vec<usize> = Vec::new();
         for selection in self.selections.iter() {
             let (start, end) = selection.range();
@@ -264,14 +266,14 @@ impl EditorPanel {
                     if text.trim().is_empty() {
                         return 0;
                     }
-                    TAB_WIDTH as isize
+                    tab_width as isize
                 } else if text.starts_with('\t') {
                     -1
                 } else {
                     // A partial level goes to zero rather than to minus one.
                     -(text
                         .chars()
-                        .take(TAB_WIDTH)
+                        .take(tab_width)
                         .take_while(|c| *c == ' ')
                         .count() as isize)
                 }
@@ -364,7 +366,7 @@ impl EditorPanel {
                         self.goal_col = Some(grapheme_to_display_col(
                             &self.buffer.line_text(cursor.line),
                             cursor.col,
-                            TAB_WIDTH,
+                            self.tab_width,
                         ));
                     }
                 } else {
@@ -634,17 +636,19 @@ impl EditorPanel {
             // means — and inserting there would replace the selection instead.
             Action::Indent => {
                 if self.selections.iter().all(Selection::is_empty) {
+                    // Copied out: the closure runs while `self` is borrowed.
+                    let tab_width = self.tab_width;
                     self.edit_at_each_selection(EditKind::Other, |selection, buffer| {
                         let head = selection.head;
                         // From the *display* column, so a line containing tabs
                         // lands on the same stop the renderer draws.
                         let display = buffer.with_line_str(head.line, |line| {
-                            grapheme_to_display_col(line, head.col, TAB_WIDTH)
+                            grapheme_to_display_col(line, head.col, tab_width)
                         });
                         Edit {
                             start: head,
                             end: head,
-                            text: " ".repeat(TAB_WIDTH - (display % TAB_WIDTH)),
+                            text: " ".repeat(tab_width - (display % tab_width)),
                         }
                     })
                 } else {

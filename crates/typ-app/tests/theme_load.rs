@@ -164,6 +164,36 @@ fn an_unknown_colour_depth_warns_and_leaves_it_to_detection() {
 }
 
 #[test]
+fn the_indent_width_can_be_stated_instead_of_measured() {
+    // Detection is a heuristic and a file that mixes units can defeat it. The
+    // user needs somewhere to say so that is not "edit the file until the
+    // heuristic agrees".
+    let path = write_settings("indent", "indent_width = 2\n");
+    let (settings, warning) = load_settings(Some(&path));
+
+    assert!(warning.is_none(), "{warning:?}");
+    assert_eq!(settings.indent_width, Some(2));
+}
+
+#[test]
+fn no_indent_width_leaves_it_to_the_file() {
+    let (settings, _) = load_settings(None);
+    assert_eq!(settings.indent_width, None, "None means measure it");
+}
+
+#[test]
+fn an_indent_width_of_zero_warns_and_leaves_it_to_detection() {
+    // Zero is a width no editor can insert, and silently treating it as one
+    // would be a setting that appears to take effect and does not.
+    let path = write_settings("indent-zero", "indent_width = 0\n");
+    let (settings, warning) = load_settings(Some(&path));
+
+    let warning = warning.expect("a zero width has to be reported");
+    assert!(warning.contains("indent_width"), "warning: {warning}");
+    assert_eq!(settings.indent_width, None);
+}
+
+#[test]
 fn an_unknown_setting_warns_and_keeps_the_rest() {
     // Unlike a theme file, a stray key here is survivable: the settings that
     // parsed are still the settings the user asked for, and refusing all of

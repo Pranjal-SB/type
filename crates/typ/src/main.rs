@@ -135,6 +135,9 @@ fn real_main() -> Result<()> {
         typ_app::config::load_settings(typ_app::config::settings_path().as_deref());
     complaints.extend(warning);
 
+    // Before any file is opened, so the first one is affected too.
+    app.set_indent_width(settings.indent_width);
+
     let (keymap, warning) = typ_app::config::load_keymap(typ_app::config::config_path().as_deref());
     app.set_keymap(keymap);
     complaints.extend(warning);
