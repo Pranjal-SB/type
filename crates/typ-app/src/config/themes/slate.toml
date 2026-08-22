@@ -8,8 +8,11 @@
 # rather than designed.
 #
 # Contrast is checked rather than eyeballed: typ-core/tests/theme.rs computes
-# WCAG ratios from these values and fails the build if body text drops below
-# 7:1 or the gutter below 3:1.
+# WCAG ratios from these values and fails the build if a role drops below the
+# floor its ground asks for — on a dark page, 11.5:1 for body text, 6.5:1 for
+# content and 5:1 for the gutter. A light theme's floors are lower and that is
+# arithmetic rather than leniency: at equal legibility a dark ground returns
+# about 2.5x the ratio. See docs/design/themes.md.
 
 name = "TYPE Slate"
 kind = "dark"
@@ -20,25 +23,25 @@ base00 = "#10141b"  # the page
 base01 = "#161c25"  # the cursor's line — one step, felt rather than seen
 base02 = "#1a212c"  # raised surfaces: the status bar
 base03 = "#2a3240"  # borders and rules
-base04 = "#5a6a80"  # furniture text: line numbers
-base05 = "#6b7b91"  # quiet content: inactive status segments
+base04 = "#7889a0"  # furniture text: line numbers
+base05 = "#8495ac"  # quiet content: inactive status segments
 base06 = "#a8b3c4"  # secondary content: file names
-base07 = "#c8d0dc"  # body text
+base07 = "#cdd5e1"  # body text
 base08 = "#e6ecf5"  # text on a selection
 
 # The one accent. Focus, links, anything the eye should be drawn to.
-accent = "#4f8cc9"
+accent = "#68a6e4"
 accent_bright = "#7fb3e0"  # the same hue, lifted — directories in the tree
 
 # Selections sit on the accent's hue at two depths, so the primary reads as
 # "the same thing, more so" rather than as a different feature.
-select = "#26364d"
-select_primary = "#35507a"
+select = "#25344b"
+select_primary = "#2b456f"
 
 # Semantic colours, deliberately off the base hue: these mean something, and a
 # reader must not have to decide whether a colour is decoration or information.
-red = "#e06c75"
-amber = "#e5c07b"
+red = "#ec767f"
+amber = "#fcd690"
 amber_deep = "#3a3524"
 teal = "#56b6c2"
 

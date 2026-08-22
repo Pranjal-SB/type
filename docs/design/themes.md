@@ -7,9 +7,9 @@ verified: 2026-08-22
 
 # Themes
 
-A theme is a TOML file. Six ship inside the binary, any number can live in the config
-directory, and every one of them — shipped or not — is measured against the same rubric
-before it is allowed to be a theme.
+A theme is a TOML file. It ships inside the binary or lives in the config directory, and every
+one of them — shipped or not — is measured against the same rubric before it is allowed to be a
+theme. One ships today; five more are being tuned against the rubric and land with M2.5.
 
 Spec: [`architecture.md`](architecture.md) §4 "Clean: one visual system applied uniformly",
 §7 terminal capability detection.
@@ -22,7 +22,7 @@ kind = "dark"          # or "light"
 
 [palette]
 base00 = "#10141b"     # named colours, any names you like
-accent = "#4f8cc9"
+accent = "#68a6e4"
 
 [ui]
 bg = "base00"          # a palette name, or a "#rrggbb" literal
@@ -36,8 +36,9 @@ Three sections and two required scalars. `[palette]` names colours; `[ui]` assig
 the editor's 25 slots. A `[ui]` value is either a `[palette]` key or a `#rrggbb` literal —
 there is no third form, and a name that resolves to neither is an error naming the line.
 
-**`kind` is declared, not inferred.** It picks one of the contrast floors, and the audit
-checks that the declaration agrees with the background's luminance. A `kind = "dark"` theme
+**`kind` is declared, not inferred.** It selects every contrast floor in the rubric — see below
+for why the two grounds are held to different numbers — and the audit checks that the declaration
+agrees with the background's luminance. A `kind = "dark"` theme
 with a pale page is rejected rather than quietly measured against the wrong floor.
 
 **Every key is optional.** A file that mentions nothing still loads — each unset key keeps
@@ -80,35 +81,86 @@ takes ownership.
 means it passes. It is public because a theme author needs to run the same check the project
 runs — a rubric only the project can execute is a rubric community themes ignore.
 
-Every ratio is WCAG 2.1 computed from actual channel values.
+Every ratio is WCAG 2.1 computed from actual channel values. **The floor a rule uses depends on
+the ground the theme declares** — see the calibration below, which is the least obvious thing in
+this document.
 
-| Rule | Floor | Why |
+| Rule | Group | Why |
 |---|---|---|
-| `fg on bg` | ≥ 7.0 | AAA. The pair you stare at all day. |
-| `fg on cursor_line_bg` | ≥ 7.0 dark, ≥ 6.5 light | See below. |
-| `cursor_line_bg vs bg` | ≠ identical, < 1.5 | Above 1.5 it is a stripe, not a hint. |
-| `line_number_fg on bg` | ≥ 3.0 | WCAG's non-body floor. Below it the gutter is texture. |
-| `fg` over `line_number_fg` | further from `bg` | Numbers must be quieter than the code. |
-| `line_number_current_fg` vs `line_number_fg` | ≠ identical, further from `bg` | A number *closer* to the page reads as disabled. |
-| `selection_fg` on both selection grounds | ≥ 4.5 | |
-| `selection_primary_bg vs selection_bg` | ≠ identical, ≥ 1.3 | |
-| `bracket_match_fg on bracket_match_bg` | ≥ 4.5 | |
-| `border_focused` vs `border` | further from `bg` | Focus is gained attention, not lost. |
-| `status_bar_fg` | ≥ 4.5 | |
-| `status_bar_inactive_fg` | ≥ 3.0, quieter than active | It carries content, not decoration. |
-| `tree_directory_fg` / `tree_file_fg` on `chrome_bg` | ≥ 4.5 | Measured on the surface it draws on, not on `bg`. |
-| `tree_directory_fg vs tree_file_fg` | ≠ identical | |
-| `chrome_bg vs bg` | ≠ identical | The surface has to be a surface. |
-| every `diagnostic_*` on `bg` | ≥ 4.5 | Read individually, so legible alone. |
-| `diagnostic_error vs diagnostic_warning` | ≥ 1.8 | Deuteranopia. See below. |
-| every slot | truecolor | An ANSI-16 name inherits whatever the terminal defines, which cannot be measured or tuned. |
+| `fg on bg` | body | The pair you stare at all day. |
+| `fg on cursor_line_bg` | body | The tint must not eat the text sitting on it. |
+| `line_number_fg on bg` | quiet | Below its floor the gutter stops being information and becomes texture. |
+| `status_bar_inactive_fg` | quiet | Recessive, but it carries the filetype and the line ending. |
+| `selection_fg` on both selection grounds | content | |
+| `bracket_match_fg on bracket_match_bg` | content | |
+| `status_bar_fg` | content | |
+| `tree_directory_fg` / `tree_file_fg` on `chrome_bg` | content | Measured on the surface it draws on, not on `bg`. |
+| every `diagnostic_*` on `bg` | content | Read individually, so legible alone. |
 
-### Emphasis is distance from the ground, not luminance
+| Group | Dark ground | Light ground |
+|---|---|---|
+| body | **11.5** | **5.4** |
+| content | **6.5** | **2.6** |
+| quiet | **5.0** | **2.0** |
 
-`|luminance(x) − luminance(bg)|`, never `luminance(x)` alone. "Brighter than" says the right
-thing only on a dark page: on a pale one, emphasis moves *down* in luminance and recession
-moves up. Four rules were written as bare luminance comparisons and all four rejected a
-correct light palette. One substitution fixed all of them.
+The rules with no ratio, which do not vary by ground:
+
+| Rule | Requirement |
+|---|---|
+| `cursor_line_bg vs bg` | ≠ identical, < 1.5 — above that it is a stripe, not a hint |
+| `selection_primary_bg vs selection_bg` | ≠ identical, ≥ 1.3 |
+| `line_number_current_fg vs line_number_fg` | ≠ identical, further from `bg` |
+| `fg` over `line_number_fg` | further from `bg` — numbers are quieter than the code |
+| `border_focused` vs `border` | further from `bg` — focus is gained attention, not lost |
+| `status_bar_fg` over `status_bar_inactive_fg` | further from `status_bar_bg` |
+| `tree_directory_fg vs tree_file_fg` | ≠ identical |
+| `chrome_bg vs bg` | ≠ identical — the surface has to be a surface |
+| `diagnostic_error vs diagnostic_warning` | ≥ 1.8 separation |
+| every slot | truecolor — an ANSI-16 name inherits whatever the terminal defines, which cannot be measured or tuned |
+
+### Why a dark theme is held to more than twice a light one
+
+Not leniency toward light themes. **WCAG 2.1's ratio is not perceptually uniform across
+polarity** — it overrates light text on a dark ground and underrates dark text on a pale one.
+
+Measured over 1,066 colour pairs drawn from 97 published terminal palettes, grouped by their
+actual perceived contrast:
+
+| perceived contrast | dark ground, WCAG | light ground, WCAG | ratio |
+|---|---|---|---|
+| low | 4.84 | 1.93 | **2.51** |
+| | 5.98 | 2.44 | **2.46** |
+| | 7.89 | 3.18 | **2.48** |
+| | 9.60 | 4.21 | 2.28 |
+| high | 11.46 | 5.41 | 2.12 |
+
+At equal legibility a dark ground returns about **2.5×** the ratio, and the factor is stable
+across the range where a gutter and a diagnostic actually live. It compresses at the top, where
+both saturate, which is why body text gets its own pair rather than a multiplier.
+
+The consequence of ignoring this was not academic. Under a single flat floor, TYPE's own Slate
+passed with a gutter at 3.35 and Catppuccin Latte failed at 2.83 — and Latte's gutter is roughly
+twice as legible as Slate's. **The rubric was rejecting the better colour**, and it did that for
+five dark themes against one light one, which is exactly the shape you would expect from a metric
+biased toward dark.
+
+The correction is a calibration, not a new algorithm. TYPE still computes plain WCAG 2.1: a W3C
+Recommendation, no patent, nothing to license.
+
+### What sets the content floor, and it is not the calibration
+
+The table would put `content` nearer 8.7 on a dark ground. It is 6.5, because two other rules
+bound it from below.
+
+`diagnostic_error vs diagnostic_warning` demands 1.8 between the two. Two colours that are both
+very bright against a dark page cannot be 1.8 apart — at a floor of 8.7 the warning has to reach
+15.66 against the page, which is a near-white yellow that has stopped being amber.
+
+Then 256-colour degradation tightens it again. The cube quantises a natural red and amber pair
+onto `#ff8787` and `#ffd787`, whose separation is 1.69 whatever the truecolor values were, so the
+error colour has to be dark enough to land on a **different** cube cell. 6.5 is the highest floor
+that leaves room for both, and it lands at roughly the same perceived contrast Zed ships as its
+own default minimum.
 
 ### Red against amber
 
@@ -121,21 +173,24 @@ palettes, it is the single most-failed rule in the set — Rosé Pine misses by 
 Night by 0.48. A port that fails it gets its warning colour nudged inside its own hue, and
 the file header says so.
 
-### The light-ground problem
+### Emphasis is distance from the ground, not luminance
 
-A saturated hue on a near-white page has a hard luminance ceiling. Catppuccin Latte's
-published accents against its own base: two of eight clear 4.5. That is arithmetic, not
-carelessness, and no published light palette in the field clears it because none is asked to.
+`|luminance(x) − luminance(bg)|`, never `luminance(x)` alone. "Brighter than" says the right
+thing only on a dark page: on a pale one, emphasis moves *down* in luminance and recession
+moves up. Four rules were written as bare luminance comparisons and all four rejected a
+correct light palette. One substitution fixed all of them.
 
-It squeezes from the other side too. Latte's body text is 7.06 on base — a whisker over AAA —
-so any current-line tint at all pushes `fg on cursor_line` under 7.0. Best achievable is
-6.76. So `fg on cursor_line_bg` drops to 6.5 on a light ground, and the reason is recorded
-here rather than in a commit nobody reads. Every other floor holds on both grounds.
+### A note on light palettes
 
-The way out is not a lower floor, it is a different kind of accent. Alabaster clears
-every rule but one with `error #704040` (8.21) and `warning #806850` (5.11) — desaturated
-and darkened rather than fighting for saturation it cannot have. On a pale page, take the
-hue down in lightness and saturation until it clears, and accept that it reads muted.
+A saturated hue on a near-white page has a hard luminance ceiling — Catppuccin Latte's published
+accents clear 4.5 twice out of eight. That was once read as "light grounds cannot reach the
+floor", and the conclusion drawn from it was wrong: the light floors were never the problem, the
+dark ones were too low.
+
+What is still true is the technique. Alabaster reaches its floors on a near-white page with
+`error #704040` and `warning #806850` — desaturated and darkened rather than fighting for
+saturation it cannot have. On a pale page, take the hue down in lightness *and* saturation until
+it clears, and accept that it reads muted.
 
 ## Degrading to 256 colours
 

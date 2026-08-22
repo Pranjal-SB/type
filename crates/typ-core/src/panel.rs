@@ -33,8 +33,10 @@ use crate::{KeyChord, PanelEvent};
 /// | 08 | text on a selection |
 ///
 /// Contrast is checked rather than eyeballed — see `typ-core/tests/theme.rs`,
-/// which computes WCAG ratios from these channel values and fails the build if
-/// a change drops body text below 7:1 or the gutter below 3:1.
+/// which computes WCAG ratios from these channel values and fails the build if a
+/// role drops below the floor its ground asks for — 11.5:1 for body text on a
+/// dark page, 6.5:1 for content, 5:1 for the gutter. See `audit::Floors` for why
+/// a light theme's numbers are lower without being laxer.
 mod palette {
     use ratatui::style::Color;
 
@@ -42,27 +44,27 @@ mod palette {
     pub const BASE_01: Color = Color::Rgb(0x16, 0x1c, 0x25);
     pub const BASE_02: Color = Color::Rgb(0x1a, 0x21, 0x2c);
     pub const BASE_03: Color = Color::Rgb(0x2a, 0x32, 0x40);
-    pub const BASE_04: Color = Color::Rgb(0x5a, 0x6a, 0x80);
-    pub const BASE_05: Color = Color::Rgb(0x6b, 0x7b, 0x91);
+    pub const BASE_04: Color = Color::Rgb(0x78, 0x89, 0xa0);
+    pub const BASE_05: Color = Color::Rgb(0x84, 0x95, 0xac);
     pub const BASE_06: Color = Color::Rgb(0xa8, 0xb3, 0xc4);
-    pub const BASE_07: Color = Color::Rgb(0xc8, 0xd0, 0xdc);
+    pub const BASE_07: Color = Color::Rgb(0xcd, 0xd5, 0xe1);
     pub const BASE_08: Color = Color::Rgb(0xe6, 0xec, 0xf5);
 
     /// The one accent. Focus, links, and anything the eye should be drawn to.
-    pub const ACCENT: Color = Color::Rgb(0x4f, 0x8c, 0xc9);
+    pub const ACCENT: Color = Color::Rgb(0x68, 0xa6, 0xe4);
     /// The same hue, lifted — directories in the tree.
     pub const ACCENT_BRIGHT: Color = Color::Rgb(0x7f, 0xb3, 0xe0);
 
     /// Selections sit on the accent's hue at two depths, so the primary reads
     /// as "the same thing, more so" rather than as a different feature.
-    pub const SELECT: Color = Color::Rgb(0x26, 0x36, 0x4d);
-    pub const SELECT_PRIMARY: Color = Color::Rgb(0x35, 0x50, 0x7a);
+    pub const SELECT: Color = Color::Rgb(0x25, 0x34, 0x4b);
+    pub const SELECT_PRIMARY: Color = Color::Rgb(0x2b, 0x45, 0x6f);
 
     /// Semantic colours. Deliberately *not* on the base hue: these mean
     /// something, and a reader must not have to decide whether a colour is
     /// decoration or information.
-    pub const RED: Color = Color::Rgb(0xe0, 0x6c, 0x75);
-    pub const AMBER: Color = Color::Rgb(0xe5, 0xc0, 0x7b);
+    pub const RED: Color = Color::Rgb(0xec, 0x76, 0x7f);
+    pub const AMBER: Color = Color::Rgb(0xfc, 0xd6, 0x90);
     pub const AMBER_DEEP: Color = Color::Rgb(0x3a, 0x35, 0x24);
     pub const TEAL: Color = Color::Rgb(0x56, 0xb6, 0xc2);
 }

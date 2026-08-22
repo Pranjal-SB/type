@@ -58,6 +58,75 @@ fn distance_from(colour: Color, ground: Color) -> f64 {
     (luminance(colour) - luminance(ground)).abs()
 }
 
+/// What a role has to clear, given the ground it is drawn on.
+///
+/// **One number cannot serve both grounds, and this is the correction for it.**
+/// WCAG 2.1's ratio is not perceptually uniform across polarity: it overrates
+/// light text on a dark ground and underrates dark text on a pale one. Measured
+/// over 1,066 colour pairs from 97 published terminal palettes, a dark ground
+/// returns about **2.5x** the ratio of a light ground at the same perceived
+/// contrast, and the factor is stable from roughly Lc 30 to Lc 60 — which is
+/// where a gutter and a diagnostic actually live. It compresses toward 1.0 at
+/// the top, where both metrics saturate, so body text gets its own pair rather
+/// than a multiplier.
+///
+/// **`content` is capped by the colour-blindness rule, not by the calibration.**
+/// The table would put it near 8.7 on a dark ground, and that is unsatisfiable:
+/// `diagnostic_error` and `diagnostic_warning` must also sit 1.8 apart from each
+/// other, and two colours that are both that bright against a dark page cannot
+/// be. At 8.7 the warning has to reach 15.66 against the page, which is a
+/// near-white yellow that has stopped being amber. 7.0 is the highest value that
+/// leaves the two diagnostics room to differ — and at 256 colours it is tighter
+/// still. The cube quantises `#f47e86` and `#fcd690` onto `#ff8787` and
+/// `#ffd787`, whose separation is 1.69 whatever the truecolor values were, so
+/// the error colour has to be dark enough to land on a *different* cube cell.
+/// 6.5 is the highest floor that leaves room for that, and it is Lc 46 — within
+/// a point of the Lc 45 Zed ships as its own default minimum.
+///
+/// The consequence was not academic. Under a flat 3.0, Slate's gutter passed at
+/// 3.35 and Catppuccin Latte's failed at 2.83 — and Latte's is the more legible
+/// of the two by a factor of two. The rubric was rejecting the better colour.
+///
+/// **Why these numbers and not APCA's.** APCA is the algorithm that exposed
+/// this, and it cannot ship here: it is licensed to the W3 for web content
+/// only, falls back to AGPL v3 for anything else, and carries a pending patent.
+/// So the bias it revealed is corrected with WCAG arithmetic instead, calibrated
+/// against it once, offline. The measurement is in `docs/plans/m2.5-colour.md`.
+struct Floors {
+    /// Text the user reads for minutes at a time.
+    body: f64,
+    /// Text read individually and expected to be legible alone — diagnostics,
+    /// the tree, the active status segments, a matched bracket.
+    content: f64,
+    /// Deliberately recessive text that must still resolve — line numbers, the
+    /// inactive half of the status bar.
+    quiet: f64,
+}
+
+impl Floors {
+    fn for_ground(kind: Kind) -> Self {
+        match kind {
+            Kind::Dark => Floors {
+                body: 11.5,
+                content: 6.5,
+                quiet: 5.0,
+            },
+            Kind::Light => Floors {
+                body: 5.4,
+                content: 2.6,
+                quiet: 2.0,
+            },
+        }
+    }
+
+    fn ground(kind: Kind) -> &'static str {
+        match kind {
+            Kind::Dark => "dark",
+            Kind::Light => "light",
+        }
+    }
+}
+
 /// Every rule a palette must satisfy, as a list of what it got wrong.
 ///
 /// Empty means the palette is fine. Returning the whole list rather than
@@ -70,6 +139,8 @@ fn distance_from(colour: Color, ground: Color) -> f64 {
 /// wrong floor.
 pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
     let mut bad = Vec::new();
+    let floors = Floors::for_ground(kind);
+    let ground = Floors::ground(kind);
 
     // Every colour has to be a value TYPE chose. The 16-colour ANSI names mean
     // inheriting whatever the user's terminal defines, which cannot be measured
@@ -93,21 +164,30 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
     }
 
     // AAA for body text. This is the colour pair a user stares at all day.
-    at_least(&mut bad, "fg on bg", theme.fg, theme.bg, 7.0);
+    at_least(
+        &mut bad,
+        "fg on bg",
+        theme.fg,
+        theme.bg,
+        floors.body,
+        ground,
+    );
 
     at_least(
         &mut bad,
         "selection_fg on selection_bg",
         theme.selection_fg,
         theme.selection_bg,
-        4.5,
+        floors.content,
+        ground,
     );
     at_least(
         &mut bad,
         "selection_fg on selection_primary_bg",
         theme.selection_fg,
         theme.selection_primary_bg,
-        4.5,
+        floors.content,
+        ground,
     );
 
     // Helix themes `ui.selection.primary` separately for exactly this reason:
@@ -120,7 +200,7 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         theme.selection_bg,
         "the primary selection has to be tellable from the others",
     );
-    at_least(
+    separated_by(
         &mut bad,
         "selection_primary_bg vs selection_bg",
         theme.selection_primary_bg,
@@ -152,7 +232,8 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         "line_number_fg on bg",
         theme.line_number_fg,
         theme.bg,
-        3.0,
+        floors.quiet,
+        ground,
     );
     emphasised(
         &mut bad,
@@ -184,13 +265,13 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
     // palette whose body text clears AAA by a whisker — Catppuccin Latte sits at
     // 7.06 — has no room left for a tint of any strength. The alternative is a
     // light theme with no current-line highlight at all.
-    let cursor_line_floor = if looks_light { 6.5 } else { 7.0 };
     at_least(
         &mut bad,
         "fg on cursor_line_bg",
         theme.fg,
         theme.cursor_line_bg,
-        cursor_line_floor,
+        floors.body,
+        ground,
     );
 
     at_least(
@@ -198,7 +279,8 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         "bracket_match_fg on bracket_match_bg",
         theme.bracket_match_fg,
         theme.bracket_match_bg,
-        4.5,
+        floors.content,
+        ground,
     );
 
     emphasised(
@@ -215,7 +297,8 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         "status_bar_fg",
         theme.status_bar_fg,
         theme.status_bar_bg,
-        4.5,
+        floors.content,
+        ground,
     );
     // Inactive is quieter but still legible: it carries real content — the
     // filetype, the line ending — not decoration.
@@ -224,7 +307,8 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         "status_bar_inactive_fg",
         theme.status_bar_inactive_fg,
         theme.status_bar_bg,
-        3.0,
+        floors.quiet,
+        ground,
     );
     emphasised(
         &mut bad,
@@ -250,14 +334,16 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         "tree_directory_fg on chrome_bg",
         theme.tree_directory_fg,
         theme.chrome_bg,
-        4.5,
+        floors.content,
+        ground,
     );
     at_least(
         &mut bad,
         "tree_file_fg on chrome_bg",
         theme.tree_file_fg,
         theme.chrome_bg,
-        4.5,
+        floors.content,
+        ground,
     );
     // And the surface has to actually be a surface. Chrome and content sharing
     // one colour is the defect this field exists to fix, and a theme that sets
@@ -276,7 +362,7 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         ("diagnostic_info", theme.diagnostic_info),
         ("diagnostic_hint", theme.diagnostic_hint),
     ] {
-        at_least(&mut bad, name, colour, theme.bg, 4.5);
+        at_least(&mut bad, name, colour, theme.bg, floors.content, ground);
     }
 
     // Red and amber are the classic deuteranopia collision, and error-versus-
@@ -284,7 +370,7 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
     // Separating them by lightness as well as hue is what keeps that decision
     // available to a red-green colour-blind reader. Palettes designed for
     // harmony fail this and have to be adapted — Rosé Pine misses it by 0.03.
-    at_least(
+    separated_by(
         &mut bad,
         "diagnostic_error vs diagnostic_warning",
         theme.diagnostic_error,
@@ -295,11 +381,31 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
     bad
 }
 
-fn at_least(bad: &mut Vec<String>, name: &str, a: Color, b: Color, floor: f64) {
+/// Text against the surface behind it, measured against the floor its ground
+/// asks for.
+///
+/// The message names the ground, because a floor that moves with `kind` is
+/// otherwise a number the reader cannot check.
+fn at_least(bad: &mut Vec<String>, name: &str, a: Color, b: Color, floor: f64, ground: &str) {
     let ratio = contrast(a, b);
     if ratio < floor {
         bad.push(format!(
-            "{name}: contrast {ratio:.2} is below the {floor:.1} floor"
+            "{name}: contrast {ratio:.2} is below the {floor:.1} floor for a {ground} ground"
+        ));
+    }
+}
+
+/// Two colours that have to be tellable apart, with no text between them.
+///
+/// Deliberately *not* [`at_least`]: a surface against another surface, or a red
+/// against an amber, is not text on a background, and the ground-dependent
+/// floors are a correction for how text legibility behaves. Applying them here
+/// would be measuring one thing with another thing's ruler.
+fn separated_by(bad: &mut Vec<String>, name: &str, a: Color, b: Color, floor: f64) {
+    let ratio = contrast(a, b);
+    if ratio < floor {
+        bad.push(format!(
+            "{name}: contrast {ratio:.2} is below the {floor:.1} separation"
         ));
     }
 }

@@ -230,3 +230,46 @@ fn a_colour_the_terminal_owns_is_not_a_colour_a_theme_can_pick() {
         "got: {bad:?}"
     );
 }
+
+#[test]
+fn the_gutter_floor_follows_the_ground_the_gutter_is_drawn_on() {
+    // The defect this pair exists to pin. A flat WCAG floor passed Slate's
+    // gutter at 3.35 and rejected Catppuccin Latte's at 2.83 — and Latte's is
+    // the one that is actually easier to read. Measured perceptually the two
+    // are 23.5 and 50.8, so the rubric was rejecting the colour that is twice
+    // as legible and accepting the one that is not.
+    //
+    // The cause is WCAG 2.1 itself: across 1,066 pairs from 97 published
+    // palettes, a dark ground returns about 2.5x the ratio of a light ground at
+    // equal perceived contrast. So one number cannot serve both, and the floors
+    // are read from the ground instead.
+    //
+    // These two are the real values from the shipped themes rather than
+    // invented ones, because the inversion is a fact about those palettes.
+    let dark = ThemeColors {
+        line_number_fg: Color::Rgb(0x5a, 0x6a, 0x80),
+        ..ThemeColors::default()
+    };
+    let light = ThemeColors {
+        line_number_fg: Color::Rgb(0x8c, 0x8f, 0xa1),
+        bg: Color::Rgb(0xef, 0xf1, 0xf5),
+        ..light_fixture()
+    };
+
+    let names = |t: &ThemeColors, k| -> Vec<String> {
+        audit(t, k)
+            .into_iter()
+            .filter(|f| f.starts_with("line_number_fg on bg"))
+            .collect()
+    };
+
+    assert!(
+        !names(&dark, Kind::Dark).is_empty(),
+        "3.35 on a dark ground is the quieter gutter of the two and has to fail"
+    );
+    assert!(
+        names(&light, Kind::Light).is_empty(),
+        "2.83 on a pale ground is the more legible gutter and has to pass, got {:?}",
+        names(&light, Kind::Light)
+    );
+}
