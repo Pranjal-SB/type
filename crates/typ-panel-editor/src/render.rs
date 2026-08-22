@@ -44,6 +44,40 @@ pub fn window(text: &str, left_col: usize, tab_width: usize) -> (&str, usize) {
     ("", text.graphemes(true).count())
 }
 
+/// Which whitespace gets a visible mark.
+///
+/// VS Code's set minus `boundary` — "every run except a single space between
+/// words" needs word segmentation inside the render loop for the least useful of
+/// the five. Fresh's finer leading/inner/trailing split is a superset of
+/// [`Whitespace::Trailing`] and can arrive later without breaking a file: the
+/// setting is a string and adding a value is additive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Whitespace {
+    None,
+    /// Whitespace after the last non-whitespace grapheme on the line — the only
+    /// value here that catches a defect rather than answering curiosity.
+    Trailing,
+    /// Inside a selection, which is where it is diagnostic and nowhere else.
+    /// VS Code's default, and the reason is that it costs nothing when you are
+    /// not asking and is exact when you are.
+    #[default]
+    Selection,
+    All,
+}
+
+/// The glyph a whitespace grapheme is drawn as.
+///
+/// **Not a [`Paint`] variant.** `Paint` chooses a `Style`; this replaces the
+/// character. The two compose — a marked space inside a selection keeps the
+/// selection's background and takes only its foreground from `whitespace`.
+fn mark_for(grapheme: &str) -> Option<char> {
+    match grapheme {
+        " " => Some('·'),
+        "\t" => Some('→'),
+        _ => None,
+    }
+}
+
 /// What a cell is painted as. Ordered by precedence, highest last.
 ///
 /// Spelling this out as a type rather than as a chain of `if`s inside the loop
@@ -101,6 +135,7 @@ pub struct LineStyle<'a> {
     /// how a interface starts to look busy.
     pub cursor_line: bool,
     pub brackets: Option<(Position, Position)>,
+    pub whitespace: Whitespace,
     pub theme: &'a ThemeColors,
 }
 
@@ -114,29 +149,60 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
     // than sliding left with the window.
     let (visible, skipped) = window(text, ctx.left_col, ctx.tab_width);
 
+    // Where trailing whitespace starts, as a byte offset into `visible`.
+    // `window` returns a suffix, so trimming what is drawn finds the same tail
+    // the whole line has. Once per line rather than once per cell, and only for
+    // the one setting that asks the question.
+    let tail = match ctx.whitespace {
+        Whitespace::Trailing => visible.trim_end_matches([' ', '\t']).len(),
+        _ => usize::MAX,
+    };
+
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut current = String::new();
-    let mut current_paint: Option<Paint> = None;
+    // Paint *and* whether the run is marked: a mark takes its foreground from
+    // the theme's whitespace colour while keeping whatever ground the cell was
+    // already on, so the two vary independently and a run has to break on
+    // either.
+    let mut current_run: Option<(Paint, bool)> = None;
     let mut columns = 0usize;
 
-    for (offset, grapheme) in visible.graphemes(true).enumerate() {
+    for (offset, (byte, grapheme)) in visible.grapheme_indices(true).enumerate() {
         let position = Position {
             line: ctx.line,
             col: skipped + offset,
         };
         let paint = paint_for(position, ctx);
+        // The *original* grapheme's width, always. A tab drawn as one arrow
+        // still occupies its whole run of columns; anything else loses three of
+        // them and leaves every glyph after it out of step with a cursor that
+        // is still counting the tab as four.
+        let width = display_width_with_tabs(grapheme, ctx.tab_width).max(1);
+        let mark = mark_for(grapheme).filter(|_| marks(ctx.whitespace, paint, byte, tail));
 
-        if current_paint != Some(paint) && !current.is_empty() {
-            let style = current_paint.unwrap_or(Paint::Plain).style(ctx.theme);
+        let run = (paint, mark.is_some());
+        if current_run != Some(run) && !current.is_empty() {
+            let style = style_of(current_run.unwrap_or((Paint::Plain, false)), ctx.theme);
             spans.push(Span::styled(std::mem::take(&mut current), style));
         }
-        current_paint = Some(paint);
-        current.push_str(grapheme);
-        columns += display_width_with_tabs(grapheme, ctx.tab_width).max(1);
+        current_run = Some(run);
+        match mark {
+            // The mark, then blank to the end of what the grapheme occupied.
+            Some(glyph) => {
+                current.push(glyph);
+                current.extend(std::iter::repeat_n(' ', width - 1));
+            }
+            // An unmarked tab is expanded too. It has to be: otherwise a tab
+            // would draw in one column with the mark off and four with it on,
+            // and selecting a line would shift its text three columns left.
+            None if grapheme == "\t" => current.extend(std::iter::repeat_n(' ', width)),
+            None => current.push_str(grapheme),
+        }
+        columns += width;
     }
 
     if !current.is_empty() {
-        let style = current_paint.unwrap_or(Paint::Plain).style(ctx.theme);
+        let style = style_of(current_run.unwrap_or((Paint::Plain, false)), ctx.theme);
         spans.push(Span::styled(current, style));
     }
 
@@ -151,6 +217,30 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
     }
 
     Line::from(spans)
+}
+
+/// A run's style: its paint, with the mark colour laid over the foreground.
+fn style_of((paint, marked): (Paint, bool), theme: &ThemeColors) -> Style {
+    let style = paint.style(theme);
+    if marked {
+        style.fg(theme.whitespace)
+    } else {
+        style
+    }
+}
+
+/// Whether this cell's whitespace is whitespace the user asked to see.
+///
+/// `Selection` reads the paint rather than scanning the selections again —
+/// `paint_for` has already answered exactly that question, and asking it twice
+/// per cell is a second pass over every selection on the keystroke path.
+fn marks(setting: Whitespace, paint: Paint, byte: usize, tail: usize) -> bool {
+    match setting {
+        Whitespace::None => false,
+        Whitespace::All => true,
+        Whitespace::Trailing => byte >= tail,
+        Whitespace::Selection => matches!(paint, Paint::Selection | Paint::PrimarySelection),
+    }
 }
 
 fn paint_for(position: Position, ctx: &LineStyle) -> Paint {

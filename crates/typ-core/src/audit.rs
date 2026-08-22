@@ -244,6 +244,27 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         "line numbers must be quieter than the code they label",
     );
 
+    // A whitespace mark is held to the gutter's floor and for the gutter's
+    // reason. It is drawn only where the user asked for it, and a mark too faint
+    // to see turns `trailing` — the one setting that catches a real defect —
+    // into a setting that catches nothing.
+    at_least(
+        &mut bad,
+        "whitespace on bg",
+        theme.whitespace,
+        theme.bg,
+        floors.quiet,
+        ground,
+    );
+    emphasised(
+        &mut bad,
+        "fg over whitespace",
+        theme.fg,
+        theme.whitespace,
+        theme.bg,
+        "whitespace marks must be quieter than the code they sit in",
+    );
+
     differ(
         &mut bad,
         "cursor_line_bg vs bg",

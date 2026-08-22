@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use typ_core::Depth;
+use typ_panel_editor::render::Whitespace;
 
 /// The settings a running editor reads.
 ///
@@ -27,6 +28,11 @@ pub struct Settings {
     /// units can defeat it, so there has to be somewhere to state the answer
     /// that is not "edit the file until the heuristic agrees".
     pub indent_width: Option<usize>,
+    /// Which whitespace gets a visible mark.
+    ///
+    /// Unlike the two above there is no `None` case: every value is a real
+    /// answer, and "unset" already has a name — [`Whitespace::None`].
+    pub whitespace: Whitespace,
 }
 
 impl Default for Settings {
@@ -35,7 +41,18 @@ impl Default for Settings {
             theme: "slate".to_string(),
             color_depth: None,
             indent_width: None,
+            whitespace: Whitespace::default(),
         }
+    }
+}
+
+fn parse_whitespace(value: &str) -> Option<Whitespace> {
+    match value {
+        "none" => Some(Whitespace::None),
+        "trailing" => Some(Whitespace::Trailing),
+        "selection" => Some(Whitespace::Selection),
+        "all" => Some(Whitespace::All),
+        _ => None,
     }
 }
 
@@ -90,6 +107,12 @@ pub fn load_settings(path: Option<&Path>) -> (Settings, Option<String>) {
                 Some(width) => settings.indent_width = Some(width as usize),
                 None => complaints.push(format!(
                     "indent_width {value} is not a whole number of columns from 1 to 16"
+                )),
+            },
+            "whitespace" => match value.as_str().and_then(parse_whitespace) {
+                Some(which) => settings.whitespace = which,
+                None => complaints.push(format!(
+                    "whitespace {value} is not \"none\", \"trailing\", \"selection\" or \"all\""
                 )),
             },
             other => complaints.push(format!("{other} is not a setting this editor has")),

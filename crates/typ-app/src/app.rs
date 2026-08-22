@@ -11,6 +11,7 @@ use typ_core::{
     Action, Direction, KeyChord, Keymap, Panel, PanelEvent, RenderContext, ThemeColors,
 };
 use typ_panel_editor::EditorPanel;
+use typ_panel_editor::render::Whitespace;
 use typ_panel_tree::TreePanel;
 use typ_registry::Registry;
 
@@ -70,6 +71,9 @@ pub struct App {
     /// Held here rather than pushed into the editor once, because opening a
     /// file builds a new `EditorPanel` and the setting has to survive that.
     indent_width: Option<usize>,
+    /// `whitespace` from `config.toml`. Held here for the same reason as
+    /// `indent_width`: opening a file builds a new panel.
+    whitespace: Whitespace,
 }
 
 /// Between status segments. Two spaces rather than a glyph separator: a
@@ -101,6 +105,7 @@ impl App {
             watch: None,
             dirty: true,
             indent_width: None,
+            whitespace: Whitespace::default(),
         })
     }
 
@@ -326,6 +331,7 @@ impl App {
             EditorPanel::new_at(path)
         };
         self.apply_indent_width();
+        self.editor.set_whitespace(self.whitespace);
         self.focus = Focus::Editor;
         self.open_pending = None;
         self.rewatch();
@@ -346,6 +352,12 @@ impl App {
         if let Some(width) = self.indent_width {
             self.editor.set_tab_width(width);
         }
+    }
+
+    /// Which whitespace the editor marks.
+    pub fn set_whitespace(&mut self, whitespace: Whitespace) {
+        self.whitespace = whitespace;
+        self.editor.set_whitespace(whitespace);
     }
 
     pub fn set_keymap(&mut self, keymap: Keymap) {

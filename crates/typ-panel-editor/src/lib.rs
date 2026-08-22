@@ -20,6 +20,7 @@ mod occurrence;
 pub mod render;
 
 use crate::gutter::Gutter;
+use crate::render::Whitespace;
 
 /// The width to use when the file will not say.
 ///
@@ -74,6 +75,8 @@ pub struct EditorPanel {
     /// Measured from the buffer at load and settled there: re-measuring as the
     /// user types would let deleting a line change what Tab does.
     pub(crate) tab_width: usize,
+    /// Which whitespace gets a visible mark — `whitespace` in `config.toml`.
+    pub(crate) whitespace: Whitespace,
 }
 
 impl EditorPanel {
@@ -98,6 +101,7 @@ impl EditorPanel {
             .unwrap_or(FALLBACK_TAB_WIDTH);
         Self {
             tab_width,
+            whitespace: Whitespace::default(),
             selections: Selections::default(),
             top_line: 0,
             left_col: 0,
@@ -122,6 +126,11 @@ impl EditorPanel {
     /// somewhere to say so that is not "edit the file until it agrees".
     pub fn set_tab_width(&mut self, width: usize) {
         self.tab_width = width.max(1);
+    }
+
+    /// Which whitespace gets a mark — `whitespace` in `config.toml`.
+    pub fn set_whitespace(&mut self, whitespace: Whitespace) {
+        self.whitespace = whitespace;
     }
 
     pub fn selections(&self) -> &Selections {
@@ -541,6 +550,7 @@ impl Panel for EditorPanel {
                     primary,
                     cursor_line,
                     brackets,
+                    whitespace: self.whitespace,
                     theme: ctx.theme,
                 };
                 self.buffer

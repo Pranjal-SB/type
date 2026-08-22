@@ -64,6 +64,9 @@ fn light_fixture() -> ThemeColors {
         // means moving toward the background.
         line_number_fg: Color::Rgb(0x8a, 0x8d, 0x93),
         line_number_current_fg: Color::Rgb(0x1a, 0x1c, 0x20),
+        // The gutter's step: a mark is furniture, and it is held to the
+        // furniture floor.
+        whitespace: Color::Rgb(0x8a, 0x8d, 0x93),
 
         selection_bg: Color::Rgb(0xd3, 0xdc, 0xea),
         selection_fg: Color::Rgb(0x1a, 0x1c, 0x20),

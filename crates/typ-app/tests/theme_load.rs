@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use ratatui::style::Color;
 use typ_app::config::{load_settings, load_theme};
 use typ_core::{Depth, ThemeColors};
+use typ_panel_editor::render::Whitespace;
 
 /// A config directory of this test's own.
 ///
@@ -191,6 +192,41 @@ fn an_indent_width_of_zero_warns_and_leaves_it_to_detection() {
     let warning = warning.expect("a zero width has to be reported");
     assert!(warning.contains("indent_width"), "warning: {warning}");
     assert_eq!(settings.indent_width, None);
+}
+
+#[test]
+fn whitespace_defaults_to_marking_only_what_is_selected() {
+    // VS Code's default, and the right one: whitespace is diagnostic inside a
+    // selection and clutter everywhere else.
+    let (settings, _) = load_settings(None);
+    assert_eq!(settings.whitespace, Whitespace::Selection);
+}
+
+#[test]
+fn each_whitespace_value_parses() {
+    for (text, expected) in [
+        ("none", Whitespace::None),
+        ("trailing", Whitespace::Trailing),
+        ("selection", Whitespace::Selection),
+        ("all", Whitespace::All),
+    ] {
+        let path = write_settings(&format!("ws-{text}"), &format!("whitespace = {text:?}\n"));
+        let (settings, warning) = load_settings(Some(&path));
+        assert!(warning.is_none(), "{text}: {warning:?}");
+        assert_eq!(settings.whitespace, expected, "{text}");
+    }
+}
+
+#[test]
+fn an_unknown_whitespace_value_warns_and_keeps_the_default() {
+    let path = write_settings("ws-bad", "whitespace = \"boundary\"\n");
+    let (settings, warning) = load_settings(Some(&path));
+
+    // `boundary` is VS Code's fifth value and the one deliberately not taken,
+    // so it is exactly the mistake somebody arriving from there will make.
+    let warning = warning.expect("an unknown value has to be reported");
+    assert!(warning.contains("whitespace"), "warning: {warning}");
+    assert_eq!(settings.whitespace, Whitespace::Selection);
 }
 
 #[test]

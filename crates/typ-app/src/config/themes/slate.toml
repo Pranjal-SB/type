@@ -59,6 +59,11 @@ line_number_fg = "base04"
 # present as the code, not by being tinted.
 line_number_current_fg = "base07"
 
+# The gutter's own step. A whitespace mark and a line number are the same kind of
+# furniture, and a palette where each widget invents its own grey is how one
+# visual system comes apart quietly.
+whitespace = "base04"
+
 selection_bg = "select"
 selection_fg = "base08"
 selection_primary_bg = "select_primary"

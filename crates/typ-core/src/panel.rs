@@ -91,6 +91,16 @@ pub struct ThemeColors {
     pub line_number_fg: Color,
     pub line_number_current_fg: Color,
 
+    /// The dot standing for a space and the arrow standing for a tab, drawn
+    /// only where `whitespace` in `config.toml` asks for them.
+    ///
+    /// The same class of thing as a line number — present, quiet, not content —
+    /// so it is held to the same floor and, in every shipped theme, names the
+    /// same ramp step. A mark below that floor is texture rather than
+    /// information, and a `trailing` setting whose marks cannot be seen catches
+    /// nothing.
+    pub whitespace: Color,
+
     pub selection_bg: Color,
     pub selection_fg: Color,
     /// The primary selection, the one every motion is relative to. Helix themes
@@ -151,6 +161,11 @@ impl Default for ThemeColors {
             // The current line's number matches body text — "here" is stated by
             // being as present as the code, not by being tinted.
             line_number_current_fg: p::BASE_07,
+
+            // The gutter's own step. Whitespace marks and line numbers are the
+            // same kind of furniture, and a palette where each widget invents
+            // its own grey is how one visual system comes apart.
+            whitespace: p::BASE_04,
 
             selection_bg: p::SELECT,
             selection_fg: p::BASE_08,

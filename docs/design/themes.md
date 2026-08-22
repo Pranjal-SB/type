@@ -33,7 +33,7 @@ border_focused = "accent"
 ```
 
 Three sections and two required scalars. `[palette]` names colours; `[ui]` assigns them to
-the editor's 25 slots. A `[ui]` value is either a `[palette]` key or a `#rrggbb` literal —
+the editor's 26 slots. A `[ui]` value is either a `[palette]` key or a `#rrggbb` literal —
 there is no third form, and a name that resolves to neither is an error naming the line.
 
 **`kind` is declared, not inferred.** It selects every contrast floor in the rubric — see below
@@ -49,12 +49,13 @@ A misspelled key gets a did-you-mean when the edit distance is small enough to b
 and no suggestion when it isn't. `forgeground` suggests `fg`; `banana` gets told it is not a
 key and left alone.
 
-## The 25 slots
+## The 26 slots
 
 | Group | Keys |
 |---|---|
 | Page | `fg` `bg` `cursor_line_bg` |
 | Gutter | `gutter_fg` `gutter_bg` `line_number_fg` `line_number_current_fg` |
+| Whitespace | `whitespace` |
 | Selection | `selection_fg` `selection_bg` `selection_primary_bg` |
 | Brackets | `bracket_match_fg` `bracket_match_bg` |
 | Chrome | `chrome_bg` `border` `border_focused` |
@@ -90,6 +91,7 @@ this document.
 | `fg on bg` | body | The pair you stare at all day. |
 | `fg on cursor_line_bg` | body | The tint must not eat the text sitting on it. |
 | `line_number_fg on bg` | quiet | Below its floor the gutter stops being information and becomes texture. |
+| `whitespace on bg` | quiet | Same class of furniture, same floor. A mark nobody can see makes `trailing` catch nothing. |
 | `status_bar_inactive_fg` | quiet | Recessive, but it carries the filetype and the line ending. |
 | `selection_fg` on both selection grounds | content | |
 | `bracket_match_fg on bracket_match_bg` | content | |
@@ -111,6 +113,7 @@ The rules with no ratio, which do not vary by ground:
 | `selection_primary_bg vs selection_bg` | ≠ identical, ≥ 1.3 |
 | `line_number_current_fg vs line_number_fg` | ≠ identical, further from `bg` |
 | `fg` over `line_number_fg` | further from `bg` — numbers are quieter than the code |
+| `fg` over `whitespace` | further from `bg` — marks are quieter than the code |
 | `border_focused` vs `border` | further from `bg` — focus is gained attention, not lost |
 | `status_bar_fg` over `status_bar_inactive_fg` | further from `status_bar_bg` |
 | `tree_directory_fg vs tree_file_fg` | ≠ identical |

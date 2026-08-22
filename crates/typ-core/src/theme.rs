@@ -8,7 +8,7 @@
 //! base00 = "#10141b"
 //! accent = "#4f8cc9"
 //!
-//! [ui]                 # the 25 ThemeColors fields, by their own names
+//! [ui]                 # the 26 ThemeColors fields, by their own names
 //! fg = "base07"
 //! bg = "#10141b"       # a literal is always allowed
 //!
@@ -235,7 +235,7 @@ fn parse_palette(table: &toml::Table) -> Result<BTreeMap<String, Color>> {
 /// Destructured exhaustively and without `..` on purpose: a field added to
 /// `ThemeColors` fails to compile here until it is given a name, which is what
 /// stops a new colour from being unreachable from a theme file.
-pub(crate) fn ui_pairs(colors: &ThemeColors) -> [(&'static str, Color); 25] {
+pub(crate) fn ui_pairs(colors: &ThemeColors) -> [(&'static str, Color); 26] {
     let ThemeColors {
         fg,
         bg,
@@ -244,6 +244,7 @@ pub(crate) fn ui_pairs(colors: &ThemeColors) -> [(&'static str, Color); 25] {
         gutter_bg,
         line_number_fg,
         line_number_current_fg,
+        whitespace,
         selection_bg,
         selection_fg,
         selection_primary_bg,
@@ -272,6 +273,7 @@ pub(crate) fn ui_pairs(colors: &ThemeColors) -> [(&'static str, Color); 25] {
         ("gutter_bg", gutter_bg),
         ("line_number_fg", line_number_fg),
         ("line_number_current_fg", line_number_current_fg),
+        ("whitespace", whitespace),
         ("selection_bg", selection_bg),
         ("selection_fg", selection_fg),
         ("selection_primary_bg", selection_primary_bg),
@@ -303,6 +305,7 @@ fn assign(colors: &mut ThemeColors, key: &str, colour: Color) -> bool {
         "chrome_bg" => colors.chrome_bg = colour,
         "line_number_fg" => colors.line_number_fg = colour,
         "line_number_current_fg" => colors.line_number_current_fg = colour,
+        "whitespace" => colors.whitespace = colour,
         "selection_bg" => colors.selection_bg = colour,
         "selection_fg" => colors.selection_fg = colour,
         "selection_primary_bg" => colors.selection_primary_bg = colour,
