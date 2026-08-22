@@ -2,14 +2,15 @@
 type: design
 status: living
 area: spec
-verified: 2026-08-16
+verified: 2026-08-22
 verified-against: v0.2.4
 ---
 
 # TYPE — Terminal-Yoked Programming Environment
 
 **Status:** approved; M0–M2.4 built against it
-**Date:** 2026-08-10, last verified against the tree 2026-08-16 at v0.2.4
+**Date:** 2026-08-10, last verified against the tree 2026-08-22, on the unreleased M2.5 branch
+above v0.2.4
 **Binary:** `typ` · **Crate:** `typ-editor` · **Repo:** `type`
 
 ---
@@ -120,7 +121,9 @@ number to optimise toward.
 **The budget is keystroke to painted glyph, so the paint is measured too.** Until v0.2.3 every
 perf test measured edits and none measured rendering, which is half a number — and M2.3 put a
 gutter, a bracket search and a per-grapheme paint decision on that path. A frame drawn deep in
-a 50k-line file costs 439 µs. Two further cautions were learned by getting them wrong: these
+a 50k-line file cost 439 µs at v0.2.3 and **482 µs on the M2.5 branch**, best of five — the
+chrome surfaces added about 10%, which is 3% of the budget. Two further cautions were learned by
+getting them wrong: these
 tests take a mutex, because cargo's parallel threads made one read 32 µs against the 1.9 µs it
 actually cost, and the `find_all` budget takes best-of-five, because it is the one number here
 with less than an order of magnitude of headroom and a single sample of it measures the
@@ -231,8 +234,8 @@ typ-syntax/          tree-sitter: highlight, folds, indents, injections
 typ-lsp/             LSP client — async, multi-server, per-language
 typ-git/             status, diff, blame, hunks
 typ-registry/        filetype -> handler mapping
-typ-ui/              shared ratatui widgets, theme, render helpers
-typ-config/          config, keybindings, theme loading
+typ-ui/              shared ratatui widgets, theme, render helpers   [not built — see below]
+typ-config/          config, keybindings, theme loading              [not built — see below]
 typ-panel-editor/
 typ-panel-tree/
 typ-panel-terminal/
@@ -240,6 +243,22 @@ typ-panel-git/
 typ-app/             event loop, layout, session, palette, fuzzy find
 typ/                 thin binary
 ```
+
+**Two of the fourteen were decided against rather than deferred.** `typ-syntax`, `typ-lsp`,
+`typ-git` and the two remaining panel crates are forward-looking — they arrive with the
+milestone that needs them. `typ-ui` and `typ-config` are different: they were reached for at
+M2.5 and the seam turned out to fall somewhere else.
+
+`Keymap::merge_toml` lives in `typ-core` beside the type it produces, and theme parsing followed
+the same shape for the same reason — a parser belongs with the type it parses into, not in a
+crate that exists to hold parsers. What would have been left for `typ-config` is three
+path-finding functions, which is a crate boundary separating nothing. The theme vocabulary
+(`Theme`, `ThemeColors`, `audit`, the degradation) sits in `typ-core` on the same argument, so
+`typ-ui` has no contents either; the shared render helpers it was meant to hold are still one
+`RenderContext` and a `Paint` enum.
+
+Revisit when the plugin host at v1.1 needs config registration, which is the first thing that
+would sit on the other side of that boundary. Cost of being wrong is a `git mv`.
 
 **800 lines per file is where you go looking for a seam.** Fresh and TermIDE both broke this
 badly and it shows — `plugin_dispatch.rs` at 6.7k lines, `panel-editor` at 22k, `modal` at
@@ -525,7 +544,7 @@ is bumped in the close-out task alongside the README.
 Post-v1 follows the same shape: the plugin host is v1.1, DAP is v1.2.
 
 The list below is the **shape** of the plan — the six numbered milestones and what each is for.
-It is deliberately not the schedule. Patch milestones (M2.1, M2.2, M2.3, M2.5) are inserted
+It is deliberately not the schedule. Patch milestones (M2.1, M2.2, M2.3, M2.4, M2.5, M2.6) are inserted
 between them as defects and gaps are found, and keeping their list here as well as in two other
 places is how three copies disagree. The live roadmap is the README's table, and the reasoning
 behind each insertion is [`gap-analysis.md`](gap-analysis.md) Part 6.
@@ -552,8 +571,11 @@ hold from here on — `typ <file>` opens, blocks, exits clean, reports honest ex
 replace.
 
 *Recorded after the fact:* two of this milestone's claims moved. `typ-syntax` highlighting did
-not ship at M2 and is now M2.5 — it needs a theme to map capture names onto, and that theme is
-the same work (see [`gap-analysis.md`](gap-analysis.md) Part 5). Self-hosting was declared to
+not ship at M2. It was rescheduled to M2.5 on the grounds that it needs a theme to map capture
+names onto (see [`gap-analysis.md`](gap-analysis.md) Part 5) — **right about the dependency,
+wrong about the direction.** The mapping *is* a theme, so the theme system has to exist first,
+and it turned out to be a milestone's worth of work on its own. M2.5 is the theme system;
+highlighting is **M2.6**. Self-hosting was declared to
 begin here and did not: the clipboard, Tab indent and the guard on opening over a dirty buffer
 were all absent, and it began at **M2.2** once those landed. The correction is left visible
 rather than edited out, because "the mechanism meant to keep every later milestone honest was
