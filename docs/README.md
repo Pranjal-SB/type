@@ -14,6 +14,7 @@ fixed. Each carries a `verified` date saying when that was last checked.
 | [`design/architecture.md`](design/architecture.md) | The spec. Goals, invariants, budgets, the panel contract, milestones. Deviating from it needs a stated reason. |
 | [`design/gap-analysis.md`](design/gap-analysis.md) | Known defects, and how TYPE measures against other editors. Re-run at each milestone. |
 | [`design/themes.md`](design/themes.md) | The theme format, the 25 slots, and the contrast rubric every palette is measured against. |
+| [`design/visual.md`](design/visual.md) | **Draft, not built.** What TYPE looks like: one rule instead of boxes, and how focus is shown without one. |
 | [`design/controls.md`](design/controls.md) | **Draft, not built.** The keyboard model: two chord tiers, prefix resolution and its hint, layered keymaps. |
 | [`releasing.md`](releasing.md) | Cutting a release: the close-out, the tag, and the order the seven crates publish in. |
 
