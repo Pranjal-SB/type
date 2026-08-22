@@ -1,0 +1,65 @@
+# Catppuccin Latte. Upstream: catppuccin/catppuccin, MIT.
+#
+# An adaptation, not a transcription. Two published values moved:
+#
+#   surface1        #bcc0cc -> #b2b6c2   a selection ground
+#   yellow          #df8e1d -> #7a2900   the warning colour
+#
+# That second one is the largest single change in any shipped theme and it is
+# worth being honest about: a saturated yellow cannot clear a legibility floor on
+# a near-white page, so it becomes a dark burnt amber. It reads as brown more
+# than as yellow. The alternative was a warning nobody can see, which is worse
+# for the one diagnostic distinction that changes what a reader does.
+
+
+name = "Catppuccin Latte"
+kind = "light"
+
+[palette]
+base = "#eff1f5"
+mantle = "#e6e9ef"
+crust = "#dce0e8"
+surface0 = "#ccd0da"
+surface1 = "#b2b6c2"
+surface2 = "#acb0be"
+overlay1 = "#8c8fa1"
+overlay2 = "#7c7f93"
+text = "#4c4f69"
+subtext0 = "#6c6f85"
+subtext1 = "#5c5f77"
+red = "#d20f39"
+yellow = "#7a2900"
+blue = "#1e66f5"
+teal = "#179299"
+mauve = "#8839ef"
+
+[ui]
+fg = "text"
+bg = "base"
+cursor_line_bg = "mantle"
+gutter_fg = "overlay1"
+gutter_bg = "base"
+line_number_fg = "overlay1"
+line_number_current_fg = "text"
+selection_bg = "surface0"
+selection_fg = "text"
+selection_primary_bg = "surface1"
+bracket_match_fg = "mauve"
+bracket_match_bg = "crust"
+# The raised surface the sidebar shares with the status bar, so the tree and the
+# editor stop reading as one space. Upstream's own second surface rather than a
+# value invented here.
+chrome_bg = "mantle"
+
+border = "surface1"
+border_focused = "blue"
+status_bar_bg = "mantle"
+status_bar_fg = "text"
+status_bar_inactive_fg = "subtext0"
+status_bar_accent = "blue"
+tree_directory_fg = "blue"
+tree_file_fg = "subtext1"
+diagnostic_error = "red"
+diagnostic_warning = "yellow"
+diagnostic_info = "blue"
+diagnostic_hint = "teal"

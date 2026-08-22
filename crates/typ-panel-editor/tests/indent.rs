@@ -125,12 +125,14 @@ fn indenting_skips_blank_lines() {
 
 #[test]
 fn outdent_removes_one_level() {
-    let mut p = EditorPanel::from_str("        deep\n");
-    p.set_selections_for_test(vec![Selection::caret(pos(0, 8))]);
+    // Three lines rather than one, so the file says four rather than leaving
+    // an eight-column jump as the only evidence there is.
+    let mut p = EditorPanel::from_str("a\n    b\n        deep\n");
+    p.set_selections_for_test(vec![Selection::caret(pos(2, 8))]);
 
     p.apply_action(Action::Outdent);
 
-    assert_eq!(text(&p), "    deep\n");
+    assert_eq!(text(&p), "a\n    b\n    deep\n");
 }
 
 #[test]
@@ -204,4 +206,35 @@ fn two_cursors_on_one_line_indent_it_once() {
         "    shared\n",
         "the line is indented once however many cursors are sitting on it"
     );
+}
+
+/// The width is measured from the buffer at load, so Tab inserts what the rest
+/// of the file uses rather than what the editor happens to prefer.
+#[test]
+fn the_width_comes_from_the_file() {
+    let source = "fn main() {\n  let a = 1;\n  if a {\n    b();\n  }\n}\n";
+    let mut p = EditorPanel::from_str(source);
+    assert_eq!(p.tab_width(), 2);
+
+    p.set_selections_for_test(vec![Selection::caret(pos(0, 0))]);
+    p.apply_action(Action::Indent);
+    assert_eq!(p.line_text(0), "  fn main() {");
+}
+
+#[test]
+fn a_file_that_says_nothing_keeps_the_default() {
+    assert_eq!(EditorPanel::from_str("one\ntwo\n").tab_width(), 4);
+    assert_eq!(EditorPanel::from_str("").tab_width(), 4);
+}
+
+#[test]
+fn the_override_beats_the_measurement() {
+    let mut p = EditorPanel::from_str("fn main() {\n  let a = 1;\n  if a {\n    b();\n  }\n}\n");
+    assert_eq!(p.tab_width(), 2);
+    p.set_tab_width(8);
+    assert_eq!(p.tab_width(), 8);
+
+    p.set_selections_for_test(vec![Selection::caret(pos(0, 0))]);
+    p.apply_action(Action::Indent);
+    assert_eq!(p.line_text(0), "        fn main() {");
 }

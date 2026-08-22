@@ -5,270 +5,271 @@
 //! property and colour-blind users are not served by a designer's eye. These
 //! tests compute WCAG contrast from the actual channel values, so a palette
 //! change that makes text unreadable fails a build rather than shipping.
+//!
+//! The rubric itself is `typ_core::audit`, not a private helper here. Three
+//! callers need it and only two are tests: the 256-colour degradation is checked
+//! against the same rules, every shipped theme file is checked at both depths
+//! from another crate, and a theme author writing their own file needs the
+//! answer the project holds itself to. Three copies of a rubric become three
+//! rubrics the first time one is edited.
 
 use ratatui::style::Color;
 use typ_core::ThemeColors;
 
-/// The channel values of a truecolor colour.
+use typ_core::audit;
+use typ_core::theme::Kind;
+
+#[track_caller]
+fn assert_clean(name: &str, theme: &ThemeColors, kind: Kind) {
+    let bad = audit(theme, kind);
+    assert!(
+        bad.is_empty(),
+        "{name} fails {} of the palette rules:
+  {}",
+        bad.len(),
+        bad.join(
+            "
+  "
+        )
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+/// A light palette that is *correct*, so the rules can be checked against one.
 ///
-/// Panics on anything else, which is the point: the 16-colour ANSI palette
-/// means TYPE inherits whatever blue the user's terminal defines and cannot be
-/// tuned at all.
-fn rgb(color: Color) -> (u8, u8, u8) {
-    match color {
-        Color::Rgb(r, g, b) => (r, g, b),
-        other => panic!("{other:?} is not truecolor"),
+/// Four of the rules above used to compare luminance directly, which encodes
+/// "the ground is dark" into statements that are really about standing out from
+/// the ground. Every one of them rejected this palette while the colours were
+/// doing exactly the right thing.
+///
+/// Two of these values took searching, and both are the same lesson in
+/// miniature. `selection_primary_bg` has to stay 4.5 against the text while
+/// still differing from `selection_bg` by 1.3, and on a pale ground those pull
+/// against each other. The diagnostics are worse: an amber that clears 4.5 on
+/// near-white and is still 1.8 in lightness from the error red lives in a
+/// window about half a ratio point wide. That is why a ported light theme is an
+/// adaptation rather than a copy.
+fn light_fixture() -> ThemeColors {
+    ThemeColors {
+        fg: Color::Rgb(0x1a, 0x1c, 0x20),
+        bg: Color::Rgb(0xfd, 0xfd, 0xfc),
+        cursor_line_bg: Color::Rgb(0xf2, 0xf2, 0xf0),
+
+        gutter_fg: Color::Rgb(0x8a, 0x8d, 0x93),
+        gutter_bg: Color::Rgb(0xfd, 0xfd, 0xfc),
+        // Lighter than the body text, not darker: on a pale ground, receding
+        // means moving toward the background.
+        line_number_fg: Color::Rgb(0x8a, 0x8d, 0x93),
+        line_number_current_fg: Color::Rgb(0x1a, 0x1c, 0x20),
+
+        selection_bg: Color::Rgb(0xd3, 0xdc, 0xea),
+        selection_fg: Color::Rgb(0x1a, 0x1c, 0x20),
+        selection_primary_bg: Color::Rgb(0xa6, 0xbf, 0xe2),
+
+        bracket_match_fg: Color::Rgb(0x8a, 0x4b, 0x00),
+        bracket_match_bg: Color::Rgb(0xfd, 0xf0, 0xd9),
+
+        border: Color::Rgb(0xd8, 0xd8, 0xd4),
+        // Darker than the unfocused border, for the same reason.
+        border_focused: Color::Rgb(0x1f, 0x5f, 0xa8),
+
+        chrome_bg: Color::Rgb(0xf0, 0xf0, 0xed),
+        status_bar_bg: Color::Rgb(0xf0, 0xf0, 0xed),
+        status_bar_fg: Color::Rgb(0x1a, 0x1c, 0x20),
+        status_bar_inactive_fg: Color::Rgb(0x5f, 0x62, 0x68),
+        status_bar_accent: Color::Rgb(0x1f, 0x5f, 0xa8),
+
+        tree_directory_fg: Color::Rgb(0x1f, 0x5f, 0xa8),
+        tree_file_fg: Color::Rgb(0x3a, 0x3d, 0x43),
+
+        diagnostic_error: Color::Rgb(0x8f, 0x14, 0x14),
+        diagnostic_warning: Color::Rgb(0x99, 0x68, 0x00),
+        diagnostic_info: Color::Rgb(0x1f, 0x5f, 0xa8),
+        diagnostic_hint: Color::Rgb(0x0d, 0x6b, 0x6b),
     }
 }
 
-/// WCAG 2.1 relative luminance.
-fn luminance(color: Color) -> f64 {
-    fn channel(value: u8) -> f64 {
-        let s = value as f64 / 255.0;
-        if s <= 0.039_28 {
-            s / 12.92
-        } else {
-            ((s + 0.055) / 1.055).powf(2.4)
-        }
-    }
-    let (r, g, b) = rgb(color);
-    0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_shipped_palette_satisfies_every_rule() {
+    assert_clean("the default theme", &ThemeColors::default(), Kind::Dark);
 }
 
-/// WCAG 2.1 contrast ratio, 1.0 (identical) to 21.0 (black on white).
-fn contrast(a: Color, b: Color) -> f64 {
-    let (x, y) = (luminance(a), luminance(b));
-    let (hi, lo) = if x > y { (x, y) } else { (y, x) };
-    (hi + 0.05) / (lo + 0.05)
+#[test]
+fn a_correct_light_palette_satisfies_every_rule() {
+    // The regression this file exists to prevent: four of the rules above were
+    // written as luminance comparisons and rejected this palette outright.
+    assert_clean("the light fixture", &light_fixture(), Kind::Light);
 }
 
-fn assert_contrast(name: &str, fg: Color, bg: Color, floor: f64) {
-    let ratio = contrast(fg, bg);
+#[test]
+fn the_rules_reject_a_palette_that_earns_it() {
+    // The audit is only worth running if it can fail. Body text the same colour
+    // as the page is the least arguable way to earn that.
+    let mut theme = ThemeColors::default();
+    theme.fg = theme.bg;
+
+    let bad = audit(&theme, Kind::Dark);
+
     assert!(
-        ratio >= floor,
-        "{name}: contrast {ratio:.2} is below the {floor:.1} floor"
+        bad.iter().any(|f| f.starts_with("fg on bg")),
+        "an invisible foreground has to be reported, got: {bad:?}"
     );
 }
 
 #[test]
-fn every_colour_in_the_theme_is_truecolor() {
-    // Destructured exhaustively and without `..` on purpose: adding a field to
-    // `ThemeColors` breaks this test at compile time, which is how a new colour
-    // is forced to be a considered one rather than a `Color::Blue` that nobody
-    // notices until it clashes on someone else's terminal.
-    let ThemeColors {
-        fg,
-        bg,
-        cursor_line_bg,
-        gutter_fg,
-        gutter_bg,
-        line_number_fg,
-        line_number_current_fg,
-        selection_bg,
-        selection_fg,
-        selection_primary_bg,
-        bracket_match_fg,
-        bracket_match_bg,
-        border,
-        border_focused,
-        status_bar_bg,
-        status_bar_fg,
-        status_bar_inactive_fg,
-        status_bar_accent,
-        tree_directory_fg,
-        tree_file_fg,
-        diagnostic_error,
-        diagnostic_warning,
-        diagnostic_info,
-        diagnostic_hint,
-    } = ThemeColors::default();
+fn the_cursor_line_floor_follows_the_ground() {
+    // The one rule in `audit` that branches on the kind of palette, and the
+    // branch is worth a test of its own: both probes below put `fg` at the same
+    // ~6.8 against their own cursor line, and that single ratio is a pass on a
+    // pale ground and a failure on a dark one.
+    //
+    // Only reachable when `fg on bg` is itself near 7. A palette with room to
+    // spare cannot get here at all — the `cursor_line vs bg < 1.5` ceiling caps
+    // how far the tint can travel before the text-legibility floor is in
+    // danger. That is why the exemption is narrow enough to be worth making.
+    let failed_on_cursor_line = |theme: &ThemeColors, kind: Kind| {
+        audit(theme, kind)
+            .iter()
+            .any(|f| f.starts_with("fg on cursor_line_bg"))
+    };
 
-    for (name, colour) in [
-        ("fg", fg),
-        ("bg", bg),
-        ("cursor_line_bg", cursor_line_bg),
-        ("gutter_fg", gutter_fg),
-        ("gutter_bg", gutter_bg),
-        ("line_number_fg", line_number_fg),
-        ("line_number_current_fg", line_number_current_fg),
-        ("selection_bg", selection_bg),
-        ("selection_fg", selection_fg),
-        ("selection_primary_bg", selection_primary_bg),
-        ("bracket_match_fg", bracket_match_fg),
-        ("bracket_match_bg", bracket_match_bg),
-        ("border", border),
-        ("border_focused", border_focused),
-        ("status_bar_bg", status_bar_bg),
-        ("status_bar_fg", status_bar_fg),
-        ("status_bar_inactive_fg", status_bar_inactive_fg),
-        ("status_bar_accent", status_bar_accent),
-        ("tree_directory_fg", tree_directory_fg),
-        ("tree_file_fg", tree_file_fg),
-        ("diagnostic_error", diagnostic_error),
-        ("diagnostic_warning", diagnostic_warning),
-        ("diagnostic_info", diagnostic_info),
-        ("diagnostic_hint", diagnostic_hint),
-    ] {
-        // `rgb` panics on anything that is not Color::Rgb.
-        let _ = rgb(colour);
-        assert!(
-            luminance(colour) >= 0.0,
-            "{name} produced a nonsensical luminance"
-        );
-    }
-}
+    // Catppuccin Latte's real values: body text at 7.06, so any tint at all
+    // costs more than the dark floor allows.
+    let mut pale = light_fixture();
+    pale.fg = Color::Rgb(0x4c, 0x4f, 0x69);
+    pale.bg = Color::Rgb(0xef, 0xf1, 0xf5);
+    pale.cursor_line_bg = Color::Rgb(0xea, 0xec, 0xf1); // 6.76 against fg
 
-#[test]
-fn body_text_is_comfortably_readable() {
-    let theme = ThemeColors::default();
-    // AAA for body text. This is the colour pair a user stares at all day.
-    assert_contrast("fg on bg", theme.fg, theme.bg, 7.0);
-}
-
-#[test]
-fn text_stays_readable_on_both_kinds_of_selection() {
-    let theme = ThemeColors::default();
-    assert_contrast(
-        "selection_fg on selection_bg",
-        theme.selection_fg,
-        theme.selection_bg,
-        4.5,
-    );
-    assert_contrast(
-        "selection_fg on selection_primary_bg",
-        theme.selection_fg,
-        theme.selection_primary_bg,
-        4.5,
-    );
-}
-
-#[test]
-fn the_primary_selection_is_distinguishable_from_the_others() {
-    let theme = ThemeColors::default();
-    // Helix themes `ui.selection.primary` separately for exactly this reason:
-    // every motion is relative to the primary, and with thirty cursors there
-    // has to be something saying which one that is.
-    assert_ne!(theme.selection_primary_bg, theme.selection_bg);
-    let ratio = contrast(theme.selection_primary_bg, theme.selection_bg);
     assert!(
-        ratio >= 1.3,
-        "the two selection backgrounds differ by only {ratio:.2}, which reads as \
-         one colour under any gamma the user's terminal picks"
+        !failed_on_cursor_line(&pale, Kind::Light),
+        "6.76 clears the 6.5 floor a pale ground gets"
     );
-}
 
-#[test]
-fn the_current_lines_number_stands_out_from_the_rest() {
-    let theme = ThemeColors::default();
-    assert_ne!(theme.line_number_current_fg, theme.line_number_fg);
+    let dark = ThemeColors {
+        fg: Color::Rgb(0x9e, 0xa4, 0xac),
+        cursor_line_bg: Color::Rgb(0x17, 0x1c, 0x25), // 6.80 against fg
+        ..ThemeColors::default()
+    };
+
     assert!(
-        luminance(theme.line_number_current_fg) > luminance(theme.line_number_fg),
-        "the current line's number must be the brighter of the two — a dimmer \
-         'here' reads as disabled"
+        failed_on_cursor_line(&dark, Kind::Dark),
+        "6.80 misses the 7.0 floor a dark ground keeps — a dark palette has \
+         somewhere else to go, so it does not get the exemption"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The same rules, after the palette has been quantised
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_colour_lands_on_the_nearest_thing_the_cube_can_say() {
+    // The page background, which is the hardest class of colour to quantise:
+    // near-black, slightly blue, and sitting in the part of RGB space where
+    // equal numeric steps are least equal perceptually.
+    assert_eq!(
+        typ_core::downgrade(Color::Rgb(0x10, 0x14, 0x1b), typ_core::Depth::Ansi256),
+        Color::Rgb(0x12, 0x12, 0x12),
+        "index 233 on the grey ramp is the closest the 256-colour set gets"
     );
 }
 
 #[test]
-fn line_numbers_recede_without_becoming_unreadable() {
+fn truecolor_leaves_a_palette_exactly_as_written() {
     let theme = ThemeColors::default();
-    // 3:1 is the WCAG floor for non-body text. Below it the gutter stops being
-    // information and becomes texture.
-    assert_contrast("line_number_fg on bg", theme.line_number_fg, theme.bg, 3.0);
+    assert_eq!(
+        typ_core::colour::downgrade_theme(&theme, typ_core::Depth::TrueColor),
+        theme
+    );
+}
+
+#[test]
+fn the_shipped_palette_still_reads_at_256_colours() {
+    // Nobody in the field checks this, so nobody knows whether their theme is
+    // legible on a 256-colour terminal. The rubric is the same; only the
+    // palette has changed underneath it.
+    let degraded =
+        typ_core::colour::downgrade_theme(&ThemeColors::default(), typ_core::Depth::Ansi256);
+    assert_clean("the default theme at 256 colours", &degraded, Kind::Dark);
+}
+
+#[test]
+fn a_palette_that_lies_about_its_ground_is_reported() {
+    // The declared kind picks one of the floors, so a theme that says "dark"
+    // over a pale page would be audited against the wrong one — silently, which
+    // is the worst way for a rule to be wrong.
+    let bad = audit(&light_fixture(), Kind::Dark);
+
     assert!(
-        luminance(theme.line_number_fg) < luminance(theme.fg),
-        "line numbers must be quieter than the code they label"
+        bad.iter().any(|f| f.starts_with("kind is")),
+        "a light palette declared dark has to be caught, got: {bad:?}"
     );
 }
 
 #[test]
-fn the_current_line_highlight_is_felt_rather_than_seen() {
-    let theme = ThemeColors::default();
-    assert_ne!(theme.cursor_line_bg, theme.bg, "it has to do something");
-    let ratio = contrast(theme.cursor_line_bg, theme.bg);
+fn a_colour_the_terminal_owns_is_not_a_colour_a_theme_can_pick() {
+    // Below truecolor TYPE inherits whatever the user's terminal defines each
+    // slot as. That cannot be measured from here, so it cannot be audited, so
+    // it cannot be shipped in a palette.
+    let theme = ThemeColors {
+        fg: Color::Blue,
+        ..ThemeColors::default()
+    };
+
+    let bad = audit(&theme, Kind::Dark);
+
     assert!(
-        ratio < 1.5,
-        "cursor_line_bg is {ratio:.2} against the background, which is a stripe \
-         across the screen rather than a hint at where the cursor is"
-    );
-    // And it must not eat the text sitting on it.
-    assert_contrast("fg on cursor_line_bg", theme.fg, theme.cursor_line_bg, 7.0);
-}
-
-#[test]
-fn a_matched_bracket_is_visible_against_its_own_background() {
-    let theme = ThemeColors::default();
-    assert_contrast(
-        "bracket_match_fg on bracket_match_bg",
-        theme.bracket_match_fg,
-        theme.bracket_match_bg,
-        4.5,
+        bad.iter().any(|f| f.contains("not a truecolor value")),
+        "got: {bad:?}"
     );
 }
 
 #[test]
-fn the_focused_border_is_brighter_than_an_unfocused_one() {
-    let theme = ThemeColors::default();
+fn the_gutter_floor_follows_the_ground_the_gutter_is_drawn_on() {
+    // The defect this pair exists to pin. A flat WCAG floor passed Slate's
+    // gutter at 3.35 and rejected Catppuccin Latte's at 2.83 — and Latte's is
+    // the one that is actually easier to read. Measured perceptually the two
+    // are 23.5 and 50.8, so the rubric was rejecting the colour that is twice
+    // as legible and accepting the one that is not.
+    //
+    // The cause is WCAG 2.1 itself: across 1,066 pairs from 97 published
+    // palettes, a dark ground returns about 2.5x the ratio of a light ground at
+    // equal perceived contrast. So one number cannot serve both, and the floors
+    // are read from the ground instead.
+    //
+    // These two are the real values from the shipped themes rather than
+    // invented ones, because the inversion is a fact about those palettes.
+    let dark = ThemeColors {
+        line_number_fg: Color::Rgb(0x5a, 0x6a, 0x80),
+        ..ThemeColors::default()
+    };
+    let light = ThemeColors {
+        line_number_fg: Color::Rgb(0x8c, 0x8f, 0xa1),
+        bg: Color::Rgb(0xef, 0xf1, 0xf5),
+        ..light_fixture()
+    };
+
+    let names = |t: &ThemeColors, k| -> Vec<String> {
+        audit(t, k)
+            .into_iter()
+            .filter(|f| f.starts_with("line_number_fg on bg"))
+            .collect()
+    };
+
     assert!(
-        luminance(theme.border_focused) > luminance(theme.border),
-        "focus is indicated by gaining attention, not losing it"
-    );
-}
-
-#[test]
-fn the_status_bar_reads_against_its_own_background() {
-    let theme = ThemeColors::default();
-    assert_contrast(
-        "status_bar_fg",
-        theme.status_bar_fg,
-        theme.status_bar_bg,
-        4.5,
-    );
-    // Inactive is quieter but still legible: it carries real content — the
-    // filetype, the line ending — not decoration.
-    assert_contrast(
-        "status_bar_inactive_fg",
-        theme.status_bar_inactive_fg,
-        theme.status_bar_bg,
-        3.0,
+        !names(&dark, Kind::Dark).is_empty(),
+        "3.35 on a dark ground is the quieter gutter of the two and has to fail"
     );
     assert!(
-        luminance(theme.status_bar_inactive_fg) < luminance(theme.status_bar_fg),
-        "the inactive colour must be the quieter one"
-    );
-}
-
-#[test]
-fn the_tree_distinguishes_directories_from_files() {
-    let theme = ThemeColors::default();
-    assert_ne!(theme.tree_directory_fg, theme.tree_file_fg);
-    assert_contrast("tree_directory_fg", theme.tree_directory_fg, theme.bg, 4.5);
-    assert_contrast("tree_file_fg", theme.tree_file_fg, theme.bg, 4.5);
-}
-
-#[test]
-fn every_diagnostic_severity_is_readable() {
-    let theme = ThemeColors::default();
-    for (name, colour) in [
-        ("error", theme.diagnostic_error),
-        ("warning", theme.diagnostic_warning),
-        ("info", theme.diagnostic_info),
-        ("hint", theme.diagnostic_hint),
-    ] {
-        assert_contrast(name, colour, theme.bg, 4.5);
-    }
-}
-
-#[test]
-fn error_and_warning_differ_by_more_than_hue() {
-    let theme = ThemeColors::default();
-    // Red and amber are the classic deuteranopia collision, and error-versus-
-    // warning is the one diagnostic distinction that changes what a user does.
-    // Separating them by lightness as well as hue is what keeps that decision
-    // available to a red-green colour-blind reader.
-    let ratio = contrast(theme.diagnostic_error, theme.diagnostic_warning);
-    assert!(
-        ratio >= 1.8,
-        "error and warning differ by only {ratio:.2} in lightness, so they are \
-         one colour to a red-green colour-blind reader"
+        names(&light, Kind::Light).is_empty(),
+        "2.83 on a pale ground is the more legible gutter and has to pass, got {:?}",
+        names(&light, Kind::Light)
     );
 }

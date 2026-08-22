@@ -1595,6 +1595,7 @@ dependencies = [
  "anyhow",
  "crossterm",
  "ratatui",
+ "toml",
  "typ-buffer",
  "typ-core",
  "typ-panel-editor",

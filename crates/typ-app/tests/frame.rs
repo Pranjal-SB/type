@@ -63,13 +63,13 @@ fn the_opening_frame_draws_both_panels_and_the_status_bar() {
     // and numbering it from the first frame is what makes the column furniture
     // rather than something that appears once there is text.
     let expected = [
-        "┌opening─────────────────────┐┌untitled────────────────────┐",
-        "│> src                       ││1                           │",
-        "│  main.rs                   ││                            │",
-        "│                            ││                            │",
-        "│                            ││                            │",
-        "│                            ││                            │",
-        "└────────────────────────────┘└────────────────────────────┘",
+        "┌─ opening ──────────────────┬─ untitled ──────────────────┐",
+        "│> src                       │1                            │",
+        "│  main.rs                   │                             │",
+        "│                            │                             │",
+        "│                            │                             │",
+        "│                            │                             │",
+        "└────────────────────────────┴─────────────────────────────┘",
         // The hint is truncated to whatever the segments leave: the right half
         // is the fixed cost, so a message can never shove the position off the
         // end of the bar. Sixty columns is a tight terminal and this is what
@@ -77,6 +77,29 @@ fn the_opening_frame_draws_both_panels_and_the_status_bar() {
         "Tab focus  ·  Enter open  untitled  LF  Spaces: 4  1:1  100%",
     ];
     assert_eq!(rows, expected);
+
+    // The literal above catches any change at all, which is its job and also
+    // its weakness: eight hand-counted sixty-column strings are exactly the
+    // kind of thing somebody adjusts until it goes green. These say why it is
+    // right, so a future edit has to satisfy the reasoning rather than the
+    // arithmetic.
+    //
+    // The claim that matters is that column 29 is the *only* divider. Two
+    // panels drawing full boxes into adjacent columns is the seam this layout
+    // exists to prevent, and it would show up as a second vertical at 28 or 30.
+    for (y, row) in rows[..7].iter().enumerate() {
+        assert_eq!(row.chars().count(), 60, "row {y} changed width");
+        assert!(
+            ["│", "┬", "┴"].contains(&cols(row, 29, 30).as_str()),
+            "row {y} lost the divider: {row}"
+        );
+        assert_ne!(cols(row, 28, 29), "│", "row {y}: second divider left of 29");
+        assert_ne!(
+            cols(row, 30, 31),
+            "│",
+            "row {y}: second divider right of 29"
+        );
+    }
 }
 
 #[test]
@@ -86,15 +109,22 @@ fn the_focused_panel_is_the_one_with_the_lit_border() {
 
     let terminal = draw(&mut app, 60, 8);
     let buffer = terminal.backend().buffer();
-    // Top-left corner of each panel: the tree holds focus at startup.
+    // A cell each panel owns outright: column 0 is the tree's own corner and 31
+    // sits in the editor's top rule. Deliberately *not* column 29 — that is the
+    // shared divider, which belongs to whichever panel has focus and so says
+    // nothing about the other one. The tree holds focus at startup.
     assert_eq!(buffer[(0, 0)].fg, theme.border_focused);
-    assert_eq!(buffer[(30, 0)].fg, theme.border);
+    assert_eq!(buffer[(31, 0)].fg, theme.border);
 
     app.cycle_focus();
     let terminal = draw(&mut app, 60, 8);
     let buffer = terminal.backend().buffer();
     assert_eq!(buffer[(0, 0)].fg, theme.border);
-    assert_eq!(buffer[(30, 0)].fg, theme.border_focused);
+    assert_eq!(buffer[(31, 0)].fg, theme.border_focused);
+
+    // And the divider itself goes to the focused panel, since a shared border
+    // cannot be two colours.
+    assert_eq!(buffer[(29, 0)].fg, theme.border_focused);
 }
 
 #[test]
@@ -139,12 +169,12 @@ fn an_open_file_renders_its_text_with_the_cursor_on_it() {
     let mut terminal = draw(&mut app, 60, 8);
     let rows = rows(&terminal);
     assert!(rows[0].contains("main.rs"), "title missing: {}", rows[0]);
-    assert_eq!(cols(&rows[1], 30, 60), "│1 fn main() {}              │");
-    assert_eq!(cols(&rows[2], 30, 60), "│2 let x = 1;                │");
+    assert_eq!(cols(&rows[1], 30, 60), "1 fn main() {}               │");
+    assert_eq!(cols(&rows[2], 30, 60), "2 let x = 1;                 │");
 
-    // Sidebar 30, border 1, gutter 2: editor text starts at column 33. The
+    // Divider at 29, gutter 30-31: editor text starts at column 32. The
     // cursor is one line down and one grapheme in.
-    assert_eq!(terminal.get_cursor_position().unwrap(), (34, 2).into());
+    assert_eq!(terminal.get_cursor_position().unwrap(), (33, 2).into());
 }
 
 #[test]
@@ -158,9 +188,15 @@ fn wide_characters_do_not_push_the_border_out_of_line() {
     // A wide grapheme occupies its cell plus a blank continuation cell, so one
     // char here is one column — which is the whole point: if the width maths
     // were wrong, the trailing border would move.
-    assert_eq!(cols(&rows[1], 30, 60), "│1 日 本 語  ok                 │");
+    assert_eq!(cols(&rows[1], 30, 60), "1 日 本 語  ok                  │");
+    // The trailing border is the evidence: get the width maths wrong and it
+    // moves. The divider at 29 is the same check on the other side — a tree row
+    // that overran would push it right.
     for row in &rows[1..6] {
+        assert_eq!(row.chars().count(), 60, "row changed width: {row}");
         assert!(row.ends_with('│'), "border broke on: {row}");
+        assert!(row.starts_with('│'), "border broke on: {row}");
+        assert_eq!(cols(row, 29, 30), "│", "the divider moved: {row}");
     }
 }
 
@@ -172,8 +208,8 @@ fn the_cursor_lands_past_a_wide_character_not_inside_it() {
     app.handle_chord(key(KeyCode::Right)).unwrap();
 
     let mut terminal = draw(&mut app, 60, 8);
-    // Text starts at 33 and one CJK grapheme is two columns: 33 + 2.
-    assert_eq!(terminal.get_cursor_position().unwrap(), (35, 1).into());
+    // Text starts at 32 and one CJK grapheme is two columns: 32 + 2.
+    assert_eq!(terminal.get_cursor_position().unwrap(), (34, 1).into());
 }
 
 #[test]
@@ -246,18 +282,18 @@ fn a_selection_is_visible_in_the_rendered_frame() {
 
     let terminal = draw(&mut app, 60, 8);
     let theme = ThemeColors::default();
-    // Editor text begins at column 33: sidebar 30, border 1, gutter 2.
+    // Editor text begins at column 32: the divider at 29, then a two-cell gutter.
     // A lone selection is the primary one — the thing every motion is
     // relative to, and the only one on screen worth pointing at.
+    assert_eq!(bg(&terminal, 32, 1), Some(theme.selection_primary_bg));
     assert_eq!(bg(&terminal, 33, 1), Some(theme.selection_primary_bg));
-    assert_eq!(bg(&terminal, 34, 1), Some(theme.selection_primary_bg));
     assert_eq!(
-        bg(&terminal, 35, 1),
+        bg(&terminal, 34, 1),
         Some(theme.bg),
         "the highlight must stop where the selection does"
     );
     assert_eq!(
-        bg(&terminal, 31, 1),
+        bg(&terminal, 30, 1),
         Some(theme.gutter_bg),
         "and it must not bleed back into the gutter"
     );
@@ -327,4 +363,7 @@ fn a_long_line_scrolled_right_keeps_its_borders() {
     assert_eq!(rows[1].chars().count(), 60);
     assert!(rows[1].ends_with('│'), "row 1: {}", rows[1]);
     assert!(rows[1].starts_with('│'), "row 1: {}", rows[1]);
+    // And the scrolled line stopped at the divider rather than running under
+    // the tree, which the outer borders alone would not catch.
+    assert_eq!(cols(&rows[1], 29, 30), "│", "row 1: {}", rows[1]);
 }

@@ -127,12 +127,45 @@ fn real_main() -> Result<()> {
         "clipboard provider: {}",
         typ_buffer::clipboard::provider_name()
     );
+    // Every config file is loaded the same way: take what parsed, collect what
+    // did not, and start regardless.
+    let mut complaints: Vec<String> = Vec::new();
+
+    let (settings, warning) =
+        typ_app::config::load_settings(typ_app::config::settings_path().as_deref());
+    complaints.extend(warning);
+
+    // Before any file is opened, so the first one is affected too.
+    app.set_indent_width(settings.indent_width);
 
     let (keymap, warning) = typ_app::config::load_keymap(typ_app::config::config_path().as_deref());
     app.set_keymap(keymap);
-    if let Some(warning) = warning {
-        typ_app::log_warn!("{warning}");
-        app.notify(warning);
+    complaints.extend(warning);
+
+    // The setting wins over detection where it is set, because nothing in the
+    // environment separates a tmux that forwards truecolor from one that
+    // mangles it.
+    let depth = settings
+        .color_depth
+        .unwrap_or_else(typ_app::capability::detect);
+    // The line to look at when somebody reports that the colours are wrong.
+    typ_app::log_info!("colour depth: {depth:?}, theme: {}", settings.theme);
+
+    let (colors, warning) = typ_app::config::load_theme(
+        typ_app::config::config_dir().as_deref(),
+        &settings.theme,
+        depth,
+    );
+    app.set_theme(colors);
+    complaints.extend(warning);
+
+    if !complaints.is_empty() {
+        for complaint in &complaints {
+            typ_app::log_warn!("{complaint}");
+        }
+        // All of them, not the first: two broken config files is exactly when
+        // hearing about only one wastes the most time.
+        app.notify(complaints.join("  ·  "));
     }
 
     if let Some(f) = file {

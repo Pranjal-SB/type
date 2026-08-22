@@ -65,6 +65,11 @@ pub struct App {
     ///
     /// Starts true: the first frame has to be painted.
     dirty: bool,
+    /// `indent_width` from `config.toml`, if it was set.
+    ///
+    /// Held here rather than pushed into the editor once, because opening a
+    /// file builds a new `EditorPanel` and the setting has to survive that.
+    indent_width: Option<usize>,
 }
 
 /// Between status segments. Two spaces rather than a glyph separator: a
@@ -95,6 +100,7 @@ impl App {
             sender: None,
             watch: None,
             dirty: true,
+            indent_width: None,
         })
     }
 
@@ -217,7 +223,7 @@ impl App {
             modified: self.editor.is_dirty(),
             file_type: file_type.as_deref(),
             line_ending: self.editor.line_ending().label(),
-            indent_width: typ_panel_editor::TAB_WIDTH,
+            indent_width: self.editor.tab_width(),
             selection_count: self.editor.selections().len(),
             line: cursor.line,
             col: cursor.col,
@@ -319,6 +325,7 @@ impl App {
         } else {
             EditorPanel::new_at(path)
         };
+        self.apply_indent_width();
         self.focus = Focus::Editor;
         self.open_pending = None;
         self.rewatch();
@@ -329,8 +336,32 @@ impl App {
         &self.keymap
     }
 
+    /// The configured indent width, or `None` to measure each file.
+    pub fn set_indent_width(&mut self, width: Option<usize>) {
+        self.indent_width = width;
+        self.apply_indent_width();
+    }
+
+    fn apply_indent_width(&mut self) {
+        if let Some(width) = self.indent_width {
+            self.editor.set_tab_width(width);
+        }
+    }
+
     pub fn set_keymap(&mut self, keymap: Keymap) {
         self.keymap = keymap;
+    }
+
+    /// Use a loaded palette instead of the compiled-in default.
+    ///
+    /// Separate from `new` for the same reason `set_keymap` is: config lives in
+    /// files the app has to go and read, and a test that wants a known palette
+    /// should not have to arrange a config directory to get one.
+    ///
+    /// The palette arrives already degraded to the terminal's colour depth. No
+    /// panel branches on depth, and none should — see `config::load_theme`.
+    pub fn set_theme(&mut self, theme: ThemeColors) {
+        self.theme = theme;
     }
 
     /// Route one keypress.
@@ -668,8 +699,6 @@ impl App {
             terminal_width: w,
             terminal_height: h,
         };
-        self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
-
         let editor_ctx = RenderContext {
             theme: &self.theme,
             is_focused: self.focus == Focus::Editor,
@@ -677,8 +706,26 @@ impl App {
             terminal_width: w,
             terminal_height: h,
         };
-        self.editor
-            .render(editor_area, frame.buffer_mut(), &editor_ctx);
+
+        // The focused panel draws last.
+        //
+        // The two rects share a column — see `layout::split` — so one cell
+        // carries both panels' border, and a shared border cannot be two
+        // colours. Drawing the focused panel second gives that cell its colour,
+        // which is the right answer: the focused panel's box is the complete
+        // one, and the unfocused panel is the one that gives ground.
+        match self.focus {
+            Focus::Editor => {
+                self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
+                self.editor
+                    .render(editor_area, frame.buffer_mut(), &editor_ctx);
+            }
+            Focus::Tree => {
+                self.editor
+                    .render(editor_area, frame.buffer_mut(), &editor_ctx);
+                self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
+            }
+        }
 
         self.render_status(status_area, frame.buffer_mut());
 

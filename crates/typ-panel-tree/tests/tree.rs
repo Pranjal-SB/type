@@ -74,3 +74,51 @@ fn pressing_enter_on_a_directory_does_not_emit_open_file() {
             .any(|e| matches!(e, PanelEvent::OpenFile { .. }))
     );
 }
+
+#[test]
+fn the_sidebar_sits_on_the_chrome_surface_not_the_editors_page() {
+    // The tree, the gutter and the editor were all `bg`: three regions in one
+    // colour, which is why no amount of border made them read as separate
+    // things. Chrome is raised, content is the floor.
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use typ_core::{RenderContext, ThemeColors};
+
+    let theme = ThemeColors::default();
+    let mut panel = TreePanel::new(&fixture("surface")).unwrap();
+    let area = Rect::new(0, 0, 20, 6);
+    let ctx = RenderContext {
+        theme: &theme,
+        is_focused: true,
+        panel_index: 0,
+        terminal_width: 20,
+        terminal_height: 6,
+    };
+    let mut buf = Buffer::empty(area);
+    panel.render(area, &mut buf, &ctx);
+
+    assert_ne!(
+        theme.chrome_bg, theme.bg,
+        "a sidebar the same colour as the page is the thing being fixed"
+    );
+    // The border row, an unselected entry, and the empty rows below them. One
+    // row left on `bg` is a band across the sidebar.
+    //
+    // Row 1 is skipped on purpose: it is the selected entry and carries
+    // `selection_primary_bg`, which is the tree saying where the cursor is and
+    // has nothing to do with the surface underneath it.
+    for y in [0, 2, 3, 4, 5] {
+        for x in 0..20 {
+            assert_eq!(
+                buf[(x, y)].bg,
+                theme.chrome_bg,
+                "cell {x},{y} is not on the chrome surface"
+            );
+        }
+    }
+    assert_eq!(
+        buf[(1, 1)].bg,
+        theme.selection_primary_bg,
+        "and the selected row still marks itself"
+    );
+}

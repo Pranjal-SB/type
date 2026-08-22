@@ -1,0 +1,66 @@
+# Rosé Pine. Upstream: rose-pine/neovim, MIT.
+#
+# An adaptation, not a transcription. Eight published values moved:
+#
+#   surface         #1f1d2e -> #211f30   quantised onto the page at 256
+#   muted           #6e6a86 -> #9793af   line numbers, 3.42 against a 5.0 floor
+#   subtle          #908caa -> #a7a3c1   inactive status text
+#   text            #e0def4 -> #e7e5fb   body text
+#   love            #eb6f92 -> #f3779a   the error colour
+#   gold            #f6c177 -> #ffeba1   the warning colour
+#   pine            #31748f -> #63a6c1   the hint colour, 3.38 against 6.5
+#   highlight_high  #524f67 -> #2e2b43   the primary selection
+#
+# Upstream misses the error-versus-warning separation by 0.03, which is exactly
+# what "designed for harmony" produces when deuteranopia was not a goal. love and
+# gold both moved to open that gap to 1.8.
+
+
+name = "Rosé Pine"
+kind = "dark"
+
+[palette]
+base = "#191724"
+surface = "#211f30"
+overlay = "#26233a"
+muted = "#9793af"
+subtle = "#a7a3c1"
+text = "#e7e5fb"
+love = "#f3779a"
+gold = "#ffeba1"
+pine = "#63a6c1"
+foam = "#9ccfd8"
+highlight_low = "#21202e"
+highlight_med = "#403d52"
+highlight_high = "#2e2b43"
+
+[ui]
+fg = "text"
+bg = "base"
+cursor_line_bg = "highlight_low"
+gutter_fg = "muted"
+gutter_bg = "base"
+line_number_fg = "muted"
+line_number_current_fg = "text"
+selection_bg = "highlight_med"
+selection_fg = "text"
+selection_primary_bg = "highlight_high"
+bracket_match_fg = "gold"
+bracket_match_bg = "highlight_med"
+# The raised surface the sidebar shares with the status bar, so the tree and the
+# editor stop reading as one space. Upstream's own second surface rather than a
+# value invented here.
+chrome_bg = "surface"
+
+border = "overlay"
+border_focused = "foam"
+status_bar_bg = "surface"
+status_bar_fg = "text"
+status_bar_inactive_fg = "subtle"
+status_bar_accent = "foam"
+tree_directory_fg = "foam"
+tree_file_fg = "subtle"
+diagnostic_error = "love"
+diagnostic_warning = "gold"
+diagnostic_info = "foam"
+diagnostic_hint = "pine"

@@ -7,7 +7,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Paragraph, Widget};
+use ratatui::widgets::{Paragraph, Widget};
 use typ_buffer::{
     EditKind, LineEnding, Position, SearchQuery, Selection, Selections, TextBuffer,
     display_to_grapheme_col, grapheme_to_display_col,
@@ -21,13 +21,20 @@ pub mod render;
 
 use crate::gutter::Gutter;
 
-/// Columns a tab occupies, and the width one level of indent inserts.
+/// The width to use when the file will not say.
 ///
-/// Public because the status bar states it on screen — `Spaces: 4` — and a
-/// value shown to the user that the shower has to guess at is how the shown
-/// value and the real one drift apart. `.editorconfig` and indent detection at
-/// M2.5 replace the constant, not its readers.
-pub const TAB_WIDTH: usize = 4;
+/// Not public any more, and not read by anything outside this crate: what the
+/// status bar states on screen is `EditorPanel::tab_width`, which is what the
+/// editor is actually using. A constant readable from outside is a constant
+/// somebody displays instead of the measurement.
+const FALLBACK_TAB_WIDTH: usize = 4;
+
+/// Lines the indent scan reads before it settles for what it has.
+///
+/// VS Code's number. Detection runs once per file open and a cold start has a
+/// 100 ms budget, so the cap is what keeps opening a generated 400k-line file
+/// from costing the same as opening a source file.
+const INDENT_SCAN_LINES: usize = 10_000;
 
 /// Lines beyond the viewport a bracket search may walk before giving up.
 ///
@@ -62,6 +69,11 @@ pub struct EditorPanel {
     /// The gutter. Owned by the panel because its width is a function of this
     /// buffer's line count, and that width narrows the text area.
     pub(crate) gutter: Gutter,
+    /// Columns a tab occupies, and the width one level of indent inserts.
+    ///
+    /// Measured from the buffer at load and settled there: re-measuring as the
+    /// user types would let deleting a line change what Tab does.
+    pub(crate) tab_width: usize,
 }
 
 impl EditorPanel {
@@ -82,8 +94,10 @@ impl EditorPanel {
     }
 
     fn new(buffer: TextBuffer) -> Self {
+        let tab_width = typ_buffer::detect_indent_width(buffer.lines_str(INDENT_SCAN_LINES))
+            .unwrap_or(FALLBACK_TAB_WIDTH);
         Self {
-            buffer,
+            tab_width,
             selections: Selections::default(),
             top_line: 0,
             left_col: 0,
@@ -93,7 +107,21 @@ impl EditorPanel {
             drag_anchor: None,
             last_click: None,
             gutter: Gutter::default(),
+            buffer,
         }
+    }
+
+    /// The indent width in force, measured from the file unless overridden.
+    pub fn tab_width(&self) -> usize {
+        self.tab_width
+    }
+
+    /// Override the measurement — `indent_width` in `config.toml`.
+    ///
+    /// A heuristic can be wrong on a file that mixes units, and the user needs
+    /// somewhere to say so that is not "edit the file until it agrees".
+    pub fn set_tab_width(&mut self, width: usize) {
+        self.tab_width = width.max(1);
     }
 
     pub fn selections(&self) -> &Selections {
@@ -228,9 +256,23 @@ impl EditorPanel {
         self.gutter.width(self.buffer.line_count())
     }
 
-    /// The area inside the border, before the gutter is taken out of it.
+    /// A line with a caret on it and nothing selected.
+    ///
+    /// The only lines that take the current-line tint. A method rather than a
+    /// condition written twice, because the gutter and the text both need it
+    /// and two copies would drift: a line carrying a selection is deliberately
+    /// *not* tinted — the selection already says where the user is — and a
+    /// gutter that forgot would light the number on a row whose text stayed
+    /// plain.
+    pub(crate) fn is_cursor_line(&self, line: usize) -> bool {
+        self.selections
+            .iter()
+            .any(|s| s.is_empty() && s.head.line == line)
+    }
+
+    /// The area inside the frame, before the gutter is taken out of it.
     fn inner_area(area: Rect) -> Rect {
-        Block::bordered().inner(area)
+        typ_core::chrome::inner(area)
     }
 
     /// The text area: inside the border, and to the right of the gutter.
@@ -297,7 +339,7 @@ impl EditorPanel {
     /// The display column a cursor sits at, tabs expanded.
     fn cursor_display_col(&self, cursor: Position) -> usize {
         self.buffer.with_line_str(cursor.line, |line| {
-            grapheme_to_display_col(line, cursor.col, TAB_WIDTH)
+            grapheme_to_display_col(line, cursor.col, self.tab_width)
         })
     }
 
@@ -428,15 +470,7 @@ impl Panel for EditorPanel {
     }
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, ctx: &RenderContext) {
-        let border = if ctx.is_focused {
-            ctx.theme.border_focused
-        } else {
-            ctx.theme.border
-        };
-        let block = Block::bordered()
-            .border_style(Style::default().fg(border))
-            .title(self.title());
-        block.render(area, buf);
+        typ_core::chrome::frame(area, buf, &self.title(), ctx, ctx.theme.bg);
 
         let text_area = self.text_area(area);
         let gutter_area = self.gutter_area(area);
@@ -458,10 +492,19 @@ impl Panel for EditorPanel {
         // the code and leaves the numbers standing.
         let gutter_lines: Vec<Line> = (self.top_line..end)
             .map(|i| {
-                Line::from(
-                    self.gutter
-                        .render_line(i, cursor_line, line_count, ctx.theme),
-                )
+                let line =
+                    Line::from(
+                        self.gutter
+                            .render_line(i, cursor_line, line_count, ctx.theme),
+                    );
+                // The same predicate the text uses, so the tint cannot cover one
+                // and miss the other. The spans carry a foreground only, so a
+                // background set here survives underneath them.
+                if self.is_cursor_line(i) {
+                    line.style(Style::default().bg(ctx.theme.cursor_line_bg))
+                } else {
+                    line
+                }
             })
             .collect();
         Paragraph::new(gutter_lines)
@@ -488,15 +531,12 @@ impl Panel for EditorPanel {
             .map(|i| {
                 // Only carets tint their line; a line carrying a real selection
                 // is already saying where the user is.
-                let cursor_line = self
-                    .selections
-                    .iter()
-                    .any(|s| s.is_empty() && s.head.line == i);
+                let cursor_line = self.is_cursor_line(i);
                 let style = crate::render::LineStyle {
                     line: i,
                     left_col,
                     width: text_width,
-                    tab_width: TAB_WIDTH,
+                    tab_width: self.tab_width,
                     selections: &selections,
                     primary,
                     cursor_line,
@@ -557,9 +597,9 @@ impl Panel for EditorPanel {
             let line = (panel.top_line + row).min(panel.last_line());
             Position {
                 line,
-                col: panel
-                    .buffer
-                    .with_line_str(line, |text| display_to_grapheme_col(text, col, TAB_WIDTH)),
+                col: panel.buffer.with_line_str(line, |text| {
+                    display_to_grapheme_col(text, col, panel.tab_width)
+                }),
             }
         };
 
