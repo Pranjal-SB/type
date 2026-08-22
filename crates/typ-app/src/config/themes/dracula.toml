@@ -1,0 +1,79 @@
+# Dracula. Upstream: dracula/dracula-theme, MIT.
+#
+# An adaptation, not a transcription. Upstream publishes nine colours and uses
+# `current_line` for six different jobs — the cursor line, both selection tones,
+# the matched bracket's ground, the border and the status bar. TYPE needs those
+# to be different surfaces, so four are added here. Every added value is derived
+# from the published background on its own hue, so the theme still reads as
+# Dracula rather than as a new palette wearing the name.
+#
+# What moved from upstream, and why:
+#   comment  #6272a4 -> #9caee4  line numbers and inactive status text sat at
+#                                3.03 against the page, under the 5.0 a dark
+#                                ground asks of recessive text.
+#   red      #ff5555 -> #ff908a  4.53 against the page, under the 6.5 for text
+#                                read on its own.
+#   + cursor_line, chrome, select_primary: invented, see above.
+#
+# `yellow` is untouched: at 12.74 it already clears its floor and separates from
+# the adapted red by 1.96, over the 1.8 that keeps error and warning apart for a
+# red-green colour-blind reader.
+
+name = "Dracula"
+kind = "dark"
+
+[palette]
+background = "#282a36"
+# One step off the page. Any further and the current line becomes a stripe;
+# any closer and it collapses onto the page at 256 colours.
+cursor_line = "#292b37"
+# The raised surface the sidebar and status bar share. Distinct from both the
+# page and the cursor-line tint after quantisation, which is what forces a
+# third value rather than reusing either.
+chrome = "#323541"
+current_line = "#44475a"   # kept for the border, its remaining upstream job
+select = "#44475a"
+# Upstream has no second selection tone. The primary reads as "the same thing,
+# more so" by sitting one step above `select` rather than by changing hue.
+select_primary = "#55586c"
+foreground = "#f8f8f2"
+comment = "#9caee4"
+cyan = "#8be9fd"
+green = "#50fa7b"
+purple = "#bd93f9"
+red = "#ff908a"
+yellow = "#f1fa8c"
+
+[ui]
+fg = "foreground"
+bg = "background"
+cursor_line_bg = "cursor_line"
+
+gutter_fg = "comment"
+gutter_bg = "background"
+line_number_fg = "comment"
+line_number_current_fg = "foreground"
+
+selection_bg = "select"
+selection_fg = "foreground"
+selection_primary_bg = "select_primary"
+
+bracket_match_fg = "yellow"
+bracket_match_bg = "cursor_line"
+
+chrome_bg = "chrome"
+border = "current_line"
+border_focused = "purple"
+
+status_bar_bg = "chrome"
+status_bar_fg = "foreground"
+status_bar_inactive_fg = "comment"
+status_bar_accent = "purple"
+
+tree_directory_fg = "cyan"
+tree_file_fg = "foreground"
+
+diagnostic_error = "red"
+diagnostic_warning = "yellow"
+diagnostic_info = "cyan"
+diagnostic_hint = "green"

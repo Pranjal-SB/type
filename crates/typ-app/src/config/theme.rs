@@ -14,11 +14,27 @@ use typ_core::{Depth, Theme, ThemeColors, colour::downgrade_theme};
 /// `cargo install --features embed_runtime`. `cargo install typ-editor` has no
 /// runtime directory to find, and the cold-start budget has no appetite for a
 /// five-step path search either.
-const EMBEDDED: &[(&str, &str)] = &[("slate", include_str!("themes/slate.toml"))];
+const EMBEDDED: &[(&str, &str)] = &[
+    ("slate", include_str!("themes/slate.toml")),
+    ("mocha", include_str!("themes/mocha.toml")),
+    ("latte", include_str!("themes/latte.toml")),
+    ("dracula", include_str!("themes/dracula.toml")),
+    ("rose-pine", include_str!("themes/rose-pine.toml")),
+    ("tokyo-night", include_str!("themes/tokyo-night.toml")),
+];
 
 /// Every theme name that ships, for listing and for error messages.
 pub fn embedded_names() -> impl Iterator<Item = &'static str> {
     EMBEDDED.iter().map(|(name, _)| *name)
+}
+
+/// Every shipped theme, name and source.
+///
+/// Exists so the contrast check can enumerate what ships rather than being
+/// handed a list — a test naming six themes goes on passing forever after
+/// somebody adds a seventh.
+pub fn embedded() -> impl Iterator<Item = (&'static str, &'static str)> {
+    EMBEDDED.iter().copied()
 }
 
 /// Load `name`, degraded to `depth`.
