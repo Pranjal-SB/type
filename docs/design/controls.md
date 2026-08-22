@@ -73,8 +73,11 @@ Enhanced-tier bindings may ship where they are de-facto standards — TermIDE ke
 comment-toggle on exactly this reasoning — but each one is a deliberate, documented exception
 and the startup path warns when the terminal cannot deliver a configured Enhanced binding.
 
-**One prefix, not two.** ttt has `ctrl+k` and `ctrl+l`. A second prefix is a naming decision
-that wants LSP actions to exist before it is taken. Revisit at M3.
+**Any number of prefixes; one named so far.** Resolution treats a prefix as a range bound, so
+`ctrl+l` costs nothing structurally once `ctrl+k` works — nothing in the mechanism knows how many
+there are. What is deferred is *naming* them, because a prefix's identity comes from its
+contents and the language actions that would fill `ctrl+l` do not exist until M3. Build for many,
+ship one.
 
 **This gives M2.6's kitty-protocol work a reason it did not have.** It was scoped as
 `Ctrl+I`-versus-`Tab` disambiguation. It is actually the difference between half the keymap
@@ -107,6 +110,24 @@ Three changes:
 3. **The hint renders from `Pending`'s payload.** Generated from the bindings, never authored.
    This is the property worth protecting: a hand-written menu drifts from the keymap the first
    time somebody rebinds something, and nothing catches it.
+
+### The hint is a surface, not a reminder
+
+A flat thirty-row dump of `key → ActionName` is a debug view. What it has to be:
+
+- **Grouped.** `ctrl+k` shows sections — panels, files, view — not one alphabetised list. A
+  binding declares its group in the same table row that declares its key, so grouping stays
+  generated rather than authored.
+- **Described.** A human sentence per binding, not the action's identifier. `Action` needs a
+  description alongside its name, and that description is the same string the command palette
+  shows at M4 — one source, two surfaces.
+- **Navigable.** Arrows move, `Enter` runs, `Esc` cancels. That makes it a menu as well as a
+  hint, which is what closes the loop on "every action reachable three ways": the same box is
+  the keyboard path and, being drawn, the mouse path.
+
+The cost is that `Action` grows a description and a group, and every binding row gains two
+fields. That is the right cost — it is what makes the palette, the hint and the help listing one
+thing instead of three that drift.
 
 ### No timer
 
