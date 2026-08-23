@@ -67,8 +67,18 @@ fn opening_a_file_moves_focus_to_the_editor() {
 fn layout_gives_the_tree_a_fixed_width_sidebar() {
     let (tree, editor) = split(Rect::new(0, 0, 100, 30));
     assert_eq!(tree.width, 30);
-    assert_eq!(editor.x, 30);
-    assert_eq!(editor.width, 70);
+    // The editor begins on the tree's *last* column, not the one after it. That
+    // shared cell is the divider: both panels draw a border into it, so the
+    // screen gets one vertical rather than two touching in different colours.
+    // Overlapping here is what lets each panel keep drawing its own full box
+    // without ever knowing what sits beside it.
+    assert_eq!(editor.x, 29);
+    assert_eq!(editor.width, 71);
+    assert_eq!(
+        tree.right(),
+        editor.x + 1,
+        "the panels must overlap by exactly one column"
+    );
 }
 
 #[test]

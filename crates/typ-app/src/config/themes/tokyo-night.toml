@@ -1,0 +1,75 @@
+# Tokyo Night (Storm). Upstream: folke/tokyonight.nvim, Apache-2.0.
+#
+# An adaptation, not a transcription, and the most heavily adapted theme here —
+# eleven published values moved:
+#
+#   bg_dark         #1f2335 -> #262a3c   quantised onto the page at 256
+#   bg_highlight    #292e42 -> #1a1f32   the current-line tint
+#   fg              #c0caf5 -> #dee8ff   body text, 9.02 against an 11.5 floor
+#   fg_dark         #a9b1d6 -> #bac2e7
+#   fg_gutter       #3b4261 -> #9198b7   line numbers, 1.48 against 5.0 — the
+#                                        worst single value in any shipped theme
+#   terminal_black  #414868 -> #3f4666   the matched bracket's ground
+#   blue            #7aa2f7 -> #97bfff   the info colour
+#   blue0           #3d59a1 -> #19357d   the primary selection
+#   orange          #ff9e64 -> #ffe6ac   the warning colour
+#   red             #f7768e -> #ff8aa2   the error colour
+#   yellow          #e0af68 -> #ffeba4   the warning colour
+#
+# Upstream's error and warning sit 1.32 apart against a 1.8 floor, the widest
+# miss in the set. Whether this is still recognisably Tokyo Night is a fair
+# question; it is named after its source and is not identical to it.
+
+
+name = "Tokyo Night Storm"
+kind = "dark"
+
+[palette]
+bg = "#24283b"
+bg_dark = "#262a3c"
+bg_highlight = "#1a1f32"
+fg = "#dee8ff"
+fg_dark = "#bac2e7"
+fg_gutter = "#9198b7"
+comment = "#565f89"
+terminal_black = "#3f4666"
+blue = "#97bfff"
+blue0 = "#19357d"
+blue7 = "#394b70"
+orange = "#ffe6ac"
+red = "#ff8aa2"
+yellow = "#ffeba4"
+teal = "#28c3a3"
+
+[ui]
+fg = "fg"
+bg = "bg"
+cursor_line_bg = "bg_highlight"
+gutter_fg = "fg_gutter"
+gutter_bg = "bg"
+line_number_fg = "fg_gutter"
+line_number_current_fg = "fg"
+whitespace = "fg_gutter"
+indent_guide = "fg_gutter"
+selection_bg = "blue7"
+selection_fg = "fg"
+selection_primary_bg = "blue0"
+bracket_match_fg = "orange"
+bracket_match_bg = "terminal_black"
+# The raised surface the sidebar shares with the status bar, so the tree and the
+# editor stop reading as one space. Upstream's own second surface rather than a
+# value invented here.
+chrome_bg = "bg_dark"
+
+border = "fg_gutter"
+border_focused = "blue"
+status_bar_bg = "bg_dark"
+status_bar_fg = "fg"
+status_bar_inactive_fg = "fg_dark"
+status_bar_accent = "blue"
+tree_directory_fg = "blue"
+tree_file_fg = "fg_dark"
+diagnostic_error = "red"
+diagnostic_warning = "yellow"
+diagnostic_info = "blue"
+diagnostic_hint = "teal"

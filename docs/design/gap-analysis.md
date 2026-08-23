@@ -2,7 +2,7 @@
 type: design
 status: living
 area: audit
-verified: 2026-08-16
+verified: 2026-08-22
 verified-against: v0.2.4
 ---
 
@@ -39,6 +39,11 @@ and says which half remains, because striking it would lose the rest.
 | 5 | LOW | `typ a.rs b.rs` silently ignores everything after the first path. Honest until tabs exist, a real bug the moment they do. | `typ/src/main.rs:54` | v0.4.0 |
 | 6 | LOW | No tty check. `typ | cat` renders escape sequences into a pipe. | `typ/src/main.rs` | v1.0.0 (M6) |
 | 40 | MED | **An atomic save gives the file the saving user's ownership.** `rename` puts a new inode at the path, and only root or the owner can `chown` it back, so editing a file you have write access to but do not own — a root-owned config, a shared file in a group-writable directory — silently transfers it to you. Found by reading Fresh, the only project in the field that handles it: `should_use_inplace_write` writes in place when `!fs.is_owner(dest_path)`, and because an in-place write is not crash-safe it carries a recovery temp file plus recovery metadata, with a `SudoSaveRequired { temp_path, dest_path, uid, gid, mode }` escalation path behind it. Unix-only, and the recovery machinery is larger than the rest of M2.4 put together, which is why v0.2.4 preserves mode bits and symlinks and leaves this. | `typ-buffer/src/buffer.rs` `save` | unowned |
+
+| 41 | MED | **An OSC reply on stdin is typed into the buffer.** crossterm 0.29's `parse_event` has branches for `ESC [` and `ESC ESC` and a catch-all that re-parses the remainder as Alt+key. There is no `ESC ]` branch, so `ESC ] 11 ; rgb:2e2e/3434/3636 BEL` becomes `Alt+]` followed by every remaining byte as an ordinary character — into the file. Same for DCS, APC, PM and SOS strings. Found by reading Fresh, whose test for it is named `osc_replies_are_swallowed_not_emitted_as_text` and whose comment calls the alternative "the pre-fix behaviour", so they shipped it and fixed it. Latent in TYPE because nothing queries OSC yet; **live the moment terminal light/dark detection lands**, and reachable before that from any terminal that volunteers a reply. **Not fixable in the dispatcher**: TYPE consumes cooked `Event`s, so the sequence is already `Alt+]` plus `Char`s before it arrives. The fix is reading raw bytes and parsing escapes in TYPE, which is the same change M2.6 makes for the kitty protocol. | crossterm `event/sys/unix/parse.rs:77`, TYPE `typ-app/src/run.rs:83` | M2.6, with the input layer |
+| ~~42~~ | MED | **Fixed at v0.2.5.** ~~**The contrast rubric mis-ranks its own themes.**~~ `audit` computes WCAG 2.1 ratios, which overrate dark-on-dark and underrate dark-on-light. Measured across the six shipped themes: Catppuccin Latte's line numbers fail at 2.83 while every dark theme passes at 3.0–3.4 — and in APCA terms Latte's are Lc 50.8 against the dark themes' Lc 23–26, so the rubric rejects the colour that is twice as legible. Slate's error (5.77 WCAG / Lc 42.4) passes where Latte's warning (2.31 / Lc 42.3) fails, at identical perceptual contrast. Zed ships APCA for this reason, user-facing, at a default of Lc 45. The consequence is not cosmetic: it drove finding 2 of the M2.5 plan, which concluded light palettes cannot reach the floor when the floor was the thing that was wrong. | `typ-core/src/audit.rs` | v0.2.5 |
+| 43 | MED | **`COLORTERM` is the only truecolor signal read.** `depth_from` checks `COLORTERM` and a `-direct` terminfo entry. Windows Terminal sets `WT_SESSION` and has historically not set `COLORTERM`, so a stock Windows Terminal falls to the 256-colour path and every theme is quantised for no reason. oh-my-pi treats `WT_SESSION` as an unconditional truecolor claim. One line, no new dependency, and the pure-function shape already in place takes it as a third argument. | `typ-app/src/capability.rs` `depth_from` | unowned |
+| 44 | LOW | **`architecture.md` §5 lists crates that do not exist and will not.** `typ-config` and `typ-ui` are in the 14-crate layout; neither was built, and the reasoning for `typ-config` — that the seam falls elsewhere, parsing sits with its type — lives only in `docs/plans/`, which is gitignored. A reader of the published spec sees a layout the tree contradicts with no explanation. The other absent crates (`typ-syntax`, `typ-lsp`, `typ-git`, the two panel crates) are forward-looking and fine; these two are decisions. | `docs/design/architecture.md:234` | unowned |
 
 Recorded as deliberate deferrals in `m2.1-correctness.md`. ~~Line endings not preserved (`\n`
 written into a CRLF file), `save` drops POSIX mode bits and replaces symlinks, no parent-dir
@@ -103,7 +108,7 @@ Found by reading TermIDE's 45 crate names and ttt's feature list rather than the
 | ~~31~~ | **HIGH — data loss** | ~~**No file watching.**~~ **Fixed at v0.2.4.** Clean buffer reloads silently, dirty buffer warns and is left alone, deleted file leaves the buffer standing as the only copy. `notify` 8.2, watching the **parent directory** rather than the file, because writing by rename-over destroys the inode a file watch is pinned to and leaves it silent while the file keeps changing. Our own save is filtered by comparing the file against the buffer rather than by remembering an mtime — nothing to keep in sync, and no window where the remembered value is stale. |
 | ~~32~~ | HIGH | ~~**No logging, anywhere.**~~ **Fixed at v0.2.3** — `TYP_LOG` names a file, off otherwise. A file and a mutex rather than `tracing`, which earns its weight when there are spans to correlate across the worker threads arriving at M2.4. Original: No `log`, no `tracing`, no log file. A TUI owns the screen, so `println!` debugging is unavailable by construction — the one place logging is not optional is the one place we have none. TermIDE has a `logger` crate. |
 | ~~33~~ | HIGH | ~~**No select-next-occurrence.**~~ **Fixed at v0.2.3**, and searching from the cursor rather than filtering `find_all` — 3.89 µs per press on a 50k-line file. Original: `Ctrl+D` in VS Code, Sublime and ttt; `Ctrl+K L` for all occurrences. TYPE has add-cursor-above/below only, which is the *rarer* half of multi-cursor. This is the idiom people mean when they say multi-cursor. |
-| 34 | MED | **No `.editorconfig`, no indent detection.** `TAB_WIDTH` is a hardcoded `const` and indentation is always spaces. ttt reads `.editorconfig` and auto-detects indent from content, with a status-bar override. TYPE will silently reformat a tab-indented project. |
+| 34 | MED | **Partly fixed at v0.2.5** — indent detection landed, `.editorconfig` did not. ~~**No `.editorconfig`, no indent detection.**~~ `TAB_WIDTH` is a hardcoded `const` and indentation is always spaces. ttt reads `.editorconfig` and auto-detects indent from content, with a status-bar override. TYPE will silently reformat a tab-indented project. |
 | 35 | MED | **No file operations in the tree.** No new file, new folder, rename, delete. ttt puts them on a right-click context menu. The tree is currently a viewer, not a manager. |
 | ~~36~~ | MED | ~~No goto-line (`Ctrl+G`)~~ **Fixed at v0.2.3**, centring the target line. Was also listed as #12, whose move-line, duplicate-line and comment-toggle remain. |
 | 37 | LOW | No multi-root workspaces. ttt has Add Folder to Workspace and switches the status-bar git branch by which root the active file belongs to. Ours is one root. |
@@ -120,7 +125,7 @@ same time.
 |---|---|
 | ~~15~~ | ~~**Architecture §10 still lists the config format as an open question.**~~ **Closed in the doc at v0.2.2** — §10 now records TOML as decided-by-shipping, and §9 carries the milestone corrections this document forced. |
 | 16 | **§7 capability detection does not exist.** Truecolor, the kitty keyboard protocol, image protocols — none are probed. Synchronized output is emitted unconditionally rather than detected. No plan document owns this work. The kitty protocol is a stated prerequisite for VS Code-grade bindings, and without it `Ctrl+I` and `Tab` are literally the same byte — which is half of why defect #8 is awkward to fix cleanly. |
-| 17 | **Theming is hardcoded.** `ThemeColors::default()` is constructed inline in `App::new`. `typ-ui` and `typ-config` do not exist; 7 of 14 planned crates do. No theme file, no task, no milestone owned this — see [Part 5](#part-5--pretty-as-fuck-what-a-terminal-can-and-cannot-do). |
+| ~~17~~ | **Fixed at v0.2.5.** ~~**Theming is hardcoded.** `ThemeColors::default()` is constructed inline in `App::new`.~~ A theme is a TOML file with a named `[palette]` and a typed `[ui]` table, parsed in `typ-core` and loaded by name from the config directory or from the binary, degraded to the terminal's colour depth at load. `ThemeColors` is 27 typed slots and the default is now the fallback for when no theme loads rather than the definition of the theme. Format and rubric documented in [`themes.md`](themes.md). **The other half of the row was decided against**: `typ-ui` and `typ-config` were not built and will not be — the seam falls elsewhere, see `architecture.md` §5. All six ship, each audited at both colour depths, and the rubric they are held to was itself corrected first — see #42. |
 | 18 | **CI never runs the perf tests.** They are `#[ignore]`d with no scheduled job, so a budget regression is caught only when a human remembers to look. M6 promises "budgets enforced in CI" and nothing is currently walking toward it. |
 | 39 | **Comment density is 22.7% of source lines** — 1,454 of 6,412 at v0.2.3, which is roughly double what idiomatic Rust carries. The rationale-carrying ones earn their place: *why* the first line terminator decides, *why* `find_next` exists instead of filtering `find_all`, *why* the gutter is a component list. The rest restate the code beneath them or argue a point already settled, and every one of those is a line that can rot out of step with what it describes. Trim toward ~12%, keeping the *why* and cutting the *what*. Mechanical, low risk, no milestone — good filler work between tasks. |
 | ~~19~~ | ~~No `cargo deny` / `cargo audit`, and no MSRV job.~~ **Closed.** `cargo deny check advisories licenses bans sources` runs in CI against a `deny.toml` that lists every license currently in the graph by name rather than by wildcard, so a dependency arriving with something unexpected fails the build instead of sliding in. The MSRV half was **already covered and the row was wrong about it**: `rust-toolchain.toml` pins `1.96.0`, CI installs exactly that with `rustup show`, and `rust-version = "1.96"` names the same compiler — every CI run *is* the MSRV build. A separate job would have tested the same toolchain twice. |
@@ -202,7 +207,7 @@ editors set the *achievable* bar and show which capabilities survive the transla
 | Terminal panel | **no** | yes | yes | yes | planned M5 |
 | Git | gutter only | status, log, diff, stage | yes | yes | planned M5 |
 | Plugins | Steel, **PR open ~2 yrs, unmerged** | none | QuickJS | Lua | planned v1.1 |
-| **Themes** | many | **38, custom TOML** | many | few | **1, hardcoded** |
+| **Themes** | many | **38, custom TOML** | many | few | **6, TOML, every one audited** |
 | Tabs / splits | splits, no tabs | yes | yes | yes | planned M4 |
 | $EDITOR | yes | yes | yes | yes | **yes, from M1** |
 | OS file association | none | none | Linux only | none | **planned v1, differentiator** |
@@ -261,9 +266,22 @@ list, since a panel owns what it can say about itself. The gap is content, not m
 **underline styles** — which is what makes coloured undercurl a theme decision rather than a
 special case.
 
-TYPE's `ThemeColors` is ten flat `Color` fields. The two that matter most immediately are
-`ui.linenr` (there is no gutter to colour) and `ui.selection.primary` (with thirty cursors,
-nothing says which is primary).
+~~TYPE's `ThemeColors` is ten flat `Color` fields.~~ **Written at v0.2.1; both named gaps closed
+at v0.2.3** — the gutter and `line_number_fg` landed with it, and `selection_primary_bg` is
+audited to differ from `selection_bg` by at least 1.3:1 rather than merely existing.
+`ThemeColors` is **25** typed slots as of M2.5, loaded from a file.
+
+The count is the less interesting half of the comparison and the shape is the more interesting
+one. Helix uses **one flat namespace** where `ui.linenr` and `keyword` are the same kind of key,
+which means a typo in `ui.linenr` is silently ignored and the theme just renders wrong. TYPE
+splits them: `[ui]` is a closed record known at compile time, so an unknown key is a load error
+with a did-you-mean, and `[syntax]` is an open map of capture names because that set genuinely is
+open. That is the one place TYPE deliberately does not follow the field, and the reason is that
+the two halves are different kinds of thing wearing the same syntax.
+
+Where Helix is still ahead and TYPE has no answer: **inheritance between themes**, **text
+modifiers**, and **underline styles** — the last being what makes coloured undercurl a theme
+decision rather than a special case, which M3's diagnostics will want.
 
 #### ttt — 182 stars, Go, and a feature list that reads as a gap list
 
@@ -459,12 +477,23 @@ names — `keyword`, `function`, `string`, `type.builtin` — and something must
 colors. That mapping *is* a theme. Writing v0.2.5 with the mapping hardcoded means writing it
 twice, and the second pass touches every call site.
 
-So `typ-config` and `typ-ui` land at v0.2.5:
+~~So `typ-config` and `typ-ui` land at v0.2.5:~~ **The theme system landed at v0.2.5; the two
+crates did not** — the seam falls elsewhere and both were decided against, see `architecture.md`
+§5. What shipped:
 
-- TOML themes, capture-name → style, loaded from the config dir beside `keys.toml`
-- 3–4 shipped themes, dark and light, chosen deliberately rather than ported at random
-- Truecolor with a 256-color degradation path (needs #16)
+- TOML themes loaded from the config dir beside `keys.toml`, or from the binary
+- Truecolor with a 256-colour degradation path (needs #16), **and the audit re-run on the
+  degraded palette** — quantising moves every colour by a different amount, and nothing else in
+  the field checks whether a theme survives it
 - The existing `ThemeColors` moves out of `App::new` and becomes the loaded artifact
+
+**Two things this section got wrong, worth keeping visible.** The dependency argument above is
+right that a highlighter needs a theme, but it concluded both belong in one milestone; they did
+not fit, and tree-sitter moved to M2.6 while the theme system took M2.5 alone. And "3–4 shipped
+themes chosen deliberately rather than ported at random" understated the cost of *porting* —
+across 97 published palettes measured against this project's rubric, 13 clear it and every one
+of the 46 light ones fails. A port is an adaptation, and that has to be said in the theme file
+rather than discovered per contributor.
 
 TermIDE ships 38 themes. TYPE does not need 38 — it needs the *system*, plus enough themes to
 prove the system is real. Community themes are how a count like 38 happens, and they need a
@@ -481,7 +510,8 @@ Changes from the roadmap in the README, with reasons.
 | ~~v0.2.2~~ | **M2.2 — Usable** | clipboard, indent/outdent, dirty guard on open, new-file creation, undo cap, bracketed paste, temp-file nonce | **shipped** — turned on self-hosting |
 | ~~v0.2.3~~ | **M2.3 — Polish** | the gutter and line numbers, truecolor theme surface, current-line highlight, distinguishable primary selection, bracket matching, status-bar segments, `Ctrl+D` select-next-occurrence, goto-line, logging | **shipped** — all eight tasks, plus line-ending detection and the first measurement of the render path |
 | v0.2.4 | M2.4 — Live | wakeable channel, **file watching — a data-loss bug**, damage-driven redraw, resize handling, dropped-keystroke fix, line-ending preservation, save metadata | **split from M2.5 at v0.2.3** |
-| v0.2.5 | M2.5 — Colour | tree-sitter highlighting, `typ-config`, themes as files, capability detection, `.editorconfig` and indent detection, indent guides and whitespace rendering | the other half of the split |
+| v0.2.5 | M2.5 — Colour | ~~tree-sitter highlighting, `typ-config`,~~ themes as files, capability detection, ~~`.editorconfig` and~~ indent detection, indent guides and whitespace rendering | **split again** — see below |
+| v0.2.6 | M2.6 — Parse | tree-sitter highlighting, grammar distribution, off-thread parse, `config.toml`, terminal light/dark, kitty keyboard protocol | carved out of M2.5 |
 | v0.3.0 | M3 — Code intelligence | LSP: completion, diagnostics, goto-def, rename, code actions, **+ undercurl, + peek definition** | two additions |
 | v0.4.0 | M4 — Workspace | splits, **tabs** (with per-tab dirty guard), sessions, **one composed Goto-Anything finder**, project search, **+ minimap, + sticky scroll**, capability detection | finder composed, polish pulled in |
 | v0.5.0 | M5 — Terminal and git | PTY panel, git gutter/status/diff/blame | unchanged |
@@ -493,6 +523,25 @@ the loop rework is the riskiest change in the project and tying it to the larges
 means neither half ships if either goes badly. The seam was already there: everything in M2.4
 is about the editor being *live and correct* and none of it needs a theme, while every item in
 M2.5 wants the worker channel M2.4 builds. Split at v0.2.3.
+
+**And split again at v0.2.5, along the same joint.** The row above still bundled tree-sitter with
+themes, on the correct observation that a highlighter needs a theme to map capture names onto.
+Correct about the dependency, wrong about the direction: the mapping *is* a theme, so the theme
+system has to exist **first**, and once it does the highlighter is a separate body of work that
+shares nothing with it but a file format. Everything in M2.5 is **config and paint**; the
+highlighter is **parse**.
+
+M2.6 also inherits a real unscheduled problem that no milestone had ever owned: `cargo install
+typ-editor` produces a binary with **no grammars**, and fetching or building them is first-launch
+UX ([Part 7](#part-7--install-and-first-launch)). It deserves its own risk budget rather than
+being discovered halfway through a milestone that also owes a theme system.
+
+Two items moved off M2.5 for unrelated reasons. `.editorconfig` is a file-format spec with globs,
+`root = true` and tree-walking inheritance — unrelated to colour, and it belongs beside
+`.gitignore` parsing. Terminal light/dark moved to M2.6 because it needs the `theme = { dark,
+light }` config plumbing that lands there, and because it is the one thing in this document no
+editor in the field does properly, which is a reason to give it room rather than the last slot in
+a full milestone.
 
 Post-v1 unchanged: plugin host v1.1, DAP v1.2, viewer panels. Add **multibuffer** as a design
 constraint on M4 rather than a feature: do not build tabs in a way that precludes it.

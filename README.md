@@ -46,14 +46,24 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.2.4, pre-alpha.** Editing works and the editor looks the part: line numbers, a truecolor
-theme, current-line highlight, bracket matching, and multiple cursors with a visibly distinct
-primary. Search and replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line,
-undo that takes back a run of typing in one press.
-
-It is also live: the editor notices when a file changes on disk, reloads it when you have no
+**v0.2.5, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
+replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
+run of typing in one press. It notices when a file changes on disk, reloads it when you have no
 unsaved work and says so when you do, and saves without flattening your line endings, your
 symlinks or your mode bits.
+
+**Colour is now an artifact rather than a constant.** A theme is a TOML file; six ship and any
+number can live in your config directory. The terminal's colour depth is detected at startup and
+the palette is brought down to 256 colours when it has to be. Indentation is measured from the
+file instead of assumed, whitespace can be shown when you ask for it, and indent guides are
+drawn — including through blank lines.
+
+Every shipped theme is checked against a contrast rubric at truecolor **and again after
+degradation**, which is the half nobody else checks: quantising moves every colour by a
+different amount, and a palette that reads at 24-bit can lose a surface entirely at 8. The
+floors depend on the ground a theme declares, because WCAG 2.1's ratio is not perceptually
+uniform across polarity — see [`docs/design/themes.md`](docs/design/themes.md).
 
 No syntax highlighting, no LSP, no tabs or splits yet; see the roadmap. Full history in
 [CHANGELOG.md](CHANGELOG.md).
@@ -72,7 +82,7 @@ cargo install typ-editor
 typ .
 ```
 
-The crate is `typ-editor`; the binary it installs is `typ`. crates.io serves 0.2.4, the same
+The crate is `typ-editor`; the binary it installs is `typ`. crates.io serves 0.2.5, the same
 version as this tree.
 
 That channel reaches you only if you already have a Rust toolchain. Tagged builds for Linux
@@ -154,6 +164,25 @@ the word, `Alt`+click to stack another cursor, right-click a selection to copy i
 to paste, click a selected tree entry to open or toggle it, wheel to scroll whichever panel the
 pointer is over.
 
+## Appearance
+
+`config.toml`, beside `keys.toml` in your config directory. Every key is optional.
+
+```toml
+theme = "slate"          # slate, mocha, latte, dracula, rose-pine, tokyo-night
+color_depth = "truecolor" # or "ansi256" — omit to ask the terminal
+indent_width = 4          # omit to measure it from the file
+whitespace = "selection"  # none | trailing | selection | all
+```
+
+Six themes ship. Drop a `<config>/themes/<name>.toml` in to add your own, or copy a shipped one
+and edit it — a file of the same name wins over the embedded copy. The format and the contrast
+rules every theme is held to are in [`docs/design/themes.md`](docs/design/themes.md), and
+`typ_core::audit` is public so you can run the same check against your own palette.
+
+`whitespace` defaults to `selection`: marks appear only inside a selection, which is where they
+are diagnostic rather than noise. `trailing` is the one that catches a defect.
+
 **Search**
 
 | Key | Action |
@@ -217,8 +246,9 @@ one that plainly did nothing.
 | v0.2.1 | M2.1 | Correctness: keystroke budgets, undo coalescing, the shift map | shipped |
 | v0.2.2 | M2.2 | Usable: clipboard, indent, new files, guarded open | shipped |
 | v0.2.3 | M2.3 | Polish: gutter, truecolor theme, current line, brackets, status segments, `Ctrl+D`, goto-line, logging | shipped |
-| v0.2.4 | M2.4 | Live: wakeable event loop, file watching, damage-driven redraw, resize, save correctness | **current** |
-| v0.2.5 | M2.5 | Colour: tree-sitter highlighting, themes as files, config, capability detection | next |
+| v0.2.4 | M2.4 | Live: wakeable event loop, file watching, damage-driven redraw, resize, save correctness | shipped |
+| v0.2.5 | M2.5 | Colour: themes as files, contrast rubric, capability detection, indent detection, whitespace and indent guides | **current** |
+| v0.2.6 | M2.6 | Parse: tree-sitter highlighting, grammar distribution, `config.toml`, terminal light/dark, kitty keyboard protocol | next |
 | v0.3.0 | M3 | Code intelligence: LSP client | |
 | v0.4.0 | M4 | Workspace: splits, tabs, sessions, command palette, project search | |
 | v0.5.0 | M5 | Terminal panel and git integration | |

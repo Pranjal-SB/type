@@ -12,24 +12,25 @@ use unicode_segmentation::UnicodeSegmentation;
 
 /// Drop `left_col` display columns from the front of a line.
 ///
-/// Returns the remaining text and how many graphemes were dropped, because the
-/// caller still has to line the result up against selections that are stated in
-/// grapheme columns.
+/// Returns the remaining text, how many graphemes were dropped, and the display
+/// column the remainder starts at. The grapheme count is what lines the result
+/// up against selections, which are stated in grapheme columns; the display
+/// column is what lines it up against the indent guides, which are not.
 ///
 /// A wide grapheme straddling the boundary is dropped entirely rather than
 /// half-drawn: a terminal cannot render half a cell, so the alternatives are a
 /// dropped character or a row one column out of alignment with every other row.
 /// Slicing by display column rather than by grapheme is the whole point — a line
 /// of CJK scrolls by cells the way it is drawn.
-pub fn window(text: &str, left_col: usize, tab_width: usize) -> (&str, usize) {
+pub fn window(text: &str, left_col: usize, tab_width: usize) -> (&str, usize, usize) {
     if left_col == 0 {
-        return (text, 0);
+        return (text, 0, 0);
     }
 
     let mut column = 0usize;
     for (skipped, (byte, grapheme)) in text.grapheme_indices(true).enumerate() {
         if column >= left_col {
-            return (&text[byte..], skipped);
+            return (&text[byte..], skipped, column);
         }
         // `.max(1)` so a zero-width grapheme cannot stall the walk. Tabs are
         // measured from their real column, which is why this tracks `column`
@@ -41,7 +42,52 @@ pub fn window(text: &str, left_col: usize, tab_width: usize) -> (&str, usize) {
         };
     }
     // Scrolled entirely past the end of this line.
-    ("", text.graphemes(true).count())
+    ("", text.graphemes(true).count(), column)
+}
+
+/// Which whitespace gets a visible mark.
+///
+/// VS Code's set minus `boundary` — "every run except a single space between
+/// words" needs word segmentation inside the render loop for the least useful of
+/// the five. Fresh's finer leading/inner/trailing split is a superset of
+/// [`Whitespace::Trailing`] and can arrive later without breaking a file: the
+/// setting is a string and adding a value is additive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Whitespace {
+    None,
+    /// Whitespace after the last non-whitespace grapheme on the line — the only
+    /// value here that catches a defect rather than answering curiosity.
+    Trailing,
+    /// Inside a selection, which is where it is diagnostic and nowhere else.
+    /// VS Code's default, and the reason is that it costs nothing when you are
+    /// not asking and is exact when you are.
+    #[default]
+    Selection,
+    All,
+}
+
+/// A foreground laid over whatever ground the cell already had.
+///
+/// **Not [`Paint`] variants.** `Paint` chooses the background; these choose
+/// only the foreground, so the two compose — a marked space inside a selection
+/// keeps the selection's ground and takes its foreground from `whitespace`. A
+/// run has to break when either changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Overlay {
+    None,
+    /// A whitespace mark, where the setting asked for one.
+    Mark,
+    /// An indent guide.
+    Guide,
+}
+
+/// The glyph a whitespace grapheme is drawn as.
+fn mark_for(grapheme: &str) -> Option<char> {
+    match grapheme {
+        " " => Some('·'),
+        "\t" => Some('→'),
+        _ => None,
+    }
 }
 
 /// What a cell is painted as. Ordered by precedence, highest last.
@@ -101,6 +147,16 @@ pub struct LineStyle<'a> {
     /// how a interface starts to look busy.
     pub cursor_line: bool,
     pub brackets: Option<(Position, Position)>,
+    pub whitespace: Whitespace,
+    /// Completed levels of indent this line draws a guide for, one guide per
+    /// level starting at column zero.
+    ///
+    /// Levels rather than columns, because two spaces in a file that indents in
+    /// fours is alignment and not nesting — a rule through it would stand in
+    /// the middle of every wrapped argument list. The caller owns this because
+    /// a blank line's depth comes from its neighbours, and the panel is the
+    /// only thing here that can see them.
+    pub indent_guides: usize,
     pub theme: &'a ThemeColors,
 }
 
@@ -111,46 +167,165 @@ pub struct LineStyle<'a> {
 pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
     // Selections are stated in grapheme columns of the whole line, so the
     // dropped count is what keeps highlighting on the text it covers rather
-    // than sliding left with the window.
-    let (visible, skipped) = window(text, ctx.left_col, ctx.tab_width);
+    // than sliding left with the window. The display column is what keeps the
+    // guides standing over their real tab stops on a line scrolled sideways.
+    let (visible, skipped, start) = window(text, ctx.left_col, ctx.tab_width);
 
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    let mut current = String::new();
-    let mut current_paint: Option<Paint> = None;
-    let mut columns = 0usize;
+    // Where trailing whitespace starts, as a byte offset into `visible`.
+    // `window` returns a suffix, so trimming what is drawn finds the same tail
+    // the whole line has. Once per line rather than once per cell, and only for
+    // the one setting that asks the question.
+    let tail = match ctx.whitespace {
+        Whitespace::Trailing => visible.trim_end_matches([' ', '\t']).len(),
+        _ => usize::MAX,
+    };
 
-    for (offset, grapheme) in visible.graphemes(true).enumerate() {
+    // One past the last column a guide can stand in. Computed once, so the
+    // per-cell test is a comparison and a remainder rather than a division.
+    let guides_end = ctx.indent_guides * ctx.tab_width;
+
+    let mut runs = Runs::default();
+    let mut column = start;
+
+    for (offset, (byte, grapheme)) in visible.grapheme_indices(true).enumerate() {
         let position = Position {
             line: ctx.line,
             col: skipped + offset,
         };
         let paint = paint_for(position, ctx);
+        // The *original* grapheme's width, always. A tab drawn as one arrow
+        // still occupies its whole run of columns; anything else loses three of
+        // them and leaves every glyph after it out of step with a cursor that
+        // is still counting the tab as four.
+        let width = display_width_with_tabs(grapheme, ctx.tab_width).max(1);
+        let mark = mark_for(grapheme).filter(|_| marks(ctx.whitespace, paint, byte, tail));
 
-        if current_paint != Some(paint) && !current.is_empty() {
-            let style = current_paint.unwrap_or(Paint::Plain).style(ctx.theme);
-            spans.push(Span::styled(std::mem::take(&mut current), style));
+        match mark {
+            // A mark wins its own cell. It is on screen because the user asked
+            // to see that character; a guide is ambient, and the one that can
+            // be switched off is not the one to overdraw.
+            Some(glyph) => {
+                runs.push(glyph, (paint, Overlay::Mark), ctx.theme);
+                // Then blank to the end of what the grapheme occupied.
+                for cell in 1..width {
+                    runs.blank(column + cell, guides_end, paint, ctx);
+                }
+            }
+            // Indentation is where guides live, so its cells are emitted one at
+            // a time. An unmarked tab is expanded too — it has to be: otherwise
+            // a tab would draw in one column with marks off and four with them
+            // on, and selecting a line would shift its text three columns left.
+            None if grapheme == " " || grapheme == "\t" => {
+                for cell in 0..width {
+                    runs.blank(column + cell, guides_end, paint, ctx);
+                }
+            }
+            None => runs.push_str(grapheme, (paint, Overlay::None), ctx.theme),
         }
-        current_paint = Some(paint);
-        current.push_str(grapheme);
-        columns += display_width_with_tabs(grapheme, ctx.tab_width).max(1);
+        column += width;
     }
 
-    if !current.is_empty() {
-        let style = current_paint.unwrap_or(Paint::Plain).style(ctx.theme);
-        spans.push(Span::styled(current, style));
+    // A blank line has no cells of its own for its guides to stand in, and it
+    // is the line that most needs them: without this, every empty line inside a
+    // block punches a hole through the run.
+    let ground = if ctx.cursor_line {
+        Paint::CursorLine
+    } else {
+        Paint::Plain
+    };
+    while column < guides_end && column - start < ctx.width {
+        runs.blank(column, guides_end, ground, ctx);
+        column += 1;
     }
+
+    let mut spans = runs.finish(ctx.theme);
 
     // Carry the current-line tint past the end of the text. A highlight that
     // stops at the last character leaves a ragged right edge that reads as a
     // rendering bug rather than as a feature.
-    if ctx.cursor_line && columns < ctx.width {
+    let drawn = column - start;
+    if ctx.cursor_line && drawn < ctx.width {
         spans.push(Span::styled(
-            " ".repeat(ctx.width - columns),
+            " ".repeat(ctx.width - drawn),
             Paint::CursorLine.style(ctx.theme),
         ));
     }
 
     Line::from(spans)
+}
+
+/// Spans under construction, cut wherever the paint or the overlay changes.
+///
+/// A type rather than three locals, because the loop above emits at two
+/// granularities — a whole grapheme for text, one cell at a time for the
+/// whitespace a guide can stand in — and both have to break runs the same way.
+#[derive(Default)]
+struct Runs {
+    spans: Vec<Span<'static>>,
+    current: String,
+    run: Option<(Paint, Overlay)>,
+}
+
+impl Runs {
+    fn open(&mut self, run: (Paint, Overlay), theme: &ThemeColors) {
+        if self.run != Some(run) && !self.current.is_empty() {
+            let style = style_of(self.run.unwrap_or((Paint::Plain, Overlay::None)), theme);
+            self.spans
+                .push(Span::styled(std::mem::take(&mut self.current), style));
+        }
+        self.run = Some(run);
+    }
+
+    fn push(&mut self, ch: char, run: (Paint, Overlay), theme: &ThemeColors) {
+        self.open(run, theme);
+        self.current.push(ch);
+    }
+
+    fn push_str(&mut self, s: &str, run: (Paint, Overlay), theme: &ThemeColors) {
+        self.open(run, theme);
+        self.current.push_str(s);
+    }
+
+    /// One blank cell, or the guide standing in it.
+    fn blank(&mut self, column: usize, guides_end: usize, paint: Paint, ctx: &LineStyle) {
+        if column < guides_end && column.is_multiple_of(ctx.tab_width) {
+            self.push('│', (paint, Overlay::Guide), ctx.theme);
+        } else {
+            self.push(' ', (paint, Overlay::None), ctx.theme);
+        }
+    }
+
+    fn finish(mut self, theme: &ThemeColors) -> Vec<Span<'static>> {
+        if !self.current.is_empty() {
+            let style = style_of(self.run.unwrap_or((Paint::Plain, Overlay::None)), theme);
+            self.spans.push(Span::styled(self.current, style));
+        }
+        self.spans
+    }
+}
+
+/// A run's style: its paint, with any overlay laid over the foreground.
+fn style_of((paint, overlay): (Paint, Overlay), theme: &ThemeColors) -> Style {
+    let style = paint.style(theme);
+    match overlay {
+        Overlay::None => style,
+        Overlay::Mark => style.fg(theme.whitespace),
+        Overlay::Guide => style.fg(theme.indent_guide),
+    }
+}
+
+/// Whether this cell's whitespace is whitespace the user asked to see.
+///
+/// `Selection` reads the paint rather than scanning the selections again —
+/// `paint_for` has already answered exactly that question, and asking it twice
+/// per cell is a second pass over every selection on the keystroke path.
+fn marks(setting: Whitespace, paint: Paint, byte: usize, tail: usize) -> bool {
+    match setting {
+        Whitespace::None => false,
+        Whitespace::All => true,
+        Whitespace::Trailing => byte >= tail,
+        Whitespace::Selection => matches!(paint, Paint::Selection | Paint::PrimarySelection),
+    }
 }
 
 fn paint_for(position: Position, ctx: &LineStyle) -> Paint {

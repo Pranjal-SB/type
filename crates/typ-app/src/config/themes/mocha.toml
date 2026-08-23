@@ -1,0 +1,66 @@
+# Catppuccin Mocha. Upstream: catppuccin/catppuccin, MIT.
+#
+# Ported unchanged — every value below is a published Catppuccin token.
+#
+# An adaptation, not a transcription. Six published values moved so the palette
+# clears TYPE's contrast floors at truecolor and again at 256 colours:
+#
+#   mantle          #181825 -> #20202d   quantised onto the page at 256, so the
+#                                        sidebar stopped being a surface
+#   surface0        #313244 -> #1f1f30   the current-line tint
+#   surface2        #585b70 -> #303348   the primary selection
+#   overlay0        #6c7086 -> #8d91a7   line numbers, 3.36 against a 5.0 floor
+#   text            #cdd6f4 -> #dfe8ff   body text
+#   yellow          #f9e2af -> #ffecb9   the warning colour, to stay 1.8 from red
+
+
+name = "Catppuccin Mocha"
+kind = "dark"
+
+[palette]
+base = "#1e1e2e"
+mantle = "#20202d"
+surface0 = "#1f1f30"
+surface1 = "#45475a"
+surface2 = "#303348"
+overlay0 = "#8d91a7"
+text = "#dfe8ff"
+subtext0 = "#a6adc8"
+subtext1 = "#bac2de"
+red = "#f38ba8"
+yellow = "#ffecb9"
+blue = "#89b4fa"
+teal = "#94e2d5"
+
+[ui]
+fg = "text"
+bg = "base"
+cursor_line_bg = "surface0"
+gutter_fg = "overlay0"
+gutter_bg = "base"
+line_number_fg = "overlay0"
+line_number_current_fg = "text"
+whitespace = "overlay0"
+indent_guide = "overlay0"
+selection_bg = "surface1"
+selection_fg = "text"
+selection_primary_bg = "surface2"
+bracket_match_fg = "yellow"
+bracket_match_bg = "surface0"
+# The raised surface the sidebar shares with the status bar, so the tree and the
+# editor stop reading as one space. Upstream's own second surface rather than a
+# value invented here.
+chrome_bg = "mantle"
+
+border = "surface0"
+border_focused = "blue"
+status_bar_bg = "mantle"
+status_bar_fg = "text"
+status_bar_inactive_fg = "subtext0"
+status_bar_accent = "blue"
+tree_directory_fg = "blue"
+tree_file_fg = "subtext1"
+diagnostic_error = "red"
+diagnostic_warning = "yellow"
+diagnostic_info = "blue"
+diagnostic_hint = "teal"

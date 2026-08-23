@@ -5,6 +5,47 @@ Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-08-23 (M2.5, colour)
+
+The milestone that turns the palette into an artifact. A theme is a file, six of them ship, the
+terminal's colour depth is detected and degraded to, and indentation stops being a number the
+status bar asserts without measuring.
+
+### Added
+- **Themes are TOML files.** A named `[palette]` and a typed `[ui]` table of 27 slots. Six ship
+  embedded — Slate, Catppuccin Mocha and Latte, Dracula, Rosé Pine, Tokyo Night Storm — and a
+  file in `<config>/themes/<name>.toml` wins over the embedded copy of the same name. Every key
+  is optional; an unset one keeps the shipped default. An unknown key is a load error with a
+  did-you-mean rather than a silently wrong colour.
+- **A contrast rubric, public as `typ_core::audit`.** Every shipped theme is checked at truecolor
+  **and again after degradation to 256 colours** — the half nobody else checks. Quantising moves
+  every colour by a different amount, and three of the ported palettes turned out to lose their
+  second surface entirely at 8-bit while reading fine at 24.
+- **Terminal colour-depth detection**, with `color_depth` in `config.toml` as the escape hatch.
+  Nothing in the environment separates a tmux that forwards truecolor from one that mangles it,
+  so that one is a setting rather than a cleverer guess.
+- **Indent width is measured, not assumed.** VS Code's `guessIndentation` ported, including the
+  alignment rule that stops `const a = b + c,` reading as a 6-wide indent, and a deterministic
+  tie-break. The status bar now reports what was measured.
+- **Whitespace rendering** — `none | trailing | selection | all`, defaulting to `selection`.
+- **Indent guides**, including through blank lines, spaced by the detected width.
+
+### Changed
+- **Contrast floors depend on the ground a theme declares.** WCAG 2.1's ratio is not
+  perceptually uniform across polarity: measured over 1,066 colour pairs from 97 published
+  palettes, a dark ground returns about 2.5x the ratio of a light one at equal legibility. Under
+  a single flat floor the rubric passed Slate's gutter at 3.35 and rejected Catppuccin Latte's at
+  2.83 — while Latte's is roughly twice as legible. It was rejecting the better colour, for five
+  dark themes against one light one.
+- **Slate is retuned.** Its gutter and inactive status text moved most, which is the finding
+  rather than a side effect: they had been tuned against a floor that was measuring the wrong
+  thing.
+- Panels draw as full boxes sharing one edge, and chrome sits on its own surface, so the sidebar
+  and the editor stop reading as one space.
+
+### Fixed
+- The current line's tint now covers its line number instead of stopping at the gutter.
+
 ## [0.2.4] - 2026-08-16 (M2.4, live)
 
 The milestone that makes the editor live and correct: able to be woken by something other than
@@ -165,7 +206,8 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.5
 [0.2.4]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.4
 [0.2.3]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.3
 [0.2.2]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.2

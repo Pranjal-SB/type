@@ -143,6 +143,19 @@ impl TextBuffer {
         with_slice_str(self.rope.line(line), f)
     }
 
+    /// The first `limit` lines, borrowed, without their terminators.
+    ///
+    /// For scanning, not for reading content: a line long enough to straddle a
+    /// ropey chunk — roughly a kilobyte — comes back empty rather than being
+    /// copied, because the point of this accessor is that it never allocates.
+    /// A scan that would be wrong about such a line wants `with_line_str`.
+    pub fn lines_str(&self, limit: usize) -> impl Iterator<Item = &str> {
+        self.rope
+            .lines()
+            .take(limit)
+            .map(|slice| slice.as_str().map_or("", trim_line_ending))
+    }
+
     /// Line contents without the trailing newline.
     ///
     /// Allocates. Prefer `with_line_str` in anything that runs per line over a
