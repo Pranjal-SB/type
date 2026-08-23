@@ -3,14 +3,14 @@
 TYPE is MIT licensed — see [LICENSE](LICENSE). The binary also contains code from the crates
 listed below, and their licences require that their notices travel with it.
 
-**Generated file. Do not edit.** Regenerate with:
+**Generated at build time. Not edited, not committed.** Reproduce with:
 
 ```
-cargo about generate about.hbs -o THIRD-PARTY-LICENSES.md
+cargo about generate --fail about.hbs -o THIRD-PARTY-LICENSES.md
 ```
 
-CI checks that this file matches the lockfile, so a dependency change that alters the licence
-set fails the pull request that made it rather than the release three weeks later.
+CI runs the same command on every pull request, so a dependency whose licence text cannot be
+resolved fails the change that introduced it rather than the release three weeks later.
 
 The MIT and ISC texts repeat below because each one carries its own copyright line, and it is
 the copyright line that the licence requires be reproduced.

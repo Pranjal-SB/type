@@ -9,6 +9,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Wait a week before proposing a version. A release published minutes ago
+    # has had no time to be noticed as malicious, and the compromised-package
+    # window is measured in hours — this is the one Dependabot setting that
+    # trades nothing away, because a week-old patch fixes the same bug.
+    # Security updates ignore the cooldown, which is the correct asymmetry.
+    cooldown:
+      default-days: 7
     groups:
       cargo:
         patterns: ["*"]
@@ -21,6 +28,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]

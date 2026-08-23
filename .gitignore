@@ -9,3 +9,9 @@ docs/plans/
 
 # Visual brainstorming companion scratch. Not part of the project.
 .superpowers/
+
+# Generated at release time by cargo-about. Not reproducible byte-for-byte
+# across host platforms — cargo-about picks a different representative text for
+# a shared licence group depending on which crate it walks first — so it is
+# built and shipped rather than committed. See about.toml.
+THIRD-PARTY-LICENSES.md

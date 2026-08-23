@@ -92,8 +92,10 @@ ripgrep-15.2.0-x86_64-unknown-linux-gnu.tar.gz
 bat-v0.26.1-x86_64-unknown-linux-gnu.tar.gz
 ```
 
-That is also `cargo-binstall`'s default URL template, so `cargo binstall typ-editor` is
-plausibly already working and costs three lines of metadata to guarantee.
+It is *not*, however, enough for `cargo-binstall`. Its default template interpolates the
+**crate** name, and ours is `typ-editor` while every archive is named for the **binary**,
+`typ`. So binstall looks for `typ-editor-v0.2.5-…` and finds nothing. A
+`[package.metadata.binstall]` block naming the real layout is required rather than a nicety.
 
 ## 4. The target matrix
 

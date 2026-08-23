@@ -25,14 +25,11 @@ on:
         description: "Existing tag to build (e.g. v0.2.5)"
         required: true
 
+# Least privilege at the top; each job widens only what it needs. `id-token` and
+# `attestations` live on `build` alone, because a workflow-level grant hands the
+# signing identity to every job including ones that only talk to the API.
 permissions:
-  contents: write
-  # Build provenance. `id-token` mints the OIDC token that fetches a short-lived
-  # Sigstore signing certificate; `attestations` persists the result. Together
-  # they make `gh attestation verify <archive> --repo Pranjal-SB/type` prove the
-  # binary came out of this workflow rather than off a laptop.
-  id-token: write
-  attestations: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -40,10 +37,14 @@ env:
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - id: tag
         env:
           INPUT_TAG: ${{ inputs.tag }}
@@ -67,6 +68,15 @@ jobs:
 
   build:
     needs: create-release
+    permissions:
+      contents: write
+      # Build provenance. `id-token` mints the OIDC token that fetches a
+      # short-lived Sigstore signing certificate; `attestations` persists the
+      # result. Together they make
+      # `gh attestation verify <archive> --repo Pranjal-SB/type` prove the binary
+      # came out of this workflow rather than off a laptop.
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -88,18 +98,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.create-release.outputs.tag }}
+          persist-credentials: false
       # rust-toolchain.toml is the single source for the compiler; the target
       # triple is the only thing this workflow adds to it.
       - run: rustup show
       - env:
           TARGET: ${{ matrix.target }}
         run: rustup target add "$TARGET"
-      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
-        with:
-          key: ${{ matrix.target }}
+      # No build cache here, deliberately. A cache entry written by a pull
+      # request build is restorable by this workflow, so a poisoned entry would
+      # be linked into a signed release binary — and the attestation would
+      # faithfully attest to the poisoned artifact. A release is the one build
+      # worth paying four minutes to do from scratch.
       - env:
           TARGET: ${{ matrix.target }}
         run: cargo build --release --target "$TARGET" -p typ-editor
+
+      # The notices MIT and Apache-2.0 require to travel with the binary.
+      # Generated here rather than committed — see the licences job in ci.yml.
+      - uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
+        with:
+          tool: cargo-about
+      - name: Collect third-party licences
+        run: cargo about generate --fail about.hbs -o THIRD-PARTY-LICENSES.md
 
       - name: Package (unix)
         if: runner.os != 'Windows'
