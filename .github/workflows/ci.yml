@@ -161,11 +161,20 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          file "target/$TARGET/release/typ"
+          bin="target/$TARGET/release/typ"
+          file "$bin"
           # A dynamically linked "portable" build is the bug this milestone
           # exists to fix, so assert the property rather than eyeball it.
-          file "target/$TARGET/release/typ" | grep -q 'static-pie linked'
-          test "$(strings -a "target/$TARGET/release/typ" | grep -c GLIBC_ || true)" = 0
+          #
+          # Assert the absence of dynamic linking rather than the presence of a
+          # particular spelling: x86_64-musl reports `static-pie linked` and
+          # aarch64-musl reports plain `statically linked`, and the first
+          # version of this check failed a perfectly good arm64 binary for
+          # saying the second one.
+          if file "$bin" | grep -q 'dynamically linked'; then
+            echo "::error::$TARGET is dynamically linked"; exit 1
+          fi
+          test "$(strings -a "$bin" | grep -c GLIBC_ || true)" = 0
           ./target/$TARGET/release/typ --version
 
   # The single check the branch ruleset requires.
