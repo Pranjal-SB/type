@@ -16,7 +16,7 @@ name = "typ"
 path = "src/main.rs"
 
 [target.'cfg(all(target_env = "musl", target_pointer_width = "64"))'.dependencies]
-tikv-jemallocator.workspace = true
+mimalloc.workspace = true
 
 [dependencies]
 anyhow.workspace = true

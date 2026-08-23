@@ -30,7 +30,7 @@ unicode-width = "0.2"
 # 2.48x against glibc — 10.2 ms best-of-five against a 16 ms keystroke budget,
 # where glibc managed 4.1 ms. jemalloc puts it back to 4.05 ms. See
 # docs/design/distribution.md §4.
-tikv-jemallocator = "0.6"
+mimalloc = { version = "0.1", default-features = false }
 
 # Version alongside path: cargo resolves the path locally and publishes the
 # version, and refuses to publish a crate whose dependencies carry only a path.

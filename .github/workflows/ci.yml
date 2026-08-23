@@ -117,7 +117,7 @@ jobs:
   # Nothing here used to exercise release.yml at all, which is how a Linux
   # artifact linked against GLIBC_2.39 survived four tags — gap-analysis #45.
   # The two rows that can break independently of everything else are the musl
-  # ones: they are the only builds that compile C (jemalloc), the only ones
+  # ones: they are the only builds that compile C (mimalloc), the only ones
   # needing a toolchain the runner does not ship, and aarch64 is the only row
   # whose runner nobody has a local copy of.
   #

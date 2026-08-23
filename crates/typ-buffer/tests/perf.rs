@@ -14,7 +14,7 @@
 // no user of a released build ever runs. See crates/typ/src/main.rs.
 #[cfg(all(target_env = "musl", target_pointer_width = "64"))]
 #[global_allocator]
-static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};

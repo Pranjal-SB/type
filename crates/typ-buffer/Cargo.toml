@@ -27,4 +27,4 @@ unicode-width.workspace = true
 clipboard-win = { version = "5.4", features = ["std"] }
 
 [target.'cfg(all(target_env = "musl", target_pointer_width = "64"))'.dev-dependencies]
-tikv-jemallocator.workspace = true
+mimalloc.workspace = true

@@ -135,11 +135,9 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: rustup target add "$TARGET"
 
-      # jemalloc is C with an autotools build and needs a musl-targeting
-      # compiler rather than the host gcc, so without this the build dies on
-      # `ToolNotFound: x86_64-linux-musl-gcc`. It is the only C in the graph and
-      # it is here because musl's own allocator cost find_all 2.48x — see
-      # crates/typ/src/main.rs.
+      # mimalloc is C, so cc-rs needs a compiler that targets musl. It is the
+      # only C in the graph and it is here because musl's own allocator cost
+      # find_all 2.48x — see crates/typ/src/main.rs.
       #
       # CC is set explicitly rather than left to cc-rs's target-prefixed guess.
       # That guess happens to work on amd64 because `musl-tools` pulls in
@@ -227,3 +225,101 @@ jobs:
           shopt -s nullglob
           gh release upload "$TAG" \
             typ-*.tar.gz typ-*.tar.gz.sha256 typ-*.zip typ-*.zip.sha256 --clobber
+
+  # Download what was just uploaded, check the sum, and run it.
+  #
+  # Four tags and two releases shipped before anyone did this by hand, and when
+  # someone finally did, the Linux artifact turned out not to start on most
+  # Linux — gap-analysis #45 and #48. A build that compiles is not a release
+  # that works, and the gap between those two had no owner.
+  #
+  # Only rows whose runner can execute the target: an x86_64 runner cannot run
+  # an aarch64 binary. x86_64-apple-darwin is the one archive nothing here
+  # executes — the arm64 macOS runner would need Rosetta and a verification step
+  # that depends on an emulator is a verification step that fails for reasons
+  # unrelated to the artifact. It is still checksummed and attested.
+  verify:
+    needs: [create-release, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Verify (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+          TARGET: ${{ matrix.target }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          name="typ-$TAG-$TARGET"
+          gh release download "$TAG" --repo "$REPO" -p "$name.tar.gz" -p "$name.tar.gz.sha256"
+          shasum -a 256 -c "$name.tar.gz.sha256"
+          tar xzf "$name.tar.gz"
+          got=$("./$name/typ" --version)
+          echo "$got"
+          # The tag is the claim; the binary is the evidence. A release whose
+          # binary reports a different version than its tag is worse than a
+          # failed release, because nothing downstream will notice.
+          test "$got" = "typ ${TAG#v}"
+          test -s "$name/THIRD-PARTY-LICENSES.md"
+
+      - name: Verify (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+          TARGET: ${{ matrix.target }}
+          REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $name = "typ-$env:TAG-$env:TARGET"
+          gh release download $env:TAG --repo $env:REPO -p "$name.zip" -p "$name.zip.sha256"
+          $want = (Get-Content "$name.zip.sha256").Split(" ")[0]
+          $got  = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
+          if ($want -ne $got) { throw "checksum mismatch: $want vs $got" }
+          Expand-Archive -Path "$name.zip" -DestinationPath .
+          $v = & "./$name/typ.exe" --version
+          Write-Host $v
+          $expect = "typ " + $env:TAG.TrimStart("v")
+          if ($v -ne $expect) { throw "version mismatch: '$v' vs '$expect'" }
+          if (-not (Test-Path "$name/THIRD-PARTY-LICENSES.md")) { throw "licence notices missing" }
+
+  # Publishing is the last step, not the first. The draft exists so that a
+  # release which fails verification is a draft nobody saw rather than a tag
+  # people have already installed — and with immutable releases enabled, a
+  # published release cannot be quietly corrected afterwards.
+  publish:
+    needs: [create-release, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # A hyphen in a semver tag means a prerelease: v0.2.6-rc.1 should not
+          # become the thing `install.sh` resolves as latest.
+          case "$TAG" in
+            *-*) pre="--prerelease" ;;
+            *)   pre="--latest" ;;
+          esac
+          gh release edit "$TAG" --repo "$REPO" --draft=false $pre
