@@ -1,0 +1,34 @@
+# Third-party licences
+
+TYPE is MIT licensed — see [LICENSE](LICENSE). The binary also contains code from the crates
+listed below, and their licences require that their notices travel with it.
+
+**Generated file. Do not edit.** Regenerate with:
+
+```
+cargo about generate about.hbs -o THIRD-PARTY-LICENSES.md
+```
+
+CI checks that this file matches the lockfile, so a dependency change that alters the licence
+set fails the pull request that made it rather than the release three weeks later.
+
+The MIT and ISC texts repeat below because each one carries its own copyright line, and it is
+the copyright line that the licence requires be reproduced.
+
+## Summary
+
+| Licence | Crates |
+|---|---|
+{{#each overview}}| {{name}} | {{count}} |
+{{/each}}
+
+{{#each licenses}}
+## {{name}}
+
+Used by {{#each used_by}}{{#if @index}}, {{/if}}[{{crate.name}} {{crate.version}}]({{#if crate.repository}}{{crate.repository}}{{else}}https://crates.io/crates/{{crate.name}}{{/if}}){{/each}}.
+
+```text
+{{text}}
+```
+
+{{/each}}
