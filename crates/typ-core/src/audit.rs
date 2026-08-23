@@ -265,6 +265,27 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         "whitespace marks must be quieter than the code they sit in",
     );
 
+    // An indent guide is the same class of furniture again, and unlike a
+    // whitespace mark it is always on — so the floor matters more here, not
+    // less. Below it the rules read as a smear down the left of the file
+    // instead of as the structure of the block.
+    at_least(
+        &mut bad,
+        "indent_guide on bg",
+        theme.indent_guide,
+        theme.bg,
+        floors.quiet,
+        ground,
+    );
+    emphasised(
+        &mut bad,
+        "fg over indent_guide",
+        theme.fg,
+        theme.indent_guide,
+        theme.bg,
+        "indent guides must be quieter than the code they run beside",
+    );
+
     differ(
         &mut bad,
         "cursor_line_bg vs bg",

@@ -54,6 +54,7 @@ gutter_bg = "background"
 line_number_fg = "comment"
 line_number_current_fg = "foreground"
 whitespace = "comment"
+indent_guide = "comment"
 
 selection_bg = "select"
 selection_fg = "foreground"

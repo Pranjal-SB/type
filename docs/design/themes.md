@@ -33,7 +33,7 @@ border_focused = "accent"
 ```
 
 Three sections and two required scalars. `[palette]` names colours; `[ui]` assigns them to
-the editor's 26 slots. A `[ui]` value is either a `[palette]` key or a `#rrggbb` literal —
+the editor's 27 slots. A `[ui]` value is either a `[palette]` key or a `#rrggbb` literal —
 there is no third form, and a name that resolves to neither is an error naming the line.
 
 **`kind` is declared, not inferred.** It selects every contrast floor in the rubric — see below
@@ -49,7 +49,7 @@ A misspelled key gets a did-you-mean when the edit distance is small enough to b
 and no suggestion when it isn't. `forgeground` suggests `fg`; `banana` gets told it is not a
 key and left alone.
 
-## The 26 slots
+## The 27 slots
 
 | Group | Keys |
 |---|---|
@@ -61,6 +61,7 @@ key and left alone.
 | Chrome | `chrome_bg` `border` `border_focused` |
 | Status bar | `status_bar_bg` `status_bar_fg` `status_bar_inactive_fg` `status_bar_accent` |
 | Tree | `tree_directory_fg` `tree_file_fg` |
+| Guides | `indent_guide` |
 | Diagnostics | `diagnostic_error` `diagnostic_warning` `diagnostic_info` `diagnostic_hint` |
 
 `chrome_bg` is the raised surface the sidebar and status bar share. The editor keeps `bg`.
@@ -92,6 +93,7 @@ this document.
 | `fg on cursor_line_bg` | body | The tint must not eat the text sitting on it. |
 | `line_number_fg on bg` | quiet | Below its floor the gutter stops being information and becomes texture. |
 | `whitespace on bg` | quiet | Same class of furniture, same floor. A mark nobody can see makes `trailing` catch nothing. |
+| `indent_guide on bg` | quiet | Always drawn, unlike a whitespace mark, so a guide under the floor is permanent noise or permanent invisibility. |
 | `status_bar_inactive_fg` | quiet | Recessive, but it carries the filetype and the line ending. |
 | `selection_fg` on both selection grounds | content | |
 | `bracket_match_fg on bracket_match_bg` | content | |
@@ -114,6 +116,7 @@ The rules with no ratio, which do not vary by ground:
 | `line_number_current_fg vs line_number_fg` | ≠ identical, further from `bg` |
 | `fg` over `line_number_fg` | further from `bg` — numbers are quieter than the code |
 | `fg` over `whitespace` | further from `bg` — marks are quieter than the code |
+| `fg` over `indent_guide` | further from `bg` — a guide is furniture, not content |
 | `border_focused` vs `border` | further from `bg` — focus is gained attention, not lost |
 | `status_bar_fg` over `status_bar_inactive_fg` | further from `status_bar_bg` |
 | `tree_directory_fg vs tree_file_fg` | ≠ identical |

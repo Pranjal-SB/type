@@ -101,6 +101,15 @@ pub struct ThemeColors {
     /// nothing.
     pub whitespace: Color,
 
+    /// The vertical rule standing at each completed level of indentation.
+    ///
+    /// Furniture, like the line numbers and the whitespace marks, and held to
+    /// the same floor for the same reason — below it the rules stop being
+    /// structure and become a texture down the left of the file. It names the
+    /// gutter's step in every shipped theme, which is also what stops the
+    /// greys drifting apart one widget at a time.
+    pub indent_guide: Color,
+
     pub selection_bg: Color,
     pub selection_fg: Color,
     /// The primary selection, the one every motion is relative to. Helix themes
@@ -166,6 +175,7 @@ impl Default for ThemeColors {
             // same kind of furniture, and a palette where each widget invents
             // its own grey is how one visual system comes apart.
             whitespace: p::BASE_04,
+            indent_guide: p::BASE_04,
 
             selection_bg: p::SELECT,
             selection_fg: p::BASE_08,

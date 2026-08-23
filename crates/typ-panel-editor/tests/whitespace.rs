@@ -94,7 +94,10 @@ fn an_unmarked_tab_occupies_the_same_columns_a_marked_one_does() {
     panel.set_tab_width(4);
     panel.set_whitespace(Whitespace::None);
     let buf = render(&mut panel);
-    assert_eq!(row(&buf, 0, 5), "    x");
+    // The leading cell is an indent guide, not whitespace: one tab at a width
+    // of four is one full level, so the line is genuinely a level deep. What
+    // this test holds is the column count after it - four cells before `x`.
+    assert_eq!(row(&buf, 0, 5), "│   x");
 }
 
 #[test]
@@ -149,7 +152,11 @@ fn trailing_marks_the_tail_and_leaves_the_indent_alone() {
     let mut panel = EditorPanel::from_str("  a  \n");
     panel.set_whitespace(Whitespace::Trailing);
     let buf = render(&mut panel);
-    assert_eq!(row(&buf, 0, 5), "  a··");
+    // Column 0 is an indent guide. Detection reads this file as two-space
+    // indented - two columns is a real delta against an empty preceding line -
+    // so the row sits one level deep and the guide belongs there. What
+    // Trailing is held to is that the indent keeps no marks and the tail does.
+    assert_eq!(row(&buf, 0, 5), "│ a··");
 }
 
 #[test]

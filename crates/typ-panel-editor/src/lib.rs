@@ -45,6 +45,22 @@ const INDENT_SCAN_LINES: usize = 10_000;
 /// keystroke path. See `typ-buffer/src/brackets.rs`.
 const BRACKET_SEARCH_MARGIN: usize = 64;
 
+/// Lines the blank-line indent-guide scan reads, in each direction.
+///
+/// A blank line takes its guides from the shallower of the two non-blank lines
+/// around it — without that, every empty line inside a block punches a hole
+/// through the guides, which is most blocks. Finding those two lines is the one
+/// thing in the render path that is not local to a single row, so it is
+/// bounded: an unbounded walk to the next non-blank line is a walk over the
+/// whole buffer on the keystroke path, which is the trap `line_text` already
+/// taught this codebase once.
+///
+/// A gap longer than this draws no guide. That is a cosmetic miss rather than a
+/// wrong answer, which is the whole reason the bound is acceptable here and was
+/// not acceptable for the active-guide highlight Zed draws — a guide at the
+/// wrong depth is a lie, and that one is cut instead.
+const BLANK_GUIDE_SCAN: usize = 64;
+
 pub struct EditorPanel {
     pub(crate) buffer: TextBuffer,
     /// Never a bare cursor: a caret is an empty selection, so every editing
@@ -277,6 +293,30 @@ impl EditorPanel {
         self.selections
             .iter()
             .any(|s| s.is_empty() && s.head.line == line)
+    }
+
+    /// Indent-guide levels for a line that is nothing but whitespace.
+    ///
+    /// The shallower of the two non-blank lines around it, so the guides of the
+    /// block above cannot run past its end and into whatever follows. Bounded
+    /// in both directions by [`BLANK_GUIDE_SCAN`]; a side that never resumes
+    /// inside the bound contributes nothing, and nothing is what gets drawn.
+    fn guides_around_blank(&self, line: usize) -> usize {
+        let above = (line.saturating_sub(BLANK_GUIDE_SCAN)..line)
+            .rev()
+            .find_map(|l| {
+                self.buffer
+                    .with_line_str(l, |text| indent_columns(text, self.tab_width))
+            });
+        let last = self.buffer.line_count();
+        let below = ((line + 1)..(line + 1 + BLANK_GUIDE_SCAN).min(last)).find_map(|l| {
+            self.buffer
+                .with_line_str(l, |text| indent_columns(text, self.tab_width))
+        });
+        match (above, below) {
+            (Some(above), Some(below)) => above.min(below) / self.tab_width,
+            _ => 0,
+        }
     }
 
     /// The area inside the frame, before the gutter is taken out of it.
@@ -541,20 +581,29 @@ impl Panel for EditorPanel {
                 // Only carets tint their line; a line carrying a real selection
                 // is already saying where the user is.
                 let cursor_line = self.is_cursor_line(i);
-                let style = crate::render::LineStyle {
-                    line: i,
-                    left_col,
-                    width: text_width,
-                    tab_width: self.tab_width,
-                    selections: &selections,
-                    primary,
-                    cursor_line,
-                    brackets,
-                    whitespace: self.whitespace,
-                    theme: ctx.theme,
-                };
-                self.buffer
-                    .with_line_str(i, |text| crate::render::styled_line(text, &style))
+                self.buffer.with_line_str(i, |text| {
+                    // Read off the text this row was going to draw anyway, so a
+                    // line that says its own depth costs no extra look at the
+                    // buffer. Only a blank one pays for the neighbour scan.
+                    let indent_guides = match indent_columns(text, self.tab_width) {
+                        Some(columns) => columns / self.tab_width,
+                        None => self.guides_around_blank(i),
+                    };
+                    let style = crate::render::LineStyle {
+                        line: i,
+                        left_col,
+                        width: text_width,
+                        tab_width: self.tab_width,
+                        selections: &selections,
+                        primary,
+                        cursor_line,
+                        brackets,
+                        whitespace: self.whitespace,
+                        indent_guides,
+                        theme: ctx.theme,
+                    };
+                    crate::render::styled_line(text, &style)
+                })
             })
             .collect();
         Paragraph::new(lines)
@@ -723,4 +772,26 @@ impl Panel for EditorPanel {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
+}
+
+/// Display columns of leading whitespace, or `None` for a line that is nothing
+/// but whitespace.
+///
+/// `None` rather than zero, because a blank line is not evidence of depth zero
+/// — it is evidence of nothing, and the caller looks at its neighbours instead.
+/// Bytes rather than graphemes: only ASCII space and tab are indentation, and
+/// neither can be part of a multi-byte sequence.
+fn indent_columns(text: &str, tab_width: usize) -> Option<usize> {
+    let mut column = 0usize;
+    for byte in text.bytes() {
+        match byte {
+            b' ' => column += 1,
+            b'\t' => column += tab_width - (column % tab_width),
+            // `with_line_str` hands back the terminator too, so the end of the
+            // line arrives here rather than as the end of the iterator.
+            b'\n' | b'\r' => return None,
+            _ => return Some(column),
+        }
+    }
+    None
 }
