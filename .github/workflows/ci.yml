@@ -196,10 +196,36 @@ jobs:
         run: shellcheck -s sh install.sh tests/install_test.sh
       - name: Test under dash
         run: dash tests/install_test.sh
-      # busybox ash is what a Alpine container has, and Alpine is the first
+      # busybox ash is what an Alpine container has, and Alpine is the first
       # place a static musl build gets tried.
       - name: Test under busybox ash
         run: busybox ash tests/install_test.sh
+
+  install-script-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # PSScriptAnalyzer is PowerShell's shellcheck. Not preinstalled on the
+      # runner, and pinning it is not worth a Dependabot ecosystem for one
+      # linter that only ever gates this file.
+      - name: Lint
+        shell: powershell
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+          $found = @()
+          foreach ($f in 'install.ps1', 'tests/install_test.ps1') {
+            $found += Invoke-ScriptAnalyzer -Path $f -Settings ./PSScriptAnalyzerSettings.psd1
+          }
+          $found | Format-Table RuleName, Line, ScriptName, Message -AutoSize -Wrap
+          if ($found) { exit 1 }
+      # `shell: powershell` is Windows PowerShell 5.1; `shell: pwsh` is 7. It has
+      # to be 5.1, because `irm ... | iex` runs in whatever ships with Windows
+      # and a 7-only construct would pass here and fail on every user's machine.
+      - name: Test under Windows PowerShell 5.1
+        shell: powershell
+        run: ./tests/install_test.ps1
 
   # The single check the branch ruleset requires.
   #
@@ -213,7 +239,7 @@ jobs:
   # else. Adding a check above is then a change to this file only.
   ci-ok:
     if: always()
-    needs: [test, deny, typos, workflows, licenses, cross-build, install-script]
+    needs: [test, deny, typos, workflows, licenses, cross-build, install-script, install-script-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Fail unless every dependency succeeded
