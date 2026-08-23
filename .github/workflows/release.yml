@@ -92,6 +92,15 @@ jobs:
           # comment on that step.
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
+          # arm64 Linux: Graviton, Raspberry Pi, Asahi, arm64 servers. Every
+          # editor in the surveyed field ships this and TYPE did not.
+          #
+          # `release.yml` used to carry a note saying this needed a cross linker
+          # and was therefore out of scope. That stopped being true in January
+          # 2025, when arm64 runners became free for public repositories — it is
+          # a native build on a native runner.
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
           # The dynamically linked Linux build, tracking whatever glibc
           # `ubuntu-latest` currently is. It is not the compatibility build and
           # must not be described as one: v0.2.5 shipped this alone, linked
@@ -126,13 +135,26 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: rustup target add "$TARGET"
 
-      # jemalloc is C with an autotools build, and it needs a musl-targeting
-      # compiler rather than the host gcc: without musl-tools the build fails on
+      # jemalloc is C with an autotools build and needs a musl-targeting
+      # compiler rather than the host gcc, so without this the build dies on
       # `ToolNotFound: x86_64-linux-musl-gcc`. It is the only C in the graph and
       # it is here because musl's own allocator cost find_all 2.48x — see
       # crates/typ/src/main.rs.
+      #
+      # CC is set explicitly rather than left to cc-rs's target-prefixed guess.
+      # That guess happens to work on amd64 because `musl-tools` pulls in
+      # `musl-dev`, which is what actually ships /usr/bin/x86_64-linux-musl-gcc
+      # — musl-tools itself installs only musl-gcc and musl-ldd. Relying on a
+      # transitive dependency to name a binary the way one crate expects is a
+      # bet, and it is not a bet worth taking twice on two architectures.
+      # `musl-gcc` is in musl-tools directly on both.
       - if: contains(matrix.target, 'musl')
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends musl-tools
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends musl-tools
+          echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
       # No build cache here, deliberately. A cache entry written by a pull
       # request build is restorable by this workflow, so a poisoned entry would
       # be linked into a signed release binary — and the attestation would
@@ -149,6 +171,15 @@ jobs:
           tool: cargo-about
       - name: Collect third-party licences
         run: cargo about generate --fail about.hbs -o THIRD-PARTY-LICENSES.md
+
+      # The cheapest possible check that the thing built is a thing that runs.
+      # Only where the runner's architecture matches the target: the arm64
+      # runner cannot execute an x86_64 binary and the macOS rows are
+      # cross-compiled. The real verification is the release `verify` job.
+      - if: contains(matrix.target, 'linux')
+        env:
+          TARGET: ${{ matrix.target }}
+        run: ./target/$TARGET/release/typ --version
 
       - name: Package (unix)
         if: runner.os != 'Windows'
