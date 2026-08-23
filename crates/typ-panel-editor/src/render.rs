@@ -288,7 +288,7 @@ impl Runs {
 
     /// One blank cell, or the guide standing in it.
     fn blank(&mut self, column: usize, guides_end: usize, paint: Paint, ctx: &LineStyle) {
-        if column < guides_end && column % ctx.tab_width == 0 {
+        if column < guides_end && column.is_multiple_of(ctx.tab_width) {
             self.push('│', (paint, Overlay::Guide), ctx.theme);
         } else {
             self.push(' ', (paint, Overlay::None), ctx.theme);

@@ -198,6 +198,33 @@ What is still true is the technique. Alabaster reaches its floors on a near-whit
 saturation it cannot have. On a pale page, take the hue down in lightness *and* saturation until
 it clears, and accept that it reads muted.
 
+## Porting somebody else's theme
+
+**A port is an adaptation, not a transcription, and the file says so.** Every shipped theme
+named after an upstream palette carries a header listing exactly which published values moved
+and why. That is not politeness — it is what stops the next contributor arguing it per theme.
+
+**A port that cannot clear the floors does not ship.** There is no exemption for a famous name.
+
+Two things show up in every port, so expect them rather than treating them as surprises:
+
+- **Upstream palettes routinely fail the error-versus-warning separation.** Rosé Pine misses by
+  0.03, Tokyo Night by 0.48. Harmony was the design goal and deuteranopia was not, and the two
+  pull against each other. Nudge the warning's lightness inside its own hue.
+- **A theme's second surface often quantises onto its own page at 256 colours.** `mantle`,
+  `surface` and `bg_dark` all needed moving for that alone. At 24-bit they are fine; at 8-bit
+  the sidebar silently stops being a surface.
+
+On a light ground, an accent that clears its floor has to come *down* in lightness **and**
+saturation — a saturated hue on a near-white page has a hard ceiling. Catppuccin Latte's warning
+lands at `#7a2900`, which reads brown more than yellow. That is the honest cost, recorded in the
+file, and it is better than a warning nobody can see.
+
+Some themes need structure rather than tuning. Dracula publishes one colour and uses it for six
+jobs — the cursor line, both selection tones, the matched bracket's ground, the border and the
+status bar. TYPE needs those to be different surfaces, so four palette entries were added, each
+derived from the published background on its own hue.
+
 ## Degrading to 256 colours
 
 Themes are written in truecolor. `typ_app::capability::detect()` decides the depth once at
