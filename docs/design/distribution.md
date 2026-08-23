@@ -122,18 +122,49 @@ Proposed matrix — six targets, two more runners, no new tooling:
 |---|---|---|
 | `x86_64-unknown-linux-musl` | `ubuntu-latest` | every x86_64 Linux, any age |
 | `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` | Graviton, Pi, Asahi, arm64 servers |
-| `x86_64-unknown-linux-gnu` | `ubuntu-22.04` | a glibc build for anyone who wants one |
-| `x86_64-apple-darwin` | `macos-13` | Intel Macs |
+| `x86_64-unknown-linux-gnu` | `ubuntu-latest` | a dynamically linked build, current glibc only |
+| `x86_64-apple-darwin` | `macos-latest` | Intel Macs, cross-compiled from the arm runner |
 | `aarch64-apple-darwin` | `macos-latest` | Apple Silicon |
 | `x86_64-pc-windows-msvc` | `windows-latest` | Windows |
 
-The gnu row moves from `ubuntu-latest` to `ubuntu-22.04` regardless of anything else here.
-Pinning the runner is a one-word diff that drops the floor from glibc 2.39 to 2.35, and
-`ubuntu-latest` will keep moving underneath the release otherwise — 26.04 is already in
-preview.
+**musl is the compatible build; gnu is not, and should stop pretending to be.** The obvious
+alternative was to pin the gnu row to `ubuntu-22.04` and buy a glibc 2.35 floor for a one-word
+diff. That is a fix with an expiry date: 22.04 begins deprecation on 2026-09-17 and is
+unsupported by 2027-04-17, and it still excludes RHEL 9 and Amazon Linux 2023 at glibc 2.34.
+Chasing an old runner is the wrong shape of answer to a problem static linking solves outright.
+So gnu stays on `ubuntu-latest`, documented as the current-glibc build, and musl is what the
+installer reaches for.
+
+The Apple rows need no Intel runner. `macos-13` was retired in December 2025 and
+`macos-15-intel` — the last x86_64 image Actions will offer — goes in August 2027. Neither
+matters here: the arm64 macOS runner cross-compiles `x86_64-apple-darwin` with the stock
+toolchain, which is already what produces the current artifact.
 
 Deliberately not included: 32-bit anything, ARM32, the BSDs, `.deb` and `.rpm`. Community
 territory once demand exists, per Part 7's channel table.
+
+### musl's allocator has to be measured, not assumed
+
+The one thing that could make this whole section the wrong answer. musl's `mallocng` is built
+for size and static-linkability rather than speed, and swapping it in has cost real projects
+between 2x and 20x on allocation-heavy paths. ripgrep carries the workaround in its `main.rs`:
+
+```rust
+#[cfg(all(target_env = "musl", target_pointer_width = "64"))]
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+// "musl's allocator appears to slow down ripgrep quite a bit"
+```
+
+TYPE has published budgets and one of them has almost no room: `find_all` measured 6.9, 9.0,
+14.9 and 18.7 ms across consecutive runs against a 16 ms gate. A 2x allocator regression there
+is not a nit, it is a failing test, and §4 of the architecture says so.
+
+So the musl build is not done when it compiles. It is done when `tests/perf.rs` has been run
+against it and the numbers are written down. If they regress, the fix is a `#[global_allocator]`
+under `cfg(target_env = "musl")` — and that costs the "it is pure Rust, so this is free"
+argument above, because both jemalloc and mimalloc are C with a `build.rs`. Still cheaper than
+doing it after tree-sitter, but no longer free, and the plan should not pretend otherwise.
 
 ## 5. The installer
 
