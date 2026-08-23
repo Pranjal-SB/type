@@ -15,6 +15,9 @@
 
 set -eu
 
+# shellcheck disable=SC1007  # `CDPATH=` is a deliberate empty assignment: an
+# exported CDPATH makes `cd` print and jump elsewhere, which would silently
+# resolve the repo root to the wrong directory.
 here=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 script="$here/install.sh"
 pass=0
@@ -40,8 +43,11 @@ make_fixture() {
     chmod +x "$root/$name/typ"
     echo 'notices' > "$root/$name/THIRD-PARTY-LICENSES.md"
     (cd "$root" && tar czf "$name.tar.gz" "$name" && rm -rf "$name")
-    (cd "$root" && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256" 2>/dev/null ||
-        shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
+    if command -v sha256sum >/dev/null 2>&1; then
+        (cd "$root" && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
+    else
+        (cd "$root" && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
+    fi
     echo "$root/$name.tar.gz"
 }
 

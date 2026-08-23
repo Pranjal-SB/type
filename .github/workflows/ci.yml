@@ -177,6 +177,30 @@ jobs:
           test "$(strings -a "$bin" | grep -c GLIBC_ || true)" = 0
           ./target/$TARGET/release/typ --version
 
+  # install.sh is the only code in this repository that strangers pipe into
+  # their shell, which makes it the code with the least margin for a mistake and
+  # the only code no Rust test covers.
+  #
+  # Run under dash, not bash. `curl ... | sh` on Debian and Ubuntu is dash, so
+  # testing under bash tests a shell the script will frequently not get — and
+  # bashisms pass silently there right up until someone on Ubuntu runs the
+  # documented command.
+  install-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck busybox
+      - name: Lint
+        run: shellcheck -s sh install.sh tests/install_test.sh
+      - name: Test under dash
+        run: dash tests/install_test.sh
+      # busybox ash is what a Alpine container has, and Alpine is the first
+      # place a static musl build gets tried.
+      - name: Test under busybox ash
+        run: busybox ash tests/install_test.sh
+
   # The single check the branch ruleset requires.
   #
   # A matrix job does not report a status under its own name: `test` publishes
@@ -189,7 +213,7 @@ jobs:
   # else. Adding a check above is then a change to this file only.
   ci-ok:
     if: always()
-    needs: [test, deny, typos, workflows, licenses, cross-build]
+    needs: [test, deny, typos, workflows, licenses, cross-build, install-script]
     runs-on: ubuntu-latest
     steps:
       - name: Fail unless every dependency succeeded
