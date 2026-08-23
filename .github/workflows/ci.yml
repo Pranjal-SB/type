@@ -112,6 +112,62 @@ jobs:
           cargo about generate --fail about.hbs -o /tmp/THIRD-PARTY-LICENSES.md
           echo "resolved $(grep -c '^## ' /tmp/THIRD-PARTY-LICENSES.md) licence blocks"
 
+  # The release matrix, built at pull-request time rather than at tag time.
+  #
+  # Nothing here used to exercise release.yml at all, which is how a Linux
+  # artifact linked against GLIBC_2.39 survived four tags — gap-analysis #45.
+  # The two rows that can break independently of everything else are the musl
+  # ones: they are the only builds that compile C (jemalloc), the only ones
+  # needing a toolchain the runner does not ship, and aarch64 is the only row
+  # whose runner nobody has a local copy of.
+  #
+  # Build and run only. Packaging, checksums, attestation and publishing stay
+  # in release.yml; this answers "does the matrix still compile and does the
+  # binary start", which is the question that was going unasked.
+  cross-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup show
+      - env:
+          TARGET: ${{ matrix.target }}
+        run: rustup target add "$TARGET"
+      # Mirrors release.yml. musl-gcc rather than a target-prefixed name: that
+      # one comes from musl-dev transitively, and betting on its spelling across
+      # two architectures is what this job exists to avoid needing to do.
+      - env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends musl-tools
+          echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ matrix.target }}
+      - env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --release --target "$TARGET" -p typ-editor
+      - name: It is static, and it starts
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          file "target/$TARGET/release/typ"
+          # A dynamically linked "portable" build is the bug this milestone
+          # exists to fix, so assert the property rather than eyeball it.
+          file "target/$TARGET/release/typ" | grep -q 'static-pie linked'
+          test "$(strings -a "target/$TARGET/release/typ" | grep -c GLIBC_ || true)" = 0
+          ./target/$TARGET/release/typ --version
+
   # The single check the branch ruleset requires.
   #
   # A matrix job does not report a status under its own name: `test` publishes
@@ -124,7 +180,7 @@ jobs:
   # else. Adding a check above is then a change to this file only.
   ci-ok:
     if: always()
-    needs: [test, deny, typos, workflows, licenses]
+    needs: [test, deny, typos, workflows, licenses, cross-build]
     runs-on: ubuntu-latest
     steps:
       - name: Fail unless every dependency succeeded
