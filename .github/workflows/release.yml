@@ -81,18 +81,38 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The portable Linux build. musl links libc statically, so there is no
+          # glibc version to be too new for and one file covers Ubuntu, Debian,
+          # RHEL, Alpine, Void and NixOS regardless of age. This is what the
+          # installer reaches for and what the README points at.
+          #
+          # Rust's musl target ships self-contained linking components, so the
+          # Rust half of this needs no toolchain. The musl-tools step below is
+          # for jemalloc, which is here because it was measured — see the
+          # comment on that step.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          # The dynamically linked Linux build, tracking whatever glibc
+          # `ubuntu-latest` currently is. It is not the compatibility build and
+          # must not be described as one: v0.2.5 shipped this alone, linked
+          # against glibc 2.39, and did not start on Ubuntu 22.04, Debian 12,
+          # RHEL 9 or Amazon Linux 2023 — gap-analysis #45.
+          #
+          # Pinning this row to ubuntu-22.04 was considered and rejected. It
+          # buys a 2.35 floor, still misses RHEL 9 and Amazon Linux 2023 at
+          # 2.34, and 22.04 begins deprecation on 2026-09-17. Static linking
+          # answers the question outright; chasing an old runner does not.
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+          # Both Apple targets build on the arm64 runner: the stock toolchain
+          # cross-compiles x86_64 without help, which is why macos-13's
+          # retirement and macos-15-intel's 2027 sunset are not our problem.
           - target: x86_64-apple-darwin
             os: macos-latest
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-    # M2.6 replaces this matrix: the gnu-only Linux row produces a binary linked
-    # against the runner's glibc, which as of ubuntu-latest = 24.04 is 2.39 and
-    # does not start on Ubuntu 22.04, Debian 12, RHEL 9 or Amazon Linux 2023.
-    # See docs/design/distribution.md §1 and gap-analysis defect #45.
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -105,6 +125,14 @@ jobs:
       - env:
           TARGET: ${{ matrix.target }}
         run: rustup target add "$TARGET"
+
+      # jemalloc is C with an autotools build, and it needs a musl-targeting
+      # compiler rather than the host gcc: without musl-tools the build fails on
+      # `ToolNotFound: x86_64-linux-musl-gcc`. It is the only C in the graph and
+      # it is here because musl's own allocator cost find_all 2.48x — see
+      # crates/typ/src/main.rs.
+      - if: contains(matrix.target, 'musl')
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends musl-tools
       # No build cache here, deliberately. A cache entry written by a pull
       # request build is restorable by this workflow, so a poisoned entry would
       # be linked into a signed release binary — and the attestation would

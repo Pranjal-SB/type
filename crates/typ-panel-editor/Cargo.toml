@@ -17,3 +17,6 @@ ratatui.workspace = true
 unicode-segmentation.workspace = true
 typ-buffer.workspace = true
 typ-core.workspace = true
+
+[target.'cfg(all(target_env = "musl", target_pointer_width = "64"))'.dev-dependencies]
+tikv-jemallocator.workspace = true

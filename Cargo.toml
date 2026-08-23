@@ -26,6 +26,11 @@ ropey = "1.6"
 toml = "1.1"
 unicode-segmentation = "1.11"
 unicode-width = "0.2"
+# musl-only, and only because it was measured. musl's mallocng cost find_all
+# 2.48x against glibc — 10.2 ms best-of-five against a 16 ms keystroke budget,
+# where glibc managed 4.1 ms. jemalloc puts it back to 4.05 ms. See
+# docs/design/distribution.md §4.
+tikv-jemallocator = "0.6"
 
 # Version alongside path: cargo resolves the path locally and publishes the
 # version, and refuses to publish a crate whose dependencies carry only a path.

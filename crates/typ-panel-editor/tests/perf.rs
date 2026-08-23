@@ -3,6 +3,13 @@
 //!
 //!     cargo test --release -p typ-panel-editor --test perf -- --ignored --nocapture
 
+// The perf tests carry the same allocator swap as the binary, so what they
+// measure is what ships. Without it the musl column measures mallocng, which
+// no user of a released build ever runs. See crates/typ/src/main.rs.
+#[cfg(all(target_env = "musl", target_pointer_width = "64"))]
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 use std::sync::{Mutex, MutexGuard};
 use std::time::Instant;
 

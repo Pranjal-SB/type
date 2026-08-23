@@ -105,12 +105,27 @@ A musl build links libc statically. There is no glibc version to be too new, no
 `GLIBC_2.39 not found`, and one file covers Ubuntu, Debian, RHEL, Alpine, Void, NixOS and
 everything else. This is what starship defaults to and what ripgrep and bat ship alongside gnu.
 
-**Why "right now" is load-bearing.** TYPE has no `build.rs` in any crate and no `cc` in the
-dependency graph — it is pure Rust, so `rustup target add x86_64-unknown-linux-musl` and a
-`--target` flag is the entire change. No `musl-tools`, no `cross`, no container. **M2.6 ends
-this.** Tree-sitter grammars are C; taking them adds a C toolchain to every musl and every
-cross build, and the same matrix then needs `cross` or a hand-built sysroot. Doing this before
-M2.6 costs a matrix entry. Doing it after costs a build system.
+**Why "right now" is load-bearing.** Nothing in the graph compiles C — no `cc`, `cmake`,
+`bindgen` or `pkg-config` — and none of TYPE's own crates carries a `build.rs`. So
+`rustup target add x86_64-unknown-linux-musl` plus a `--target` flag is the entire change: no
+`musl-tools`, no `musl-gcc`, no `cross`, no container.
+
+Two qualifications, both learned by doing it on a clean box rather than by reading the
+lockfile. Several dependencies *do* have build scripts — `libc`, `signal-hook`,
+`parking_lot_core` — but they are ordinary Rust programs, not C. And building any Rust binary
+for Linux still needs a linker driver:
+
+```
+error: linker `cc` not found
+```
+
+That is true of the gnu target as much as musl, it is one `apt-get install gcc`, and GitHub's
+runners ship it. It is a fact about Linux, not a cost of this change.
+
+**M2.7 ends the easy version.** Tree-sitter grammars are C; taking them puts a real C
+toolchain in the path of every musl and every cross build, and the matrix then needs `cross` or
+a hand-built sysroot. Doing this before M2.7 costs a matrix entry. Doing it after costs a build
+system.
 
 aarch64 Linux was left out of `release.yml` with the note that it needs a cross linker. That
 is now out of date: GitHub's `ubuntu-24.04-arm` runners have been free for public repositories
@@ -143,11 +158,30 @@ toolchain, which is already what produces the current artifact.
 Deliberately not included: 32-bit anything, ARM32, the BSDs, `.deb` and `.rpm`. Community
 territory once demand exists, per Part 7's channel table.
 
-### musl's allocator has to be measured, not assumed
+### musl's allocator, measured
 
-The one thing that could make this whole section the wrong answer. musl's `mallocng` is built
-for size and static-linkability rather than speed, and swapping it in has cost real projects
-between 2x and 20x on allocation-heavy paths. ripgrep carries the workaround in its `main.rs`:
+The one thing that could have made this whole section the wrong answer, now settled with
+numbers. Best of five per column, one 12-core Linux host, nothing else running:
+
+| metric | gnu | musl | musl + jemalloc | budget |
+|---|---|---|---|---|
+| `find_all`, rare needle | 4.11 ms | **10.17 ms** | 4.28 ms | 16 ms |
+| `find_all`, match on every line | 97.6 ms | 165.3 ms | 98.6 ms | — |
+| render, unmatched bracket | 161 µs | 366 µs | 248 µs | 16 ms |
+| `InsertChar` | 1.10 µs | 1.54 µs | 1.25 µs | 16 ms |
+| `Undo+Redo` | 146 ns | 275 ns | 137 ns | 32 ms |
+
+Plain musl was worse than glibc's *worst* run on every one of its five `find_all` runs —
+10.17, 10.46, 11.86, 11.99 and 13.66 ms against a 16 ms gate. The test still passed. That is
+the point: a budget with no margin left passes right up until it does not, and `find_all` is
+the one budget architecture §4 already flags as having less than an order of magnitude of
+headroom.
+
+**The cause was confirmed, not assumed.** `find_all`'s hot path is `line.contains(needle)`,
+which is pure Rust and never enters libc, so "musl is slower" was not on its own an
+explanation. A throwaway probe declaring jemalloc in `tests/perf.rs` and changing nothing else
+took it from 10.17 ms to 4.05 ms. It is the allocator, and jemalloc lands marginally ahead of
+glibc rather than merely level with it. ripgrep carries the same swap for the same reason:
 
 ```rust
 #[cfg(all(target_env = "musl", target_pointer_width = "64"))]
@@ -156,15 +190,21 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 // "musl's allocator appears to slow down ripgrep quite a bit"
 ```
 
-TYPE has published budgets and one of them has almost no room: `find_all` measured 6.9, 9.0,
-14.9 and 18.7 ms across consecutive runs against a 16 ms gate. A 2x allocator regression there
-is not a nit, it is a failing test, and §4 of the architecture says so.
+**What it costs.** `tikv-jemalloc-sys` is C with an autotools build, and it wants a
+musl-targeting compiler rather than the host one:
 
-So the musl build is not done when it compiles. It is done when `tests/perf.rs` has been run
-against it and the numbers are written down. If they regress, the fix is a `#[global_allocator]`
-under `cfg(target_env = "musl")` — and that costs the "it is pure Rust, so this is free"
-argument above, because both jemalloc and mimalloc are C with a `build.rs`. Still cheaper than
-doing it after tree-sitter, but no longer free, and the plan should not pretend otherwise.
+```
+ToolNotFound: failed to find tool "x86_64-linux-musl-gcc"
+configure: error: C compiler cannot create executables
+```
+
+So `release.yml` installs `musl-tools` on the musl rows only. This is the first C in the graph,
+and the "pure Rust, so this is free" argument above stops applying to musl builds — still far
+cheaper than doing it after tree-sitter, but no longer free.
+
+The swap is declared in `crates/typ/src/main.rs` for the shipped binary **and in both
+`tests/perf.rs` files**, so the perf suite measures what users run. Without the second half the
+musl column would measure `mallocng`, which no released build ever uses.
 
 ## 5. The installer
 

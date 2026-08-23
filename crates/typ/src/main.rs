@@ -1,3 +1,16 @@
+// musl's allocator, not ours, and the swap is a measurement rather than a
+// preference. On a 50k-line file `find_all` cost 4.11 ms under glibc, 10.17 ms
+// under musl's mallocng and 4.05 ms under jemalloc — best of five each, same
+// machine, against a 16 ms keystroke budget that has the least headroom of any
+// budget in the project. Static linking is what makes the Linux binary portable;
+// this is what keeps it fast. ripgrep carries the same swap for the same reason.
+//
+// Costs `musl-tools` on the build machine, which release.yml installs for the
+// musl rows only. Nothing else in the graph compiles C.
+#[cfg(all(target_env = "musl", target_pointer_width = "64"))]
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
