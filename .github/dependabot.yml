@@ -1,0 +1,26 @@
+version: 2
+
+# Two ecosystems, grouped so a quiet week is one pull request per ecosystem
+# rather than nine. `cargo deny` catches an advisory once it is published
+# against a version already in the lockfile; this is the other half — keeping
+# the lockfile current so there is less to have an advisory against.
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        patterns: ["*"]
+    open-pull-requests-limit: 3
+
+  # The quieter risk. Actions are pinned to commit SHAs, which is the only
+  # pinning a tag cannot be moved out from under — and a pinned SHA is frozen
+  # until something updates it. This is that something.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

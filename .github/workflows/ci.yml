@@ -5,8 +5,17 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege by default. Any job needing more says so itself.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
+
+# Actions are pinned to commit SHAs rather than tags. A tag is a mutable
+# pointer: `@v4` can be moved to a different commit by anyone who can push a
+# tag to that repository, and a compromised action runs with this workflow's
+# token. Dependabot updates the SHAs weekly and keeps the version comment.
 
 jobs:
   test:
@@ -16,13 +25,13 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # No toolchain pinned here: rust-toolchain.toml is the single source, and
       # `rustup show` installs exactly what it names, components included.
       # Naming a version in both places is how they drift apart.
       - name: Install the pinned toolchain
         run: rustup show
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
@@ -35,7 +44,77 @@ jobs:
   deny:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: EmbarkStudios/cargo-deny-action@c3bbe7e4e3f7baeee1a3dd9aec0a3b2aded580fb # v2.1.1
         with:
           command: check advisories licenses bans sources
+
+  # This repository is more prose than code — 19k lines of documentation and
+  # plans against 18k of Rust — and a typo in a design document survives every
+  # other check in this file.
+  typos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: crate-ci/typos@5e183518f8764162ed2841339af896246fccbcfd # v1.49.0
+
+  # Static analysis of the workflows themselves. The class of bug it finds has
+  # no other detector here: template injection through `${{ }}` into a `run:`
+  # block, over-broad `permissions`, unpinned actions, and artifact steps that
+  # leak a token. CI configuration is the one code in this repo that no test
+  # covers.
+  workflows:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+
+  # MIT and Apache-2.0 both require their notices to travel with a binary that
+  # contains the code. 106 crates are compiled into `typ`, so the release
+  # archive owes 106 notices — collected into THIRD-PARTY-LICENSES.md, which is
+  # committed so it is readable on the web and diffable in a pull request.
+  #
+  # deny.toml answers a different question: it decides whether a licence is one
+  # we may ship. This decides whether we have its text to hand over. A crate can
+  # pass the first and fail the second.
+  licenses:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
+        with:
+          tool: cargo-about
+      - name: The committed notices still match the lockfile
+        run: |
+          cargo about generate about.hbs -o /tmp/THIRD-PARTY-LICENSES.md
+          diff -u THIRD-PARTY-LICENSES.md /tmp/THIRD-PARTY-LICENSES.md || {
+            echo "::error::THIRD-PARTY-LICENSES.md is stale. Run: cargo about generate about.hbs -o THIRD-PARTY-LICENSES.md"
+            exit 1
+          }
+
+  # The single check the branch ruleset requires.
+  #
+  # A matrix job does not report a status under its own name: `test` publishes
+  # `test (ubuntu-latest)`, `test (windows-latest)` and `test (macos-latest)`,
+  # and a ruleset asking for `test` waits forever for a check that is never
+  # sent. Naming the three explicitly would work until the matrix changes, at
+  # which point the ruleset silently stops covering the new row.
+  #
+  # So the ruleset requires this one job, and this job requires everything
+  # else. Adding a check above is then a change to this file only.
+  ci-ok:
+    if: always()
+    needs: [test, deny, typos, workflows, licenses]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail unless every dependency succeeded
+        env:
+          RESULT: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "upstream results: $RESULT"
+          for r in $RESULT; do
+            [ "$r" = "success" ] || { echo "::error::a required job reported '$r'"; exit 1; }
+          done
