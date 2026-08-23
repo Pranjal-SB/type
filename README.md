@@ -90,6 +90,12 @@ x86_64, macOS x86_64 and aarch64, and Windows x86_64 are attached to each
 [release](https://github.com/Pranjal-SB/type/releases) with a SHA-256 beside them. A one-line
 installer is not built yet.
 
+**Known issue on Linux.** The v0.2.5 archive is built against glibc 2.39 and will not start on
+Ubuntu 22.04, Debian 12, RHEL 9 or Amazon Linux 2023 — it fails with
+`version 'GLIBC_2.39' not found`. Build from source or `cargo install typ-editor` until v0.2.6,
+which replaces it with a static musl build. See
+[distribution.md](docs/design/distribution.md).
+
 ## Build from source
 
 ```bash
@@ -248,7 +254,8 @@ one that plainly did nothing.
 | v0.2.3 | M2.3 | Polish: gutter, truecolor theme, current line, brackets, status segments, `Ctrl+D`, goto-line, logging | shipped |
 | v0.2.4 | M2.4 | Live: wakeable event loop, file watching, damage-driven redraw, resize, save correctness | shipped |
 | v0.2.5 | M2.5 | Colour: themes as files, contrast rubric, capability detection, indent detection, whitespace and indent guides | **current** |
-| v0.2.6 | M2.6 | Parse: tree-sitter highlighting, grammar distribution, `config.toml`, terminal light/dark, kitty keyboard protocol | next |
+| v0.2.6 | M2.6 | Ship: static musl and aarch64 Linux builds, one-line installers, self-verifying releases | next |
+| v0.2.7 | M2.7 | Parse: tree-sitter highlighting, grammar distribution, `config.toml`, terminal light/dark, kitty keyboard protocol | |
 | v0.3.0 | M3 | Code intelligence: LSP client | |
 | v0.4.0 | M4 | Workspace: splits, tabs, sessions, command palette, project search | |
 | v0.5.0 | M5 | Terminal panel and git integration | |

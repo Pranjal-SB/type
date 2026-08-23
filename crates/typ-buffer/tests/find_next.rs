@@ -73,7 +73,7 @@ fn an_empty_needle_matches_nothing() {
 }
 
 #[test]
-fn case_sensitivity_is_the_querys_business() {
+fn case_sensitivity_belongs_to_the_query() {
     let buffer = TextBuffer::from_str("Foo foo\n");
     let sensitive = buffer.find_next(&SearchQuery::new("foo", true), at(0, 0));
     assert_eq!(sensitive.map(|s| s.range().0), Some(at(0, 4)));

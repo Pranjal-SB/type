@@ -1,0 +1,47 @@
+# cargo-about — collects the licence text of every crate compiled into the
+# binary, so the release archive can carry the notices MIT and Apache-2.0
+# require it to carry.
+#
+# This is a different question from the one deny.toml answers. deny.toml asks
+# "is this licence one we are allowed to ship" and fails the build if not.
+# This asks "do we have the text of it to hand to the person who downloaded
+# the binary", and the two can disagree: a crate can carry an allowed licence
+# and still ship no LICENSE file, which is a packaging bug on their end and a
+# compliance gap on ours.
+#
+# The accepted list mirrors deny.toml. When one changes, change both — they
+# are two views of the same graph, and a licence allowed by one and unknown to
+# the other is exactly the case that silently ships no notice.
+
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSL-1.0",
+    "Zlib",
+    "ISC",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Unlicense",
+    "WTFPL",
+]
+
+# Only what actually ends up in the shipped binary. Build-time and test-only
+# dependencies are not distributed, so their notices are not owed.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# One target list rather than "whatever this machine is", so the file generated
+# on a Windows laptop and the file generated on the Linux release runner are
+# the same file. Without this, clipboard-win drops out on Linux and inotify
+# drops out on Windows, and the check that the committed file is current fails
+# on whichever platform did not generate it.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]

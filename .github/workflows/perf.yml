@@ -1,0 +1,47 @@
+name: Perf
+
+# The budgets in AGENTS.md and architecture §4 are the project's stated
+# identity — sub-100 ms cold start, p99 keystroke to painted glyph under 16 ms,
+# no dropped frames scrolling 100k lines — and until this file existed nothing
+# enforced them. A regression was caught only when a human remembered to look.
+# That is gap-analysis defect #18.
+#
+# Weekly rather than per-pull-request, deliberately. A shared runner's wall
+# clock is not a budget gate: the perf tests already take a mutex because
+# parallel test threads made `InsertChar` read 32 µs against the 1.9 µs it
+# actually costs, and a hosted runner adds a noisy neighbour on top of that. A
+# red check that fires on unrelated pull requests trains everyone to ignore it,
+# which is worse than no check.
+#
+# So this is a tripwire, not a gate. It says "something moved, go measure it
+# properly" — best-of-five on a quiet machine, per AGENTS.md.
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  budgets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # --release because a debug timing is not a measurement of anything, and
+      # --nocapture because the numbers are printed rather than asserted in
+      # every case.
+      - name: Buffer budgets
+        run: cargo test --release -p typ-buffer --test perf -- --ignored --nocapture
+
+      - name: Editor budgets, edit and paint
+        run: cargo test --release -p typ-panel-editor --test perf -- --ignored --nocapture

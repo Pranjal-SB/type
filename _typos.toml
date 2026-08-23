@@ -1,0 +1,19 @@
+[files]
+extend-exclude = [
+    "Cargo.lock",
+    "target/",
+    # Generated, and it is other people's copyright lines. "Dylan Ede" is a
+    # person, not a misspelling of "Edge".
+    "THIRD-PARTY-LICENSES.md",
+]
+
+[default.extend-words]
+# The TUI crate. Not a stew.
+ratatui = "ratatui"
+# Base64 round-trip fixtures from RFC 4648 §10, which are deliberately
+# nonsense strings: "f", "fo", "foo", "foob".
+fo = "fo"
+# README bolds the acronym as **E**nvironment, so the checker sees "nvironment".
+nvironment = "nvironment"
+# Hyphenated prefix, not a truncated word: "mis-ranks".
+mis = "mis"

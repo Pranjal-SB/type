@@ -1,0 +1,35 @@
+version: 2
+
+# Two ecosystems, grouped so a quiet week is one pull request per ecosystem
+# rather than nine. `cargo deny` catches an advisory once it is published
+# against a version already in the lockfile; this is the other half — keeping
+# the lockfile current so there is less to have an advisory against.
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    # Wait a week before proposing a version. A release published minutes ago
+    # has had no time to be noticed as malicious, and the compromised-package
+    # window is measured in hours — this is the one Dependabot setting that
+    # trades nothing away, because a week-old patch fixes the same bug.
+    # Security updates ignore the cooldown, which is the correct asymmetry.
+    cooldown:
+      default-days: 7
+    groups:
+      cargo:
+        patterns: ["*"]
+    open-pull-requests-limit: 3
+
+  # The quieter risk. Actions are pinned to commit SHAs, which is the only
+  # pinning a tag cannot be moved out from under — and a pinned SHA is frozen
+  # until something updates it. This is that something.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
