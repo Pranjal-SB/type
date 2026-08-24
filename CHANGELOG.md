@@ -42,6 +42,12 @@ Nothing in the editor changed, with one exception the measurement forced: the al
   Debian 12, RHEL 9 and Amazon Linux 2023. The static musl build is now the one the installer
   and the README point at.
 
+### Removed
+- **v0.2.5's Linux archive was deleted from its release page**, with its `.sha256`, and the
+  notes say why. It could not start on most Linux, and a missing asset is a better outcome than
+  one that fails with a loader error. Immutable releases do not apply retroactively, so it could
+  still be removed; releases published from here on cannot be corrected this way.
+
 ### Changed
 - **mimalloc is the allocator on 64-bit musl.** musl's own `mallocng` cost `find_all` 4.11 ms →
   10.17 ms on a 50k-line file, against a 16 ms budget with the least headroom in the project.
