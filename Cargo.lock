@@ -1764,6 +1764,7 @@ dependencies = [
  "typ-panel-editor",
  "typ-panel-tree",
  "typ-registry",
+ "typ-syntax",
  "unicode-segmentation",
 ]
 
@@ -1809,8 +1810,10 @@ dependencies = [
  "crossterm",
  "mimalloc",
  "ratatui",
+ "ropey",
  "typ-buffer",
  "typ-core",
+ "typ-syntax",
  "unicode-segmentation",
 ]
 

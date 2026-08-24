@@ -14,6 +14,7 @@ use typ_panel_editor::EditorPanel;
 use typ_panel_editor::render::Whitespace;
 use typ_panel_tree::TreePanel;
 use typ_registry::Registry;
+use typ_syntax::ParseWorker;
 
 use crate::prompt::{Prompt, PromptKind};
 use crate::status::{Segment, StatusFacts, segments};
@@ -74,6 +75,18 @@ pub struct App {
     /// `whitespace` from `config.toml`. Held here for the same reason as
     /// `indent_width`: opening a file builds a new panel.
     whitespace: Whitespace,
+    /// Parses buffers off the render thread. `None` until `set_event_sender`,
+    /// because the worker needs somewhere to send results.
+    ///
+    /// The app owns it, not the panel: a panel returns `PanelEvent`s and never
+    /// holds a channel to the app.
+    parse_worker: Option<ParseWorker>,
+    /// The buffer revision the last parse was requested for.
+    ///
+    /// `None` means the buffer was replaced and must be parsed regardless —
+    /// revisions restart at zero with a new `TextBuffer`, so comparing across
+    /// one would silently skip the parse of a newly opened file.
+    parsed_revision: Option<u64>,
 }
 
 /// Between status segments. Two spaces rather than a glyph separator: a
@@ -106,6 +119,8 @@ impl App {
             dirty: true,
             indent_width: None,
             whitespace: Whitespace::default(),
+            parse_worker: None,
+            parsed_revision: None,
         })
     }
 
@@ -128,8 +143,52 @@ impl App {
     /// without one is exactly what most tests want: no watcher thread, no
     /// events arriving from somewhere the test did not ask about.
     pub fn set_event_sender(&mut self, sender: crate::run::AppSender) {
+        self.parse_worker = Some(ParseWorker::spawn(sender.clone()));
         self.sender = Some(sender);
         self.rewatch();
+        // Whatever is already open has never been parsed.
+        self.request_parse_if_stale();
+    }
+
+    /// Ask for a parse if the buffer has changed since the last request.
+    ///
+    /// Called from three places, and the third is the one that is easy to miss
+    /// reading only "after an edit": a buffer opened, an edit, and M2.4's
+    /// external-change reload — which replaces the text without going through
+    /// an `Action` at all. Missing that one leaves a file edited outside TYPE
+    /// showing the previous version's highlights indefinitely.
+    ///
+    /// Cheap enough to call on every event loop pass: a `u64` comparison, and
+    /// nothing at all for a buffer whose extension has no grammar.
+    pub(crate) fn request_parse_if_stale(&mut self) {
+        let Some(language) = self.editor.language() else {
+            return;
+        };
+        let revision = self.editor.buffer().revision();
+        if self.parsed_revision == Some(revision) {
+            return;
+        }
+        let Some(worker) = &mut self.parse_worker else {
+            return;
+        };
+
+        worker.request(language, self.editor.buffer().snapshot());
+        self.parsed_revision = Some(revision);
+    }
+
+    /// A completed parse arrived.
+    ///
+    /// One editor panel exists today, so there is no question of which buffer
+    /// this belongs to. When tabs arrive in M4 the answer becomes a panel id
+    /// on the event rather than a lookup here.
+    pub fn handle_parsed(&mut self, parsed: typ_syntax::Parsed) -> bool {
+        // A tree for text nobody is looking at any more. Dropping it is not a
+        // loss: the buffer that replaced it queued its own parse.
+        if self.editor.language().is_none() {
+            return false;
+        }
+        self.editor.set_syntax(parsed.generation, parsed.syntax);
+        true
     }
 
     /// Watch whatever file is open now, and stop watching the last one.
@@ -186,6 +245,11 @@ impl App {
         }
 
         self.editor.reload()?;
+        // `reload` swaps in a fresh `TextBuffer`, so revisions restart and the
+        // comparison in `request_parse_if_stale` would be against a number
+        // from a buffer that no longer exists.
+        self.parsed_revision = None;
+        self.request_parse_if_stale();
         Ok(true)
     }
 
@@ -335,6 +399,10 @@ impl App {
         self.focus = Focus::Editor;
         self.open_pending = None;
         self.rewatch();
+        // A new buffer counts revisions from zero, so this is an invalidation
+        // rather than a comparison.
+        self.parsed_revision = None;
+        self.request_parse_if_stale();
         Ok(())
     }
 
@@ -811,6 +879,10 @@ impl App {
 
     pub fn tree_mut(&mut self) -> &mut TreePanel {
         &mut self.tree
+    }
+
+    pub fn editor(&self) -> &EditorPanel {
+        &self.editor
     }
 
     pub fn editor_mut(&mut self) -> &mut EditorPanel {

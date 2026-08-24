@@ -20,4 +20,5 @@ typ-core.workspace = true
 typ-panel-editor.workspace = true
 typ-panel-tree.workspace = true
 typ-registry.workspace = true
+typ-syntax.workspace = true
 unicode-segmentation.workspace = true

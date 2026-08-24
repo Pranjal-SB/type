@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::Result;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -13,6 +14,7 @@ use typ_buffer::{
     display_to_grapheme_col, grapheme_to_display_col,
 };
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
+use typ_syntax::{Language, Syntax};
 
 pub mod actions;
 pub mod gutter;
@@ -93,6 +95,16 @@ pub struct EditorPanel {
     pub(crate) tab_width: usize,
     /// Which whitespace gets a visible mark — `whitespace` in `config.toml`.
     pub(crate) whitespace: Whitespace,
+    /// The language, from the path's extension, settled at load like
+    /// `tab_width` is. `None` when no grammar claims it, which is a normal
+    /// state and not a degraded one.
+    language: Option<Language>,
+    /// The newest completed parse. `None` until the first one lands, which is
+    /// the state every buffer is in for its first frame.
+    syntax: Option<Arc<Syntax>>,
+    /// The generation `syntax` came from, so a late result is dropped rather
+    /// than applied.
+    syntax_generation: u64,
 }
 
 impl EditorPanel {
@@ -115,8 +127,19 @@ impl EditorPanel {
     fn new(buffer: TextBuffer) -> Self {
         let tab_width = typ_buffer::detect_indent_width(buffer.lines_str(INDENT_SCAN_LINES))
             .unwrap_or(FALLBACK_TAB_WIDTH);
+        // Settled here rather than at each constructor because all three
+        // funnel through this one, and a language that depended on which
+        // constructor was used would be a bug nobody could see.
+        let language = buffer
+            .path()
+            .and_then(|p| p.extension())
+            .and_then(|e| e.to_str())
+            .and_then(Language::for_extension);
         Self {
             tab_width,
+            language,
+            syntax: None,
+            syntax_generation: 0,
             whitespace: Whitespace::default(),
             selections: Selections::default(),
             top_line: 0,
@@ -221,6 +244,11 @@ impl EditorPanel {
         self.selections = selections;
         self.clamp_selections();
         self.top_line = top_line.min(self.last_line());
+        // The tree describes text that is gone. Keeping it would paint the new
+        // contents in the old file's colours until the reparse lands, which is
+        // worse than painting them plain for one frame — this is the one place
+        // a stale highlight is not merely late but wrong.
+        self.syntax = None;
         Ok(())
     }
 
@@ -239,6 +267,35 @@ impl EditorPanel {
 
     pub fn path(&self) -> Option<&Path> {
         self.buffer.path()
+    }
+
+    /// Read-only access for the app to take a snapshot to parse.
+    pub fn buffer(&self) -> &TextBuffer {
+        &self.buffer
+    }
+
+    /// The grammar this buffer's extension claims, if any.
+    pub fn language(&self) -> Option<Language> {
+        self.language
+    }
+
+    /// The newest parse that has landed.
+    pub fn syntax(&self) -> Option<&Arc<Syntax>> {
+        self.syntax.as_ref()
+    }
+
+    /// Apply a completed parse, unless a newer one already landed.
+    ///
+    /// Two parses cannot be in flight at once by construction — the worker
+    /// takes one job at a time — but "cannot" and "cannot, and here is the
+    /// counter that proves it" are different claims, and the counter costs a
+    /// `u64` and a comparison.
+    pub fn set_syntax(&mut self, generation: u64, syntax: Arc<Syntax>) {
+        if generation < self.syntax_generation {
+            return;
+        }
+        self.syntax_generation = generation;
+        self.syntax = Some(syntax);
     }
 
     /// The file's name with no dirty marker on it.
