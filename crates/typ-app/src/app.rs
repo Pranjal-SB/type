@@ -87,6 +87,21 @@ pub struct App {
     /// revisions restart at zero with a new `TextBuffer`, so comparing across
     /// one would silently skip the parse of a newly opened file.
     parsed_revision: Option<u64>,
+    /// The generation of the only parse result worth applying.
+    ///
+    /// **The panel cannot make this decision.** `EditorPanel::set_syntax`
+    /// discards a result older than the one it holds, which is right within
+    /// one buffer and useless across two: `open_path` builds a *new* panel
+    /// whose counter starts at zero, while the worker's counter is app-global
+    /// and never resets, so a result still in flight for the previous file
+    /// arrives above zero and passes that guard — painting the newly opened
+    /// file with the previous one's tree.
+    ///
+    /// Exact match rather than a floor, because only one result is ever wanted:
+    /// the worker coalesces queued jobs down to the newest, so the newest
+    /// request is always the one that runs and always arrives. Anything else
+    /// is a job that was already mid-parse when the buffer changed.
+    awaited_generation: Option<u64>,
     /// Syntax capture styles, degraded at load like `theme` is.
     ///
     /// Empty until a theme with a `[syntax]` table is loaded, which is a normal
@@ -127,6 +142,7 @@ impl App {
             whitespace: Whitespace::default(),
             parse_worker: None,
             parsed_revision: None,
+            awaited_generation: None,
             syntax_theme: typ_core::SyntaxTheme::default(),
         })
     }
@@ -181,6 +197,7 @@ impl App {
 
         worker.request(language, self.editor.buffer().snapshot());
         self.parsed_revision = Some(revision);
+        self.awaited_generation = Some(worker.generation());
     }
 
     /// A completed parse arrived.
@@ -192,6 +209,11 @@ impl App {
         // A tree for text nobody is looking at any more. Dropping it is not a
         // loss: the buffer that replaced it queued its own parse.
         if self.editor.language().is_none() {
+            return false;
+        }
+        // Not the parse we are waiting for. It describes a buffer that has
+        // since been replaced, and its byte offsets index text that is gone.
+        if self.awaited_generation != Some(parsed.generation) {
             return false;
         }
         self.editor.set_syntax(parsed.generation, parsed.syntax);

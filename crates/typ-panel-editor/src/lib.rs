@@ -316,6 +316,12 @@ impl EditorPanel {
     /// takes one job at a time — but "cannot" and "cannot, and here is the
     /// counter that proves it" are different claims, and the counter costs a
     /// `u64` and a comparison.
+    ///
+    /// **This guard covers one buffer's lifetime and cannot cover more.**
+    /// Opening a file builds a new panel whose counter starts at zero again,
+    /// so a result still in flight for the *previous* buffer would sail past
+    /// it. Rejecting that one is `App::awaited_generation`'s job, because the
+    /// panel is the thing being replaced and cannot know it.
     pub fn set_syntax(&mut self, generation: u64, syntax: Arc<Syntax>) {
         if generation < self.syntax_generation {
             return;

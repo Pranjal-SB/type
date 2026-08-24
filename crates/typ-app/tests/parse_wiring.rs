@@ -171,3 +171,47 @@ fn a_keyword_reaches_the_screen_in_the_themes_colour() {
          theme file to painted glyph is broken somewhere"
     );
 }
+
+#[test]
+fn a_parse_for_the_previous_buffer_is_not_applied_to_the_new_one() {
+    // The generation counter's real job, and the case it did not cover.
+    //
+    // `ParseWorker`'s counter is app-global and never resets, but
+    // `EditorPanel::syntax_generation` starts at zero with every panel — and
+    // `open_path` builds a new panel. So a result still in flight for the old
+    // buffer arrives with a generation *above* the new panel's zero and passes
+    // the `generation < syntax_generation` guard, painting the new file with
+    // the old file's tree until the next parse lands.
+    //
+    // Reachable by opening a second file before the first has finished
+    // parsing, which on a large file is an ordinary speed of navigation.
+    // Driven here through `handle_parsed` directly so it is deterministic
+    // rather than a race the test hopes to win.
+    let dir = fixture("stale", "first.rs", "fn first() {}\n");
+    std::fs::write(dir.join("second.rs"), "fn second() {}\n").unwrap();
+
+    let (tx, rx) = channel();
+    let mut app = App::new(&dir).unwrap();
+    app.set_event_sender(tx);
+
+    app.open_path(&dir.join("first.rs")).unwrap();
+    assert!(pump_until_parsed(&mut app, &rx), "first.rs never parsed");
+    let first_tree = app.editor().syntax().cloned().expect("a tree for first.rs");
+
+    // Second file opened. Its own parse is requested, but the stale result
+    // below is what would have been in flight when it was.
+    app.open_path(&dir.join("second.rs")).unwrap();
+
+    let stale = typ_syntax::Parsed {
+        generation: 1,
+        syntax: first_tree.clone(),
+    };
+    app.handle_parsed(stale);
+
+    assert!(
+        app.editor()
+            .syntax()
+            .is_none_or(|s| !std::sync::Arc::ptr_eq(s, &first_tree)),
+        "second.rs is being rendered with first.rs's syntax tree"
+    );
+}
