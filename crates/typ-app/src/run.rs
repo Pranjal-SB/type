@@ -242,6 +242,10 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
 
     match event {
         AppEvent::FileChanged(path) => changed = app.handle_external_change(&path)?,
+        // Nothing holds a syntax tree yet, so a completed parse changes
+        // nothing on screen. Task 4 routes this to the editor; until then
+        // dropping it is honest rather than a `todo!` that panics the loop.
+        AppEvent::Parsed(_) => changed = false,
         AppEvent::Input(input) => match input {
             // Every binding lives in the keymap now, so there is nothing left
             // here to special-case. The dispatcher owns the order.

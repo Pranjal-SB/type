@@ -6,8 +6,8 @@ use std::path::PathBuf;
 /// worker thread can deliver a result without waiting for the user to press a
 /// key. A terminal event is one variant among several, not the only input.
 ///
-/// M2.5 adds `Parsed(Tree)` and M3 adds an LSP response. That is the point of
-/// the type: a new off-thread producer is a variant here and a match arm in the
+/// M2.7 added `Parsed` and M3 adds an LSP response. That is the point of the
+/// type: a new off-thread producer is a variant here and a match arm in the
 /// loop, not a change to how the loop waits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppEvent {
@@ -15,6 +15,26 @@ pub enum AppEvent {
     Input(crossterm::event::Event),
     /// The file at this path changed on disk.
     FileChanged(PathBuf),
+    /// A worker finished parsing a snapshot of a buffer.
+    ///
+    /// The generation inside is what makes an out-of-order result harmless:
+    /// the panel keeps the highest it has seen and discards anything older.
+    /// Two parses can never be in flight at once by construction, but "can
+    /// never" and "cannot, and here is the counter that proves it" are
+    /// different claims.
+    Parsed(typ_syntax::Parsed),
+}
+
+/// So `ParseWorker::spawn` can take the app's own sender.
+///
+/// The worker sends `typ_syntax::Parsed` rather than an `AppEvent` because
+/// `typ-syntax` sits below this crate and must not depend back on it — not
+/// even in dev-dependencies, where the cycle would surface as a publish-order
+/// failure. This impl is the whole cost of keeping that edge absent.
+impl From<typ_syntax::Parsed> for AppEvent {
+    fn from(parsed: typ_syntax::Parsed) -> Self {
+        AppEvent::Parsed(parsed)
+    }
 }
 
 /// Identifies a live panel instance.

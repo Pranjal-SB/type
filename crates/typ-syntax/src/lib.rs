@@ -16,8 +16,10 @@ use tree_house::highlighter::{Highlight, HighlightEvent, Highlighter};
 use tree_house::{InjectionLanguageMarker, LanguageConfig, LanguageLoader};
 
 mod language;
+mod worker;
 
 pub use language::Language;
+pub use worker::{ParseWorker, Parsed};
 
 /// How long a single parse may take before it is abandoned.
 ///
