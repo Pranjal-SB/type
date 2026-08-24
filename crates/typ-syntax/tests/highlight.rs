@@ -63,7 +63,7 @@ fn a_viewport_is_cheaper_than_the_file() {
 }
 
 #[test]
-fn an_unparseable_file_still_returns_a_syntax() {
+fn an_unparsable_file_still_returns_a_syntax() {
     // Tree-sitter recovers from errors rather than failing: half a file of
     // valid Rust must still colour. A parser that gave up on the first typo
     // would switch highlighting off exactly while you are typing.
