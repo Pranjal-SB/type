@@ -36,6 +36,10 @@ tree-house = "0.4"
 # no path into tree-house at all.
 tree-house-bindings = { version = "0.3", features = ["tree-sitter-language"] }
 tree-sitter-rust = "0.24"
+tree-sitter-toml-ng = "0.7"
+tree-sitter-json = "0.24"
+tree-sitter-md = "0.5"
+tree-sitter-yaml = "0.7"
 # musl-only, and only because it was measured. musl's mallocng cost find_all
 # 2.48x against glibc — 10.2 ms best-of-five against a 16 ms keystroke budget,
 # where glibc managed 4.1 ms. jemalloc puts it back to 4.05 ms. See
