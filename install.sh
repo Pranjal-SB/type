@@ -171,7 +171,8 @@ USAGE:
     install.sh [OPTIONS]
 
 OPTIONS:
-    --version <TAG>   Install a specific release, e.g. v0.2.6. Default: latest.
+    --version <TAG>   Install a specific release, e.g. v0.2.6. Default:
+                      $TYP_VERSION, or latest.
     --bin-dir <DIR>   Where to put the binary. Default: $TYP_BIN_DIR, or
                       ~/.local/bin.
     -h, --help        Print this help.
@@ -179,7 +180,10 @@ EOF
 }
 
 main() {
-    version="latest"
+    # Both settings are readable from the environment as well as the flags,
+    # because the documented way to run this is `curl ... | sh`, and a script
+    # arriving on stdin cannot be given arguments at all.
+    version="${TYP_VERSION:-latest}"
     bindir="${TYP_BIN_DIR:-$HOME/.local/bin}"
 
     while [ $# -gt 0 ]; do
