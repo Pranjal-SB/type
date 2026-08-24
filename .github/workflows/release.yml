@@ -124,6 +124,15 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
     runs-on: ${{ matrix.os }}
+    # Every step here reads its matrix value out of `env:` as `$TARGET`, and the
+    # default shell on a Windows runner is pwsh, where `$TARGET` is an undefined
+    # variable that expands to nothing rather than an error. `rustup target add
+    # ""` is what that produces, and the two steps that package the archive
+    # declare their own shell anyway. This was found by the first release
+    # rehearsal, which is the entire argument for cutting release candidates.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
