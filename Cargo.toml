@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.5"
+version = "0.2.6"
 edition = "2024"
 # Matches rust-toolchain.toml. Without it, someone on an older compiler gets a
 # wall of syntax errors from edition-2024 code and let-chains instead of cargo
@@ -26,15 +26,20 @@ ropey = "1.6"
 toml = "1.1"
 unicode-segmentation = "1.11"
 unicode-width = "0.2"
+# musl-only, and only because it was measured. musl's mallocng cost find_all
+# 2.48x against glibc — 10.2 ms best-of-five against a 16 ms keystroke budget,
+# where glibc managed 4.1 ms. jemalloc puts it back to 4.05 ms. See
+# docs/design/distribution.md §4.
+mimalloc = { version = "0.1", default-features = false }
 
 # Version alongside path: cargo resolves the path locally and publishes the
 # version, and refuses to publish a crate whose dependencies carry only a path.
-typ-core = { path = "crates/typ-core", version = "0.2.5" }
-typ-buffer = { path = "crates/typ-buffer", version = "0.2.5" }
-typ-registry = { path = "crates/typ-registry", version = "0.2.5" }
-typ-panel-editor = { path = "crates/typ-panel-editor", version = "0.2.5" }
-typ-panel-tree = { path = "crates/typ-panel-tree", version = "0.2.5" }
-typ-app = { path = "crates/typ-app", version = "0.2.5" }
+typ-core = { path = "crates/typ-core", version = "0.2.6" }
+typ-buffer = { path = "crates/typ-buffer", version = "0.2.6" }
+typ-registry = { path = "crates/typ-registry", version = "0.2.6" }
+typ-panel-editor = { path = "crates/typ-panel-editor", version = "0.2.6" }
+typ-panel-tree = { path = "crates/typ-panel-tree", version = "0.2.6" }
+typ-app = { path = "crates/typ-app", version = "0.2.6" }
 
 [profile.release]
 opt-level = 3

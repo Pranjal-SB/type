@@ -3,7 +3,58 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
-## [Unreleased]
+## [0.2.6] - 2026-08-24 (M2.6, ship)
+
+The milestone that makes the previous five reachable. v0.2.5 published one Linux archive and it
+did not start on most Linux; getting the editor at all meant having a Rust toolchain. Linux is
+static musl now on two architectures, there is a one-line installer for every platform, and a
+release cannot publish itself until it has downloaded its own artifacts and run them.
+
+Nothing in the editor changed, with one exception the measurement forced: the allocator on musl.
+
+### Added
+- **Static Linux builds, x86_64 and aarch64.** `x86_64-unknown-linux-musl` and
+  `aarch64-unknown-linux-musl`, statically linked, with no glibc version to be too new for. One
+  file covers Ubuntu, Debian, RHEL, Alpine, Void and NixOS regardless of age, and aarch64 covers
+  Graviton, Raspberry Pi, Asahi and arm64 servers — a platform TYPE did not build for at all.
+- **`install.sh` and `install.ps1`.** One line each, POSIX `sh` and Windows PowerShell 5.1. Both
+  verify the published SHA-256 before anything is written outside a temporary directory, and
+  neither asks for `sudo` or Administrator. Tested under dash, busybox ash, PowerShell 5.1 and 7.
+- **Releases verify themselves before they publish.** Every archive is downloaded back off the
+  release, checksummed, unpacked, executed, and asserted to report the version its tag claims.
+  A release that fails stays a draft.
+- **Build provenance** on every archive, so `gh attestation verify <file> --repo Pranjal-SB/type`
+  proves it came out of this workflow.
+- **`THIRD-PARTY-LICENSES.md` ships inside every archive** — the notices MIT and Apache-2.0
+  require to travel with a binary containing their code. 106 crates, generated at package time.
+- **Weekly perf runs.** The budgets in `tests/perf.rs` were enforced only when someone
+  remembered to look, which had been true since v0.2.1.
+- **`cargo binstall typ-editor`** fetches the release archive instead of compiling it. It was
+  broken by default — binstall interpolates the crate name, `typ-editor`, and the archives are
+  named for the binary — and on Linux it is pointed at the static build rather than the glibc
+  one it would otherwise prefer.
+- Dependabot on cargo and GitHub Actions, `SECURITY.md`, typo checking, zizmor on the workflows,
+  and PSScriptAnalyzer on the PowerShell.
+
+### Fixed
+- **The published Linux binary did not start on most Linux.** v0.2.5 shipped one Linux archive,
+  linked against glibc 2.39, which fails with `version 'GLIBC_2.39' not found` on Ubuntu 22.04,
+  Debian 12, RHEL 9 and Amazon Linux 2023. The static musl build is now the one the installer
+  and the README point at.
+
+### Removed
+- **v0.2.5's Linux archive was deleted from its release page**, with its `.sha256`, and the
+  notes say why. It could not start on most Linux, and a missing asset is a better outcome than
+  one that fails with a loader error. Immutable releases do not apply retroactively, so it could
+  still be removed; releases published from here on cannot be corrected this way.
+
+### Changed
+- **mimalloc is the allocator on 64-bit musl.** musl's own `mallocng` cost `find_all` 4.11 ms →
+  10.17 ms on a 50k-line file, against a 16 ms budget with the least headroom in the project.
+  mimalloc returns it to 4.23 ms. Measured, best of five, on one host — and mimalloc rather than
+  the jemalloc ripgrep uses because jemalloc's autotools build misdetects C11 atomics when it
+  cross-compiles to aarch64-musl on an arm64 runner. The trade is resident memory: mimalloc uses
+  more than either alternative, which for an editor is the cheaper side.
 
 ## [0.2.5] - 2026-08-23 (M2.5, colour)
 
@@ -206,7 +257,8 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.6
 [0.2.5]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.5
 [0.2.4]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.4
 [0.2.3]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.3

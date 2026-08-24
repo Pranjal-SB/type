@@ -1,3 +1,29 @@
+// musl's allocator, not ours, and the swap is a measurement rather than a
+// preference. On a 50k-line file `find_all` cost 4.11 ms under glibc, 10.17 ms
+// under musl's mallocng and 4.23 ms under mimalloc — best of five each, same
+// machine, against a 16 ms keystroke budget that has the least headroom of any
+// budget in the project. Static linking is what makes the Linux binary
+// portable; this is what keeps it fast.
+//
+// mimalloc rather than the jemalloc ripgrep uses, and the reason is aarch64.
+// jemalloc 5.3 builds through autotools, decides it is cross-compiling whenever
+// `--host` and `--build` differ as strings — which they do on a native arm64
+// runner — and then misdetects C11 atomics:
+//
+//     include/jemalloc/internal/atomic.h:48:24:
+//       error: 'atomic_memory_order_relaxed' undeclared
+//
+// mimalloc builds through cc-rs: no configure, no make, nothing to misdetect.
+// It measured within noise of jemalloc here (4.23 ms against 4.05 ms) and it is
+// the allocator usually recommended for static musl binaries. It does use more
+// resident memory than either alternative, which is the trade being made.
+//
+// This is the only C in the graph. release.yml installs musl-tools for the musl
+// rows so cc-rs has a compiler that targets musl.
+#[cfg(all(target_env = "musl", target_pointer_width = "64"))]
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 

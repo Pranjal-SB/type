@@ -544,7 +544,7 @@ is bumped in the close-out task alongside the README.
 Post-v1 follows the same shape: the plugin host is v1.1, DAP is v1.2.
 
 The list below is the **shape** of the plan — the six numbered milestones and what each is for.
-It is deliberately not the schedule. Patch milestones (M2.1, M2.2, M2.3, M2.4, M2.5, M2.6) are inserted
+It is deliberately not the schedule. Patch milestones (M2.1 through M2.7 so far) are inserted
 between them as defects and gaps are found, and keeping their list here as well as in two other
 places is how three copies disagree. The live roadmap is the README's table, and the reasoning
 behind each insertion is [`gap-analysis.md`](gap-analysis.md) Part 6.

@@ -112,6 +112,121 @@ jobs:
           cargo about generate --fail about.hbs -o /tmp/THIRD-PARTY-LICENSES.md
           echo "resolved $(grep -c '^## ' /tmp/THIRD-PARTY-LICENSES.md) licence blocks"
 
+  # The release matrix, built at pull-request time rather than at tag time.
+  #
+  # Nothing here used to exercise release.yml at all, which is how a Linux
+  # artifact linked against GLIBC_2.39 survived four tags — gap-analysis #45.
+  # The two rows that can break independently of everything else are the musl
+  # ones: they are the only builds that compile C (mimalloc), the only ones
+  # needing a toolchain the runner does not ship, and aarch64 is the only row
+  # whose runner nobody has a local copy of.
+  #
+  # Build and run only. Packaging, checksums, attestation and publishing stay
+  # in release.yml; this answers "does the matrix still compile and does the
+  # binary start", which is the question that was going unasked.
+  cross-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup show
+      - env:
+          TARGET: ${{ matrix.target }}
+        run: rustup target add "$TARGET"
+      # Mirrors release.yml. musl-gcc rather than a target-prefixed name: that
+      # one comes from musl-dev transitively, and betting on its spelling across
+      # two architectures is what this job exists to avoid needing to do.
+      - env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends musl-tools
+          echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ matrix.target }}
+      - env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --release --target "$TARGET" -p typ-editor
+      - name: It is static, and it starts
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          bin="target/$TARGET/release/typ"
+          file "$bin"
+          # A dynamically linked "portable" build is the bug this milestone
+          # exists to fix, so assert the property rather than eyeball it.
+          #
+          # Assert the absence of dynamic linking rather than the presence of a
+          # particular spelling: x86_64-musl reports `static-pie linked` and
+          # aarch64-musl reports plain `statically linked`, and the first
+          # version of this check failed a perfectly good arm64 binary for
+          # saying the second one.
+          if file "$bin" | grep -q 'dynamically linked'; then
+            echo "::error::$TARGET is dynamically linked"; exit 1
+          fi
+          test "$(strings -a "$bin" | grep -c GLIBC_ || true)" = 0
+          ./target/$TARGET/release/typ --version
+
+  # install.sh is the only code in this repository that strangers pipe into
+  # their shell, which makes it the code with the least margin for a mistake and
+  # the only code no Rust test covers.
+  #
+  # Run under dash, not bash. `curl ... | sh` on Debian and Ubuntu is dash, so
+  # testing under bash tests a shell the script will frequently not get — and
+  # bashisms pass silently there right up until someone on Ubuntu runs the
+  # documented command.
+  install-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck busybox
+      - name: Lint
+        run: shellcheck -s sh install.sh tests/install_test.sh
+      - name: Test under dash
+        run: dash tests/install_test.sh
+      # busybox ash is what an Alpine container has, and Alpine is the first
+      # place a static musl build gets tried.
+      - name: Test under busybox ash
+        run: busybox ash tests/install_test.sh
+
+  install-script-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # PSScriptAnalyzer is PowerShell's shellcheck. Not preinstalled on the
+      # runner, and pinning it is not worth a Dependabot ecosystem for one
+      # linter that only ever gates this file.
+      - name: Lint
+        shell: powershell
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+          $found = @()
+          foreach ($f in 'install.ps1', 'tests/install_test.ps1') {
+            $found += Invoke-ScriptAnalyzer -Path $f -Settings ./PSScriptAnalyzerSettings.psd1
+          }
+          $found | Format-Table RuleName, Line, ScriptName, Message -AutoSize -Wrap
+          if ($found) { exit 1 }
+      # `shell: powershell` is Windows PowerShell 5.1; `shell: pwsh` is 7. It has
+      # to be 5.1, because `irm ... | iex` runs in whatever ships with Windows
+      # and a 7-only construct would pass here and fail on every user's machine.
+      - name: Test under Windows PowerShell 5.1
+        shell: powershell
+        run: ./tests/install_test.ps1
+
   # The single check the branch ruleset requires.
   #
   # A matrix job does not report a status under its own name: `test` publishes
@@ -124,7 +239,7 @@ jobs:
   # else. Adding a check above is then a change to this file only.
   ci-ok:
     if: always()
-    needs: [test, deny, typos, workflows, licenses]
+    needs: [test, deny, typos, workflows, licenses, cross-build, install-script, install-script-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Fail unless every dependency succeeded

@@ -2,8 +2,8 @@
 type: process
 status: living
 area: release
-verified: 2026-08-16
-verified-against: v0.2.4
+verified: 2026-08-23
+verified-against: v0.2.5
 ---
 
 # Releasing
@@ -12,8 +12,9 @@ Written because the manual half of this drifted: crates.io served 0.2.1 while th
 tag were at 0.2.3. A release that depends on someone remembering an order is a release that
 lags by however long they forget.
 
-Binaries are automated. Publishing is not, and cannot be — crates.io needs a token this
-repository deliberately does not hold.
+Binaries are automated, and so is publishing the GitHub release — it publishes itself once it
+has verified itself. crates.io is the one step that stays manual and cannot be otherwise: it
+needs a token this repository deliberately does not hold.
 
 ## 1. Close the milestone out
 
@@ -36,8 +37,18 @@ cargo test --release -p typ-buffer --test perf -- --ignored --nocapture
 cargo test --release -p typ-panel-editor --test perf -- --ignored --nocapture
 ```
 
-The perf tests are the ones CI does not run. Nobody else is going to notice a budget
-regression.
+The perf tests do not run on a pull request — a shared runner's wall clock is not a gate. They
+run weekly in `.github/workflows/perf.yml` and by hand here. A budget regression that lands on
+a Tuesday should not wait until a release to be noticed, and before a release is still the last
+place to check.
+
+The installer tests are cheap and worth running before a tag, because they are the one thing
+whose failure a user hits before they ever get a binary:
+
+```
+sh tests/install_test.sh
+powershell -NoProfile -File tests\install_test.ps1
+```
 
 ## 3. Tag
 
@@ -46,13 +57,28 @@ git tag v0.2.4
 git push origin main --tags
 ```
 
-The tag is the trigger. `.github/workflows/release.yml` builds four targets — Linux x86_64,
-macOS x86_64 and aarch64, Windows x86_64 — packages each with the README, LICENSE and
-CHANGELOG, writes a SHA-256 beside it, and opens a **draft** release.
+The tag is the trigger. `.github/workflows/release.yml` builds six targets — Linux x86_64 and
+aarch64 on musl, Linux x86_64 on glibc, macOS x86_64 and aarch64, Windows x86_64 — packages
+each with the README, LICENSE, CHANGELOG and a generated `THIRD-PARTY-LICENSES.md`, writes a
+SHA-256 beside it, attests build provenance, and opens a **draft** release.
 
-Draft on purpose: check the four archives are attached and the notes read correctly, then
-publish by hand. `workflow_dispatch` runs the same pipeline against an existing tag, which is
-how to exercise it without cutting a release.
+Then it checks its own work. A `verify` job downloads each archive back off the release,
+confirms the checksum, unpacks it, runs the binary, and asserts the version it prints matches
+the tag. Only if that passes does a `publish` job flip the draft. A tag containing a hyphen
+(`v0.2.6-rc.1`) is published as a prerelease, so it does not become what `install.sh` resolves
+as latest.
+
+That sequence replaced a human clicking publish after no checks at all, which is how four tags
+shipped before anyone downloaded an artifact and ran it — and how the Linux build turned out
+not to start on most Linux. See gap-analysis #45 and #48.
+
+`workflow_dispatch` runs the same pipeline against an existing tag, which is how to exercise it
+without cutting a release. **Do that first for anything structural**: immutable releases are
+enabled, so a published release's assets can no longer be corrected in place. Cut a release
+candidate rather than rewriting a tag someone may already have installed.
+
+Nothing to do by hand here beyond reading the notes. If `verify` fails, the release stays a
+draft nobody saw.
 
 ## 4. Publish to crates.io
 
@@ -74,6 +100,30 @@ line after them depends on something above it. The registry takes a moment to in
 so a failure on the next line usually means "wait and retry", not "wrong order".
 
 `typ-editor` is the package that carries the `typ` binary, and it goes last.
+
+## 5. Run the installers against the release you just cut
+
+The pipeline verifies the archives. It does not verify the scripts that fetch them, and those
+resolve "latest" through two different mechanisms — a redirect on Unix, the API on Windows —
+either of which can break without a single archive being wrong.
+
+```
+sh install.sh --bin-dir /tmp/typ-check && /tmp/typ-check/typ --version
+powershell -NoProfile -File install.ps1 -BinDir $env:TEMP\typ-check
+```
+
+Best done somewhere that has never built the project, which is the only way to find out whether
+the thing a stranger runs works. A container is enough:
+
+```
+docker run --rm -it debian:bullseye sh -c \
+  'apt-get update -qq && apt-get install -y -qq curl >/dev/null &&
+   curl --proto "=https" --tlsv1.2 -fsSL https://raw.githubusercontent.com/Pranjal-SB/type/main/install.sh | sh &&
+   ~/.local/bin/typ --version'
+```
+
+bullseye is glibc 2.31 — old enough that the gnu build cannot start on it, so this also
+confirms the installer is reaching for musl rather than merely reaching for something.
 
 ## Regenerating the demo
 
