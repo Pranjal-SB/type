@@ -183,18 +183,14 @@ fn a_fenced_code_block_is_highlighted_as_its_language() {
 }
 
 #[test]
-fn markdown_highlights_structure_and_fences_but_not_inline_emphasis() {
-    // Markdown ships as two grammars. The block one works, and so does every
-    // injection *out* of it — a fenced code block is highlighted as its own
-    // language, which is the case injections were taken for.
+fn markdown_reaches_its_own_inline_grammar() {
+    // Markdown ships as two grammars, and the block one injects into the
+    // inline one for every paragraph. Without that a paragraph is one
+    // undifferentiated span — no emphasis, no links, no inline code.
     //
-    // The injection into `markdown_inline` produces no highlights, and this
-    // test pins the behaviour that exists rather than the one intended. The
-    // marker resolves (`markdown_inline` reaches `Language::MarkdownInline`)
-    // and that same config highlights correctly as a root layer, so the
-    // failure is in parsing that grammar over restricted injection ranges.
-    // Gap analysis #46 carries the evidence; when it is fixed, this test is
-    // what changes.
+    // This needs a directive the crate's own query does not carry; see
+    // `Language::config`. The failure it guards against is silent: the
+    // injection layer is created and simply parses an empty range.
     let rope = Rope::from_str("# Title\n\nSome *emphasis* here.\n");
     let syntax = Syntax::parse(Language::Markdown, &rope).unwrap();
     let names: Vec<&str> = syntax
@@ -208,8 +204,7 @@ fn markdown_highlights_structure_and_fences_but_not_inline_emphasis() {
         "the block grammar stopped capturing headings: {names:?}"
     );
     assert!(
-        !names.iter().any(|n| n.starts_with("text.emphasis")),
-        "inline emphasis started working — gap #46 is fixed, so update this \
-         test and the gap analysis rather than deleting the assertion"
+        names.iter().any(|n| n.starts_with("text.emphasis")),
+        "the inline grammar captured no emphasis: {names:?}"
     );
 }

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use tree_house::LanguageConfig;
 
 /// A language TYPE has a grammar compiled in for.
@@ -89,11 +91,11 @@ impl Language {
     /// line up, which is why this is a `match` producing a triple rather than a
     /// table of constants.
     pub(crate) fn config(self) -> LanguageConfig {
-        let (grammar, highlights, injections) = match self {
+        let (grammar, highlights, injections): (_, _, Cow<'static, str>) = match self {
             Language::Rust => (
                 tree_sitter_rust::LANGUAGE,
                 tree_sitter_rust::HIGHLIGHTS_QUERY,
-                tree_sitter_rust::INJECTIONS_QUERY,
+                Cow::Borrowed(tree_sitter_rust::INJECTIONS_QUERY),
             ),
             // No injections query ships with these three, and none is needed:
             // nothing embeds another language inside a TOML value or a JSON
@@ -101,30 +103,59 @@ impl Language {
             Language::Toml => (
                 tree_sitter_toml_ng::LANGUAGE,
                 tree_sitter_toml_ng::HIGHLIGHTS_QUERY,
-                "",
+                Cow::Borrowed(""),
             ),
             Language::Json => (
                 tree_sitter_json::LANGUAGE,
                 tree_sitter_json::HIGHLIGHTS_QUERY,
-                "",
+                Cow::Borrowed(""),
             ),
             Language::Yaml => (
                 tree_sitter_yaml::LANGUAGE,
                 tree_sitter_yaml::HIGHLIGHTS_QUERY,
-                "",
+                Cow::Borrowed(""),
             ),
             // The block grammar injects three ways: the fence's info string
             // names a language, frontmatter names yaml or toml, and every
             // paragraph injects `markdown_inline`.
+            //
+            // **The crate's own injection query cannot do the third**, and the
+            // appended pattern is what fixes it. `tree-sitter-md` ships
+            // nvim-treesitter's query verbatim, written against Neovim's
+            // injection semantics; tree-house defaults to
+            // `IncludedChildren::None` and subtracts *every* child from an
+            // injection's range. `(inline)` is an alias over hidden `_line`
+            // rules, so its children are unnamed and cover the whole node —
+            // the range comes out empty, the layer is created, parses nothing,
+            // and every paragraph renders flat. Nothing errors.
+            //
+            // Fences and frontmatter were unaffected because
+            // `code_fence_content` and `minus_metadata` have no children
+            // covering their text, which is why this looked like a
+            // markdown-inline-specific failure rather than a range one.
+            //
+            // Helix carries the same directive on every markdown injection.
+            // tree-house prefers an overlapping match that includes children
+            // over one that does not, so appending supersedes the crate's
+            // pattern rather than fighting it.
             Language::Markdown => (
                 tree_sitter_md::LANGUAGE,
                 tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
-                tree_sitter_md::INJECTION_QUERY_BLOCK,
+                Cow::Owned(format!(
+                    "{}\n\
+                     ((inline) @injection.content \
+                     (#set! injection.language \"markdown_inline\") \
+                     (#set! injection.include-unnamed-children))\n\
+                     ((pipe_table_cell) @injection.content \
+                     (#set! injection.language \"markdown_inline\") \
+                     (#set! injection.include-unnamed-children))",
+                    tree_sitter_md::INJECTION_QUERY_BLOCK
+                )),
             ),
             Language::MarkdownInline => (
                 tree_sitter_md::INLINE_LANGUAGE,
                 tree_sitter_md::HIGHLIGHT_QUERY_INLINE,
-                tree_sitter_md::INJECTION_QUERY_INLINE,
+                Cow::Borrowed(tree_sitter_md::INJECTION_QUERY_INLINE),
             ),
         };
 
@@ -136,7 +167,7 @@ impl Language {
         // that is a correctness improvement over the highlights query, not a
         // prerequisite for one, and it costs a second query compile on the
         // startup path. Revisit with a measurement, not with an intention.
-        LanguageConfig::new(grammar, highlights, injections, "")
+        LanguageConfig::new(grammar, highlights, injections.as_ref(), "")
             .unwrap_or_else(|e| panic!("queries for {self:?} did not compile: {e}"))
     }
 }
