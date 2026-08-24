@@ -176,4 +176,11 @@ Remove-Item -Recurse -Force $t
 
 Write-Host ""
 Write-Host "$pass passed, $fail failed"
+
+# Claim the exit status rather than falling off the end into whatever the last
+# native call left behind. The truncated-script case above runs a child
+# powershell.exe that exits non-zero, $LASTEXITCODE outlives it, and CI's
+# generated step ends with `exit $LASTEXITCODE`, so the suite reported
+# "9 passed, 0 failed" and then failed the job anyway.
 if ($fail -ne 0) { exit 1 }
+exit 0
