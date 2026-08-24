@@ -25,6 +25,7 @@ accepted = [
     "Unicode-DFS-2016",
     "Unlicense",
     "WTFPL",
+    "MPL-2.0",
 ]
 
 # Only what actually ends up in the shipped binary. Build-time and test-only
