@@ -64,6 +64,23 @@ const BRACKET_SEARCH_MARGIN: usize = 64;
 /// wrong depth is a lie, and that one is cut instead.
 const BLANK_GUIDE_SCAN: usize = 64;
 
+/// Above this, no grammar is attached and the file renders as plain text.
+///
+/// **From TYPE's own measurement, not a copied constant.** Helix disables
+/// highlighting above 128 MB, which is a number chosen for a visible cliff
+/// rather than derived from a parse rate. `tests/perf.rs` measures a
+/// pathological 3.10 MB fixture — fifty thousand top-level statements, so the
+/// parser is in error recovery on every line — at 742 ms, about 4.2 MB/s. Four
+/// megabytes is therefore roughly one second of parse in the worst shape a
+/// file can take, and a second is where a highlight stops reading as late and
+/// starts reading as broken.
+///
+/// The parse is on a worker and coalesced, so exceeding this costs a lagging
+/// highlight rather than a dropped frame. The guard is against a file that
+/// spends the whole session showing a tree from several edits ago, which is
+/// worse than showing none.
+const MAX_HIGHLIGHTED_BYTES: usize = 4 * 1024 * 1024;
+
 pub struct EditorPanel {
     pub(crate) buffer: TextBuffer,
     /// Never a bare cursor: a caret is an empty selection, so every editing
@@ -131,11 +148,19 @@ impl EditorPanel {
         // Settled here rather than at each constructor because all three
         // funnel through this one, and a language that depended on which
         // constructor was used would be a bug nobody could see.
-        let language = buffer
-            .path()
-            .and_then(|p| p.extension())
-            .and_then(|e| e.to_str())
-            .and_then(Language::for_extension);
+        //
+        // A file past the size guard gets no language, which is the same state
+        // as a file with no grammar: it renders as plain text and asks for no
+        // parses. One check, and every consumer downstream already handles it.
+        let language = if buffer.byte_len() > MAX_HIGHLIGHTED_BYTES {
+            None
+        } else {
+            buffer
+                .path()
+                .and_then(|p| p.extension())
+                .and_then(|e| e.to_str())
+                .and_then(Language::for_extension)
+        };
         Self {
             tab_width,
             language,

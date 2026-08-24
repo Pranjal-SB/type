@@ -102,6 +102,14 @@ impl TextBuffer {
         self.rope.len_lines()
     }
 
+    /// Bytes of text, without allocating any of them.
+    ///
+    /// `text().len()` answers the same question by copying the whole file to
+    /// do it, which is the trap AGENTS.md names about `line_text`.
+    pub fn byte_len(&self) -> usize {
+        self.rope.len_bytes()
+    }
+
     /// The whole buffer as a `String`.
     ///
     /// Allocates the entire text, so it is for whole-file work and never for

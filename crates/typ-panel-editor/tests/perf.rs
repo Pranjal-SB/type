@@ -15,6 +15,7 @@ use std::time::Instant;
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::style::{Color, Style};
 use typ_core::{Action, Motion, Panel, RenderContext, ThemeColors};
 use typ_panel_editor::EditorPanel;
 
@@ -168,4 +169,111 @@ fn an_unmatched_bracket_does_not_walk_the_file() {
         per_frame.as_micros() < BUDGET_US,
         "one frame cost {per_frame:?}, over the 16ms budget"
     );
+}
+
+// --- syntax highlighting ---------------------------------------------------
+
+/// A theme with a style for every scope the Rust grammar emits.
+///
+/// **Not `SyntaxTheme::empty()`.** `highlight::for_viewport` returns
+/// immediately when the theme has no scopes, so an empty one measures the
+/// branch that skips the work and reports a number that looks excellent.
+fn syntax_theme() -> typ_core::SyntaxTheme {
+    [
+        "keyword",
+        "function",
+        "type",
+        "string",
+        "comment",
+        "number",
+        "constant",
+        "variable",
+        "property",
+        "operator",
+        "punctuation",
+        "none",
+    ]
+    .into_iter()
+    .map(|scope| {
+        (
+            scope.to_string(),
+            Style::default().fg(Color::Rgb(0xc0, 0x78, 0xdd)),
+        )
+    })
+    .collect()
+}
+
+fn draw_highlighted_frame(editor: &mut EditorPanel, area: Rect, theme: &typ_core::SyntaxTheme) {
+    let colors = ThemeColors::default();
+    let ctx = RenderContext {
+        theme: &colors,
+        syntax: theme,
+        is_focused: true,
+        panel_index: 0,
+        terminal_width: area.width,
+        terminal_height: area.height,
+    };
+    let mut buf = Buffer::empty(area);
+    editor.render(area, &mut buf, &ctx);
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored"]
+fn a_highlighted_frame_deep_in_a_large_file_fits_in_a_frame() {
+    let _guard = exclusive();
+
+    let line = "    let editor = Editor::new(); // a representative line of code\n";
+    let rope = ropey::Rope::from_str(&std::iter::repeat_n(line, 50_000).collect::<String>());
+    let syntax =
+        std::sync::Arc::new(typ_syntax::Syntax::parse(typ_syntax::Language::Rust, &rope).unwrap());
+
+    let mut editor = big_editor();
+    editor.set_syntax(1, syntax);
+    let theme = syntax_theme();
+    let area = Rect::new(0, 0, 120, 40);
+
+    // Deep in. The costs that matter scale with lines above the viewport, so
+    // measuring at the top of the file measures nothing.
+    editor.perform(Action::Move {
+        motion: Motion::DocumentEnd,
+        extend: false,
+    });
+    draw_highlighted_frame(&mut editor, area, &theme); // warm
+
+    let best = (0..5)
+        .map(|_| {
+            let start = Instant::now();
+            draw_highlighted_frame(&mut editor, area, &theme);
+            start.elapsed()
+        })
+        .min()
+        .unwrap();
+
+    println!("highlighted render, deep in a 50k-line file: {best:?} per frame");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "one highlighted frame cost {best:?}, over the 16ms budget"
+    );
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored"]
+fn a_cold_parse_of_50k_lines_is_recorded() {
+    let _guard = exclusive();
+    let line = "    let editor = Editor::new(); // a representative line of code\n";
+    let rope = ropey::Rope::from_str(&std::iter::repeat_n(line, 50_000).collect::<String>());
+
+    let best = (0..5)
+        .map(|_| {
+            let start = Instant::now();
+            let _ = typ_syntax::Syntax::parse(typ_syntax::Language::Rust, &rope);
+            start.elapsed()
+        })
+        .min()
+        .unwrap();
+
+    // No assertion. This runs on a worker, so it has no keystroke budget — but
+    // it is the number that sets the big-file threshold, and an unrecorded
+    // number is one nobody can tell has regressed.
+    println!("cold parse, 50k lines: {best:?}");
 }

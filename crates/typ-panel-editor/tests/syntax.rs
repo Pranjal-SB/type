@@ -59,3 +59,38 @@ fn a_snapshot_is_the_buffer_as_it_is_now() {
     let snapshot = panel.buffer().snapshot();
     assert_eq!(snapshot.to_string(), "fn main() {}\n");
 }
+
+#[test]
+fn a_file_past_the_size_guard_gets_no_language() {
+    // Above the guard a file renders as plain text and asks for no parses.
+    // Same state as a file with no grammar, reached by a different route, and
+    // every consumer downstream already handles it.
+    //
+    // Built from a small line repeated rather than one enormous line: the
+    // guard is about total bytes, and a rope of one 5 MB line would also be
+    // testing ropey's chunking.
+    let huge = "fn a() {}\n".repeat(500_000); // ~5 MB, past the 4 MB guard
+    assert!(huge.len() > 4 * 1024 * 1024);
+
+    let dir = std::env::temp_dir().join("typ-size-guard");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("huge.rs");
+    std::fs::write(&path, &huge).unwrap();
+
+    let panel = EditorPanel::from_path(&path).unwrap();
+    assert_eq!(
+        panel.language(),
+        None,
+        "a 5 MB .rs file was handed to the parser"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn a_file_under_the_size_guard_keeps_its_language() {
+    // The other side of the threshold, so the guard cannot be satisfied by
+    // switching highlighting off for everything.
+    let panel = EditorPanel::new_at(std::path::Path::new("small.rs"));
+    assert_eq!(panel.language(), Some(Language::Rust));
+}
