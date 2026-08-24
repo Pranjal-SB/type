@@ -317,43 +317,52 @@ Surveyed `.github/` across helix, ripgrep, starship, bat, zellij, uv and ruff.
 
 | | helix | ripgrep | starship | bat | zellij | uv / ruff | TYPE |
 |---|---|---|---|---|---|---|---|
-| Dependency bot | dependabot | — | renovate | dependabot | dependabot | renovate | **none** |
+| Dependency bot | dependabot | — | renovate | dependabot | dependabot | renovate | dependabot |
 | MSRV job | — | yes | — | yes | — | yes | implicit |
 | Advisory scan | — | — | `security-audit.yml` | — | — | yes | `cargo deny` |
 | Issue templates | yes | yes | yes | yes | yes | yes | yes |
 | PR template | — | — | yes | — | — | yes | yes |
 | `FUNDING.yml` | yes | yes | yes | yes | yes | — | — |
 | `CODEOWNERS` | — | — | — | — | — | yes | — |
-| Spell check | — | — | `spell-check.yml` | — | — | yes | — |
-| Workflow linting | — | — | — | — | — | `zizmor` | — |
-| Build provenance | — | — | — | — | — | yes | — |
+| Spell check | — | — | `spell-check.yml` | — | — | yes | `typos` |
+| Workflow linting | — | — | — | — | — | `zizmor` | `zizmor` |
+| Build provenance | — | — | — | — | — | yes | yes |
 
 The CI that exists is good and does not need rework: three platforms, fmt, clippy at
 `-D warnings`, the whole test suite, and `cargo deny` over advisories, licenses, bans and
 sources with every license in the graph named individually rather than wildcarded. That is
 already ahead of most of the table.
 
-What is missing, in the order it is worth adding:
+**All of the following are now built** — the list is kept in the order it was worth adding
+because that order turned out to be right, and because two of the entries were argued for here
+and then behaved differently in practice:
 
 1. **`dependabot.yml`** — five lines, two ecosystems, `cargo` and `github-actions`. Every
    project in the table has this or renovate. The `github-actions` half matters more than it
    looks: `actions/checkout@v4` and `Swatinem/rust-cache@v2` are floating major tags that
    nothing currently watches.
-2. **Perf tests in CI** — gap-analysis defect #18, still open, and the one genuinely unusual
-   gap. The budgets are the project's stated identity and nothing enforces them. A weekly
-   `schedule:` job running the `#[ignore]`d perf tests, best-of-five as the test files already
-   do, is the smallest version that closes it.
+2. **Perf tests in CI** — gap-analysis defect #18, the one genuinely unusual gap. `perf.yml`
+   runs both suites weekly and on demand. It is a tripwire, not a gate: the perf tests take a
+   mutex because parallel threads made `InsertChar` read 32 µs against the 1.9 µs it costs, a
+   hosted runner adds a noisy neighbour on top, and a red check firing on unrelated pull
+   requests trains everyone to ignore it. What M6 still owes is the gate.
 3. **Build provenance** — `actions/attest-build-provenance` signs the release archives through
    Sigstore and makes `gh attestation verify` work against them. Around ten lines and a
    `permissions:` block. oh-my-pi does this with cosign; GitHub now does it natively.
-4. **Release verification** — the pipeline had never been checked end to end until §2 of this
-   document. A job that downloads its own artifacts, verifies the checksums and runs
-   `typ --version` on the runners that can execute their own output would have caught the
-   glibc defect at the tag rather than at the install.
+4. **Release verification** — a `verify` job that downloads its own artifacts, checks the
+   sums and runs `typ --version` on runners that can execute their own output, gating `publish`.
+   It needs `contents: write` despite writing nothing, because a draft release is invisible to a
+   token with only `contents: read`.
 5. **`typos`** — cheap, and this repository is documentation-heavy.
 
-Not worth adopting: `zizmor` and `CODEOWNERS` answer problems a many-contributor repo has.
-`FUNDING.yml` is a decision about the project rather than about tooling.
+**`zizmor` was written off here and adopted anyway.** The argument was that workflow linting
+answers a many-contributor problem. That was wrong in a way worth recording: on its first run it
+found real findings in a repository with one contributor, and every `${{ }}` value in
+`release.yml` now reaches a shell through `env:` because of it. A single-author repository is
+exactly where nobody else is going to catch an injection.
+
+Still not adopted, and still for the stated reasons: `CODEOWNERS`, and `FUNDING.yml` as a
+decision about the project rather than about tooling.
 
 ## 7. Sequencing
 
