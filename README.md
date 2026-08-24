@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.2.5, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.2.6, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -65,6 +65,11 @@ different amount, and a palette that reads at 24-bit can lose a surface entirely
 floors depend on the ground a theme declares, because WCAG 2.1's ratio is not perceptually
 uniform across polarity — see [`docs/design/themes.md`](docs/design/themes.md).
 
+**Getting it takes one line, and the Linux build now starts on Linux.** v0.2.5 shipped a
+single glibc-linked Linux archive that failed on anything older than Ubuntu 24.04; the Linux
+builds are static musl now, x86_64 and aarch64. Every release downloads its own archives back,
+checks the sums, runs them and asserts the version before it stops being a draft.
+
 No syntax highlighting, no LSP, no tabs or splits yet; see the roadmap. Full history in
 [CHANGELOG.md](CHANGELOG.md).
 
@@ -77,24 +82,49 @@ palette and an opt-in vim layer are configuration rather than a rewrite.
 
 ## Install
 
-```bash
-cargo install typ-editor
-typ .
+Linux and macOS:
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/Pranjal-SB/type/main/install.sh | sh
 ```
 
-The crate is `typ-editor`; the binary it installs is `typ`. crates.io serves 0.2.5, the same
-version as this tree.
+Windows:
 
-That channel reaches you only if you already have a Rust toolchain. Tagged builds for Linux
-x86_64, macOS x86_64 and aarch64, and Windows x86_64 are attached to each
-[release](https://github.com/Pranjal-SB/type/releases) with a SHA-256 beside them. A one-line
-installer is not built yet.
+```powershell
+irm https://raw.githubusercontent.com/Pranjal-SB/type/main/install.ps1 | iex
+```
 
-**Known issue on Linux.** The v0.2.5 archive is built against glibc 2.39 and will not start on
-Ubuntu 22.04, Debian 12, RHEL 9 or Amazon Linux 2023 — it fails with
-`version 'GLIBC_2.39' not found`. Build from source or `cargo install typ-editor` until v0.2.6,
-which replaces it with a static musl build. See
-[distribution.md](docs/design/distribution.md).
+Both check the published SHA-256 before anything is written outside a temporary directory, and
+both install for the current user only — `~/.local/bin`, or `%LOCALAPPDATA%\Programs	yp` — so
+neither asks for `sudo` or Administrator. `--bin-dir` / `-BinDir` puts it somewhere else and
+`--version` / `-Version` fetches a tag other than the latest — or, since a script piped into
+`sh` or `iex` cannot be given arguments, `TYP_BIN_DIR` and `TYP_VERSION` in the environment.
+
+With a Rust toolchain, either of:
+
+```sh
+cargo install typ-editor     # compiles it
+cargo binstall typ-editor    # fetches the same archive the installers do
+```
+
+The crate is `typ-editor` and the binary is `typ`, which is also why the archives are named
+`typ-*`: `type` is a POSIX shell builtin and taking that name would shadow it.
+
+Or take an archive from a [release](https://github.com/Pranjal-SB/type/releases) directly:
+
+| Target | |
+|---|---|
+| `x86_64-unknown-linux-musl` | static; what `install.sh` picks on x86_64 Linux |
+| `aarch64-unknown-linux-musl` | static; Graviton, Raspberry Pi, arm64 servers |
+| `x86_64-unknown-linux-gnu` | dynamically linked against the build runner's glibc, currently 2.39. Take musl unless you specifically want this one |
+| `x86_64-apple-darwin`, `aarch64-apple-darwin` | |
+| `x86_64-pc-windows-msvc` | |
+
+Each carries a `.sha256`, the third-party licence notices, and build provenance:
+
+```sh
+gh attestation verify typ-v0.2.6-x86_64-unknown-linux-musl.tar.gz --repo Pranjal-SB/type
+```
 
 ## Build from source
 
@@ -253,9 +283,9 @@ one that plainly did nothing.
 | v0.2.2 | M2.2 | Usable: clipboard, indent, new files, guarded open | shipped |
 | v0.2.3 | M2.3 | Polish: gutter, truecolor theme, current line, brackets, status segments, `Ctrl+D`, goto-line, logging | shipped |
 | v0.2.4 | M2.4 | Live: wakeable event loop, file watching, damage-driven redraw, resize, save correctness | shipped |
-| v0.2.5 | M2.5 | Colour: themes as files, contrast rubric, capability detection, indent detection, whitespace and indent guides | **current** |
-| v0.2.6 | M2.6 | Ship: static musl and aarch64 Linux builds, one-line installers, self-verifying releases | next |
-| v0.2.7 | M2.7 | Parse: tree-sitter highlighting, grammar distribution, `config.toml`, terminal light/dark, kitty keyboard protocol | |
+| v0.2.5 | M2.5 | Colour: themes as files, contrast rubric, capability detection, indent detection, whitespace and indent guides | shipped |
+| v0.2.6 | M2.6 | Ship: static musl and aarch64 Linux builds, one-line installers, self-verifying releases | **current** |
+| v0.2.7 | M2.7 | Parse: tree-sitter highlighting, grammar distribution, `config.toml`, terminal light/dark, kitty keyboard protocol | next |
 | v0.3.0 | M3 | Code intelligence: LSP client | |
 | v0.4.0 | M4 | Workspace: splits, tabs, sessions, command palette, project search | |
 | v0.5.0 | M5 | Terminal panel and git integration | |

@@ -97,6 +97,28 @@ It is *not*, however, enough for `cargo-binstall`. Its default template interpol
 `typ`. So binstall looks for `typ-editor-v0.2.5-…` and finds nothing. A
 `[package.metadata.binstall]` block naming the real layout is required rather than a nicety.
 
+**Built**, and it needed one more line than that argument implies. Two further defaults are
+wrong here, both found by rendering the URLs rather than by reading them:
+
+- `{ archive-suffix }` expands to `.tgz` when `pkg-fmt = "tgz"`. `release.yml` writes
+  `.tar.gz`, so the extension has to be a literal. Nothing warns about this; the symptom is a
+  404 and a silent fall back to compiling from source.
+- **binstall asks the host for its triple, and on Linux it tries gnu before musl.** So on
+  x86_64 it would reach for the glibc archive — the artifact this milestone exists to stop
+  shipping. An override on `x86_64-unknown-linux-gnu` points it at the static build instead,
+  which is what `install.sh` already prefers. aarch64 needs no override: no aarch64 gnu archive
+  is published, and binstall's own musl fallback is unconditional, so it finds the right one
+  unaided.
+
+That last point is worth stating precisely, because the obvious guess is the wrong one.
+`detect-targets` returns the gnu triple *only if glibc is present* and appends the musl triple
+*always* — so a musl-only architecture is never stranded, and a glibc host is never given
+the choice. Consistency with the installer is the reason for the override, not reachability.
+
+Verified against the real v0.2.5 release for the three archives that exist there — both macOS
+targets and Windows resolve, download, and find `typ` at the templated path inside the archive.
+The Linux rows are verified by rendered URL only until v0.2.6 publishes a musl asset.
+
 ## 4. The target matrix
 
 **Static musl is the answer to distro fragmentation, and it is cheap right now.**
@@ -131,7 +153,7 @@ aarch64 Linux was left out of `release.yml` with the note that it needs a cross 
 is now out of date: GitHub's `ubuntu-24.04-arm` runners have been free for public repositories
 since January 2025, so aarch64 is a native build on a native runner and needs no linker at all.
 
-Proposed matrix — six targets, two more runners, no new tooling:
+**Built at v0.2.6.** Six targets, two more runners:
 
 | Target | Runner | Covers |
 |---|---|---|
@@ -171,6 +193,14 @@ numbers. Best of five per column, one 12-core Linux host, nothing else running:
 | `InsertChar` | 1.10 µs | 1.54 µs | 1.25 µs | 16 ms |
 | `Undo+Redo` | 146 ns | 275 ns | 137 ns | 32 ms |
 
+The shipped allocator is **mimalloc**, not the jemalloc in that column. jemalloc is what
+ripgrep uses and what the measurement above was taken with, and it does not survive the aarch64
+row: its autotools configure decides it is cross-compiling whenever `--host` and `--build`
+differ as strings, which they do on a native arm64 runner, and then misdetects C11 atomics.
+mimalloc builds through cc-rs with nothing to misdetect, and measures within noise on the metric
+that motivated the swap: 4.23 ms best of five on the same host, against mallocng's 10.17. It
+costs resident memory, which for an editor is the cheaper side of the trade.
+
 Plain musl was worse than glibc's *worst* run on every one of its five `find_all` runs —
 10.17, 10.46, 11.86, 11.99 and 13.66 ms against a 16 ms gate. The test still passed. That is
 the point: a budget with no margin left passes right up until it does not, and `find_all` is
@@ -208,35 +238,73 @@ musl column would measure `mallocng`, which no released build ever uses.
 
 ## 5. The installer
 
-Two scripts, `install.sh` and `install.ps1`, both consuming release assets that already exist.
-Neither needs a domain to work; `raw.githubusercontent.com` serves them today and a short URL
-is a cosmetic upgrade later.
+**Built.** `install.sh` and `install.ps1`, both consuming release assets that already exist.
+Neither needs a domain; `raw.githubusercontent.com` serves them today and a short URL is a
+cosmetic upgrade later.
 
 What they do, in order: detect OS and architecture, prefer musl on Linux, resolve the latest
-tag through the GitHub API, download the archive **and its `.sha256`**, verify, unpack to a
-temporary directory, move the binary into place, and print the PATH line if the destination is
-not already on `PATH`.
+tag, download the archive **and its `.sha256`**, verify, unpack to a temporary directory, copy
+the binary into place, and fix up `PATH`.
+
+The two halves resolve "latest" differently, and the difference is not stylistic. `install.sh`
+follows the `/releases/latest` redirect and reads the tag off the resulting URL, which costs
+nothing and is not rate-limited. `install.ps1` calls the API instead: Windows PowerShell 5.1
+has no way to read a redirect target that also works in 7 — `BaseResponse` is an
+`HttpWebResponse` in one and an `HttpResponseMessage` in the other, with different properties —
+and version-fragile reflection in an installer is worse than the API's 60-requests-per-hour
+limit. `-Version` is the escape hatch if anyone ever hits it.
 
 Default destination `~/.local/bin` on Unix and `%LOCALAPPDATA%\Programs\typ` on Windows.
 Neither needs `sudo`. starship escalates to `sudo` for `/usr/local/bin`, and that is the wrong
 trade for an editor: a per-user install that never asks for a password beats a system-wide one
 that does.
 
-Three implementation details that are not obvious, and are the reason to write these by hand
-rather than adopt a generator:
+Details that are not obvious, and are the reason to write these by hand rather than adopt a
+generator:
 
 - **Wrap the body in `main()` and call it on the last line.** `curl | sh` starts executing
   before the response has finished arriving, so a dropped connection can run half a script. A
   script whose only top-level statement is the final call either runs completely or does
-  nothing.
+  nothing. This is a real hazard on Unix and *not* one on Windows — PowerShell parses a whole
+  script before executing any of it, so a half-arrived script cannot half-run. `install.ps1`
+  keeps the structure anyway, because it is also what lets the tests load the functions without
+  running an install, and both test suites assert the property rather than assume it.
 - **Verify the checksum.** Zed, starship and bat all ship installers or archives with no
   integrity check at all. TYPE already publishes a `.sha256` beside every asset, so verifying
-  costs four lines and puts the installer above every editor in the table.
+  costs four lines and puts the installer above every editor in the table. Nothing is written
+  outside a temporary directory until the sum matches — including the destination directory
+  itself, so a failed install leaves no trace.
 - **`--proto '=https' --tlsv1.2` on the curl invocation**, as atuin does, so a redirect cannot
-  downgrade the transport.
+  downgrade the transport. The PowerShell counterpart is
+  `[Net.ServicePointManager]::SecurityProtocol = 'Tls12'`, and it is not optional: 5.1 still
+  offers TLS 1.0 first on an unpatched Windows, GitHub has not accepted that since 2018, and
+  the symptom is an unhelpful "the request was aborted".
+- **`set -eu`, not `set -euo pipefail`.** An earlier draft of this section specified pipefail.
+  It is not POSIX, `sh` on Debian and Ubuntu is dash, and `set -o pipefail` is a hard error
+  there — in the exact shell the documented `curl … | sh` hands the script to. Pipelines whose
+  failure matters are checked explicitly instead. Both test suites run under dash and busybox
+  ash in CI so a bashism cannot pass locally and fail on a user's machine.
+- **`install.ps1` targets Windows PowerShell 5.1, not 7.** `irm … | iex` runs in whatever ships
+  with Windows. CI uses `shell: powershell`; `shell: pwsh` would be 7 and would miss the
+  incompatibility entirely. `$ProgressPreference` is silenced for the same class of reason:
+  5.1's `Invoke-WebRequest` repaints the console on every chunk, which costs more wall clock
+  than the download does.
+- **On Windows, `PATH` is two writes and a comparison.** Setting the persistent user value does
+  not change the running shell, so both are written; and the append is guarded, because
+  appending unconditionally grows another copy of the same directory on every re-run. The
+  comparison ignores case and trailing separators, because a real user `PATH` has both. It is a
+  pure function with its own test — the failure mode is silent, so a test is the only thing
+  that would ever notice it.
 
-`set -euo pipefail`, and a `--version` / `--bin-dir` flag pair so the script is testable
-against a fixture rather than only against the live release.
+A `--version` / `--bin-dir` flag pair on both, so the scripts are testable against a fixture
+rather than only against the live release. Piped through `iex` there is no way to pass
+arguments at all, so `install.ps1` reads `TYP_VERSION` and `TYP_BIN_DIR` as well.
+
+The network half is deliberately untested. A `file://` fixture cannot be served over a
+connection pinned to `--proto '=https'`, and weakening the flag to make a test pass would be
+testing a script nobody ships. Splitting `download` from `verify_and_install` is what resolves
+that: everything after the bytes arrive is covered, which is where the failure modes that
+matter live.
 
 **Not adopted: `cargo-dist`.** It generates these two scripts plus Homebrew and winget, and it
 is the right answer at M6 when Windows file association makes those channels earn their keep.
@@ -289,7 +357,8 @@ Not worth adopting: `zizmor` and `CODEOWNERS` answer problems a many-contributor
 
 ## 7. Sequencing
 
-This should land **before** M2.6 rather than inside or after it.
+**Decided, and done this way.** This work took the M2.6 slot; tree-sitter highlighting moved to
+M2.7 and the roadmap was renumbered to match.
 
 Three reasons, in decreasing weight:
 
@@ -302,6 +371,11 @@ Three reasons, in decreasing weight:
 
 Against: it is a milestone spent on nothing a current user can see. True, and the wrong frame.
 The people it reaches are the ones who do not exist yet because the binary did not start.
+
+Reason 2 turned out to be right sooner than argued. Pure-Rust musl did not survive the
+milestone that introduced it: mimalloc is C, added because musl's own allocator cost `find_all`
+2.48x, and the musl rows now install `musl-tools`. The window this reasoning described was
+already closed by the time the row landed.
 
 ## Sources
 
