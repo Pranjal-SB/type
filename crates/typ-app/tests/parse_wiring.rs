@@ -118,3 +118,56 @@ fn typing_asks_for_a_fresh_parse() {
         "the tree after typing is the same allocation as before it"
     );
 }
+
+#[test]
+fn a_keyword_reaches_the_screen_in_the_themes_colour() {
+    // The milestone's goal, end to end and in one test: a real file, a real
+    // grammar, a real shipped theme, and a cell on screen holding the colour
+    // that theme gives keywords. Everything else in this milestone is a link
+    // in this chain — if any of them is wrong, this is the test that says so.
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use typ_core::{Panel, RenderContext, Theme};
+
+    let dir = fixture("painted", "hello.rs", "fn main() {}\n");
+    let (tx, rx) = channel();
+    let mut app = App::new(&dir).unwrap();
+    app.set_event_sender(tx);
+    app.open_path(&dir.join("hello.rs")).unwrap();
+    assert!(
+        pump_until_parsed(&mut app, &rx),
+        "no parse reached the editor"
+    );
+
+    let slate = typ_app::config::theme::embedded()
+        .find(|(name, _)| *name == "slate")
+        .map(|(_, source)| Theme::from_toml(source).unwrap())
+        .expect("slate ships");
+    let keyword = slate
+        .syntax
+        .get("keyword")
+        .and_then(|style| style.fg)
+        .expect("slate gives keywords a colour");
+
+    let area = Rect::new(0, 0, 40, 6);
+    let ctx = RenderContext {
+        theme: &slate.colors,
+        syntax: &slate.syntax,
+        is_focused: true,
+        panel_index: 0,
+        terminal_width: area.width,
+        terminal_height: area.height,
+    };
+    let mut buf = Buffer::empty(area);
+    app.editor_mut().render(area, &mut buf, &ctx);
+
+    let painted = buf
+        .content()
+        .iter()
+        .find(|cell| cell.symbol() == "f" && cell.fg == keyword);
+    assert!(
+        painted.is_some(),
+        "no cell holds `f` in the keyword colour {keyword:?} — the chain from \
+         theme file to painted glyph is broken somewhere"
+    );
+}

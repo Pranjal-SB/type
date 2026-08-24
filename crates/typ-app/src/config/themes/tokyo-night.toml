@@ -73,3 +73,24 @@ diagnostic_error = "red"
 diagnostic_warning = "yellow"
 diagnostic_info = "blue"
 diagnostic_hint = "teal"
+
+# Syntax captures, from tree-sitter. Matched by longest defined prefix, so
+# `keyword.control` resolves through `keyword`.
+#
+# Tokyo Night's mapping, with red standing in for the upstream magenta this
+# palette does not carry. `comment` finally has a job: it was in the palette
+# and read by nothing until the highlighter arrived.
+[syntax]
+keyword = "red"
+function = "blue"
+type = "teal"
+string = "yellow"
+comment = { fg = "comment", modifiers = ["italic"] }
+number = "orange"
+constant = "orange"
+variable = "fg"
+property = "fg_dark"
+operator = "teal"
+punctuation = "fg_gutter"
+tag = "red"
+attribute = "orange"
