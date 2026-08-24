@@ -87,6 +87,12 @@ pub struct App {
     /// revisions restart at zero with a new `TextBuffer`, so comparing across
     /// one would silently skip the parse of a newly opened file.
     parsed_revision: Option<u64>,
+    /// Syntax capture styles, degraded at load like `theme` is.
+    ///
+    /// Empty until a theme with a `[syntax]` table is loaded, which is a normal
+    /// state: an empty table means every scope lookup misses and the buffer
+    /// renders in one colour, exactly as it did before this milestone.
+    syntax_theme: typ_core::SyntaxTheme,
 }
 
 /// Between status segments. Two spaces rather than a glyph separator: a
@@ -121,6 +127,7 @@ impl App {
             whitespace: Whitespace::default(),
             parse_worker: None,
             parsed_revision: None,
+            syntax_theme: typ_core::SyntaxTheme::default(),
         })
     }
 
@@ -442,6 +449,16 @@ impl App {
     /// panel branches on depth, and none should — see `config::load_theme`.
     pub fn set_theme(&mut self, theme: ThemeColors) {
         self.theme = theme;
+    }
+
+    /// The syntax half of the theme, also already degraded.
+    ///
+    /// Separate setter rather than a second argument to `set_theme` because
+    /// `ThemeColors` is `Copy` and this is not; keeping them apart is what
+    /// stopped a `BTreeMap` landing inside the palette every render path holds
+    /// by value.
+    pub fn set_syntax_theme(&mut self, syntax: typ_core::SyntaxTheme) {
+        self.syntax_theme = syntax;
     }
 
     /// Route one keypress.
@@ -774,6 +791,7 @@ impl App {
 
         let tree_ctx = RenderContext {
             theme: &self.theme,
+            syntax: &self.syntax_theme,
             is_focused: self.focus == Focus::Tree,
             panel_index: 0,
             terminal_width: w,
@@ -781,6 +799,7 @@ impl App {
         };
         let editor_ctx = RenderContext {
             theme: &self.theme,
+            syntax: &self.syntax_theme,
             is_focused: self.focus == Focus::Editor,
             panel_index: 1,
             terminal_width: w,

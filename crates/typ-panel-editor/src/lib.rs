@@ -18,6 +18,7 @@ use typ_syntax::{Language, Syntax};
 
 pub mod actions;
 pub mod gutter;
+mod highlight;
 mod occurrence;
 pub mod render;
 
@@ -633,6 +634,20 @@ impl Panel for EditorPanel {
         );
         let text_width = text_area.width as usize;
 
+        // Once per frame, for the whole viewport: one tree query, one theme
+        // lookup per distinct scope, one byte-to-column conversion per line.
+        // Each of those per line — or worse, per cell — is what the 16 ms
+        // budget gets spent on.
+        let syntax = match self.syntax.as_ref() {
+            Some(syntax) => highlight::for_viewport(
+                syntax,
+                &self.buffer.snapshot(),
+                ctx.syntax,
+                self.top_line..end,
+            ),
+            None => Vec::new(),
+        };
+
         let lines: Vec<Line> = (self.top_line..end)
             .map(|i| {
                 // Only carets tint their line; a line carrying a real selection
@@ -657,6 +672,9 @@ impl Panel for EditorPanel {
                         brackets,
                         whitespace: self.whitespace,
                         indent_guides,
+                        syntax: syntax
+                            .get(i - self.top_line)
+                            .map_or(&[][..], |spans| spans.as_slice()),
                         theme: ctx.theme,
                     };
                     crate::render::styled_line(text, &style)

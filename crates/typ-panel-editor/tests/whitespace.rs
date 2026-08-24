@@ -27,6 +27,7 @@ fn render(panel: &mut EditorPanel) -> Buffer {
     let theme = ThemeColors::default();
     let ctx = RenderContext {
         theme: &theme,
+        syntax: typ_core::SyntaxTheme::empty(),
         is_focused: true,
         panel_index: 0,
         terminal_width: AREA.width,

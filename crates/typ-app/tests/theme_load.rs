@@ -29,7 +29,7 @@ fn the_shipped_default_loads_from_its_own_file() {
     // The point of the exercise: the default is a theme file read through the
     // same loader as every other theme, not a private path. A default that
     // takes a shortcut is a default that drifts from the format.
-    let (colors, warning) = load_theme(None, "slate", Depth::TrueColor);
+    let (colors, _syntax, warning) = load_theme(None, "slate", Depth::TrueColor);
 
     assert!(warning.is_none(), "{warning:?}");
     assert_eq!(colors, ThemeColors::default());
@@ -37,7 +37,7 @@ fn the_shipped_default_loads_from_its_own_file() {
 
 #[test]
 fn an_unknown_theme_name_warns_and_keeps_the_shipped_palette() {
-    let (colors, warning) = load_theme(None, "nonesuch", Depth::TrueColor);
+    let (colors, _syntax, warning) = load_theme(None, "nonesuch", Depth::TrueColor);
 
     let warning = warning.expect("an unknown theme has to be reported");
     assert!(warning.contains("nonesuch"), "warning: {warning}");
@@ -60,7 +60,7 @@ fn a_file_in_the_config_directory_wins_over_the_embedded_one() {
         "name = \"Mine\"\nkind = \"dark\"\n\n[ui]\nfg = \"#ff0000\"\n",
     );
 
-    let (colors, warning) = load_theme(Some(&dir), "slate", Depth::TrueColor);
+    let (colors, _syntax, warning) = load_theme(Some(&dir), "slate", Depth::TrueColor);
 
     assert!(warning.is_none(), "{warning:?}");
     assert_eq!(colors.fg, Color::Rgb(0xff, 0x00, 0x00));
@@ -70,7 +70,7 @@ fn a_file_in_the_config_directory_wins_over_the_embedded_one() {
 fn a_theme_name_with_no_file_anywhere_falls_back_to_the_embedded_set() {
     let dir = config_dir("no-override");
 
-    let (colors, warning) = load_theme(Some(&dir), "slate", Depth::TrueColor);
+    let (colors, _syntax, warning) = load_theme(Some(&dir), "slate", Depth::TrueColor);
 
     assert!(warning.is_none(), "{warning:?}");
     assert_eq!(colors, ThemeColors::default());
@@ -85,7 +85,7 @@ fn a_broken_user_theme_warns_and_keeps_the_shipped_palette() {
         "name = \"Broken\"\nkind = \"dark\"\n\n[ui]\nfg = \"not a colour\"\n",
     );
 
-    let (colors, warning) = load_theme(Some(&dir), "slate", Depth::TrueColor);
+    let (colors, _syntax, warning) = load_theme(Some(&dir), "slate", Depth::TrueColor);
 
     let warning = warning.expect("a broken theme has to be reported");
     assert!(warning.contains("slate.toml"), "which file: {warning}");
@@ -97,7 +97,7 @@ fn the_palette_arrives_already_degraded() {
     // Nothing downstream branches on colour depth. render.rs, gutter.rs and
     // status.rs take a ThemeColors and stay unaware that depth is a thing,
     // which is only true if the quantising happens here.
-    let (colors, _) = load_theme(None, "slate", Depth::Ansi256);
+    let (colors, _syntax, _) = load_theme(None, "slate", Depth::Ansi256);
 
     assert_ne!(colors.bg, ThemeColors::default().bg);
     assert_eq!(

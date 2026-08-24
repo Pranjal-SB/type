@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use typ_core::{Depth, Theme, ThemeColors, colour::downgrade_theme};
+use typ_core::{Depth, SyntaxTheme, Theme, ThemeColors, colour::downgrade_theme};
 
 /// The themes that ship inside the binary.
 ///
@@ -48,17 +48,22 @@ pub fn embedded() -> impl Iterator<Item = (&'static str, &'static str)> {
 /// an editor that refuses to open because of a bad colour is an editor you
 /// cannot use to fix the colour.
 ///
-/// Returns `ThemeColors` rather than the whole `Theme` because nothing reads
-/// the syntax scopes yet. Parsing still validates them, so a broken `[syntax]`
-/// section is caught now rather than in M2.6 when the highlighter first looks.
+/// Returns both halves of the theme. The syntax scopes were parsed and thrown
+/// away until M2.7, when the highlighter arrived to read them.
 pub fn load_theme(
     config_dir: Option<&Path>,
     name: &str,
     depth: Depth,
-) -> (ThemeColors, Option<String>) {
+) -> (ThemeColors, SyntaxTheme, Option<String>) {
     let (source, origin) = match find(config_dir, name) {
         Ok(found) => found,
-        Err(warning) => return (ThemeColors::default(), Some(warning)),
+        Err(warning) => {
+            return (
+                ThemeColors::default(),
+                SyntaxTheme::default(),
+                Some(warning),
+            );
+        }
     };
 
     match Theme::from_toml(&source) {
@@ -67,8 +72,20 @@ pub fn load_theme(
         // and staying unaware that colour depth exists — and it is why
         // degradation is a function over a palette rather than data in a theme
         // file, which would make six shipped themes into eighteen.
-        Ok(theme) => (downgrade_theme(&theme.colors, depth), None),
-        Err(e) => (ThemeColors::default(), Some(format!("{origin}: {e:#}"))),
+        //
+        // The scopes take the same trip. A `[syntax]` table left in true colour
+        // while the palette around it was quantised would be the one part of
+        // the screen sending escape codes the terminal cannot honour.
+        Ok(theme) => (
+            downgrade_theme(&theme.colors, depth),
+            theme.syntax.downgraded(depth),
+            None,
+        ),
+        Err(e) => (
+            ThemeColors::default(),
+            SyntaxTheme::default(),
+            Some(format!("{origin}: {e:#}")),
+        ),
     }
 }
 

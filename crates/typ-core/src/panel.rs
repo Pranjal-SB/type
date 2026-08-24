@@ -214,6 +214,15 @@ impl Default for ThemeColors {
 /// This is the whole surface — a panel never receives `&AppState`.
 pub struct RenderContext<'a> {
     pub theme: &'a ThemeColors,
+    /// Syntax capture styles, already degraded to the terminal's colour depth.
+    ///
+    /// Beside `theme` rather than inside it because `ThemeColors` is `Copy` and
+    /// a `BTreeMap` would end that. Both halves of the theme travel with the
+    /// frame, which is what keeps a theme switch from updating the palette and
+    /// leaving the syntax colours behind — Helix passes its whole `Theme` into
+    /// every render call for the same reason, and Zed reaches both halves
+    /// through one accessor.
+    pub syntax: &'a crate::SyntaxTheme,
     pub is_focused: bool,
     pub panel_index: usize,
     pub terminal_width: u16,
