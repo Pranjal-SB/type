@@ -2,8 +2,8 @@
 type: process
 status: living
 area: release
-verified: 2026-08-23
-verified-against: v0.2.5
+verified: 2026-08-24
+verified-against: v0.2.6
 ---
 
 # Releasing
@@ -79,6 +79,13 @@ candidate rather than rewriting a tag someone may already have installed.
 
 Nothing to do by hand here beyond reading the notes. If `verify` fails, the release stays a
 draft nobody saw.
+
+**Rehearse anything structural on a candidate, and do not skip it because the change looks
+small.** v0.2.6 took four: `rc.1` failed building on Windows (`$TARGET` is undefined in a pwsh
+step and expands to nothing), `rc.2` failed on every verify row because a draft release is
+invisible to a token with only `contents: read`, `rc.3` proved the version assertion actually
+fires by being pointed at a wrong string on purpose, and `rc.4` was the first clean run. The
+first two would each have landed on a permanent tag.
 
 ## 4. Publish to crates.io
 
