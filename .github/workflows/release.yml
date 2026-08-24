@@ -250,6 +250,14 @@ jobs:
   # unrelated to the artifact. It is still checksummed and attested.
   verify:
     needs: [create-release, build]
+    # `contents: write` for a job that only reads, because a draft release is
+    # visible only to a token with push access: at `contents: read` every row
+    # fails with `release not found` before it can check anything. Verifying
+    # the assets that are actually on the release is the point — checking a
+    # copy handed over from the build job would not notice an upload that went
+    # wrong. This job writes nothing.
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
