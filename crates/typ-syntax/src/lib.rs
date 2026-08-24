@@ -8,9 +8,9 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use ropey::Rope;
+use tree_house::Syntax as TreeHouseSyntax;
 use tree_house::highlighter::{Highlight, HighlightEvent, Highlighter};
 use tree_house::{InjectionLanguageMarker, Language, LanguageConfig, LanguageLoader};
-use tree_house::Syntax as TreeHouseSyntax;
 
 const SPIKE_TIMEOUT: Duration = Duration::from_millis(500);
 
@@ -80,7 +80,9 @@ pub fn parse_rust(rope: &Rope) -> Option<Syntax> {
 /// The topmost active highlight per event boundary — good enough for the
 /// spike's numbers. Precedence among stacked captures is Task 2's job.
 pub fn highlights(syntax: &Syntax, rope: &Rope, bytes: Range<usize>) -> Vec<(Range<usize>, u32)> {
-    let loader = LOADER.get().expect("a Syntax exists only after parse_rust ran");
+    let loader = LOADER
+        .get()
+        .expect("a Syntax exists only after parse_rust ran");
     let src = rope.slice(..);
     let mut highlighter = Highlighter::new(&syntax.inner, src, loader, bytes.start as u32..);
     let end = bytes.end as u32;
@@ -99,10 +101,10 @@ pub fn highlights(syntax: &Syntax, rope: &Rope, bytes: Range<usize>) -> Vec<(Ran
         let start = pos;
         pos = highlighter.next_event_offset().min(end);
 
-        if let Some(top) = stack.last() {
-            if start < pos {
-                spans.push((start as usize..pos as usize, top.get()));
-            }
+        if let Some(top) = stack.last()
+            && start < pos
+        {
+            spans.push((start as usize..pos as usize, top.get()));
         }
     }
 
