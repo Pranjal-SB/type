@@ -66,3 +66,24 @@ diagnostic_error = "love"
 diagnostic_warning = "gold"
 diagnostic_info = "foam"
 diagnostic_hint = "pine"
+
+# Syntax captures, from tree-sitter. Matched by longest defined prefix, so
+# `keyword.control` resolves through `keyword`.
+#
+# Rosé Pine's own roles: pine for what the language does, gold for literals,
+# foam for types, love for names that are called or opened. The muted step
+# carries comments, which is the job it was named for.
+[syntax]
+keyword = "pine"
+function = "love"
+type = "foam"
+string = "gold"
+comment = { fg = "muted", modifiers = ["italic"] }
+number = "gold"
+constant = "gold"
+variable = "text"
+property = "foam"
+operator = "subtle"
+punctuation = "subtle"
+tag = "love"
+attribute = "foam"

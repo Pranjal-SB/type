@@ -215,6 +215,12 @@ fn finish(app: &mut App, events: Vec<PanelEvent>, mut changed: bool) -> Result<F
     }
     app.apply(events)?;
 
+    // Every path that can edit the buffer arrives here — chord, paste, mouse,
+    // prompt, and whatever the next one turns out to be. Hooking each call
+    // site instead would work until somebody adds a call site, and the symptom
+    // would be highlighting that silently stops updating for one kind of edit.
+    app.request_parse_if_stale();
+
     if changed {
         app.mark_dirty();
     }
@@ -242,6 +248,7 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
 
     match event {
         AppEvent::FileChanged(path) => changed = app.handle_external_change(&path)?,
+        AppEvent::Parsed(parsed) => changed = app.handle_parsed(parsed),
         AppEvent::Input(input) => match input {
             // Every binding lives in the keymap now, so there is nothing left
             // here to special-case. The dispatcher owns the order.

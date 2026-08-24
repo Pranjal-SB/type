@@ -11,6 +11,7 @@ use typ_core::{RenderContext, ThemeColors, chrome};
 fn context(theme: &ThemeColors, is_focused: bool) -> RenderContext<'_> {
     RenderContext {
         theme,
+        syntax: typ_core::SyntaxTheme::empty(),
         is_focused,
         panel_index: 0,
         terminal_width: 40,

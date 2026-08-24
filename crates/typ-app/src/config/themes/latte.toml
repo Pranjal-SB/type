@@ -65,3 +65,24 @@ diagnostic_error = "red"
 diagnostic_warning = "yellow"
 diagnostic_info = "blue"
 diagnostic_hint = "teal"
+
+# Syntax captures, from tree-sitter. Matched by longest defined prefix, so
+# `keyword.control` resolves through `keyword`.
+#
+# Catppuccin Latte's mapping. On a light ground the warm accents are the dark
+# ones — `yellow` here is a deep amber-brown, chosen so a literal reads against
+# paper rather than glowing on it.
+[syntax]
+keyword = "mauve"
+function = "blue"
+type = "yellow"
+string = "teal"
+comment = { fg = "overlay1", modifiers = ["italic"] }
+number = "yellow"
+constant = "yellow"
+variable = "text"
+property = "subtext0"
+operator = "teal"
+punctuation = "overlay2"
+tag = "red"
+attribute = "yellow"

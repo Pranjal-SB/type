@@ -26,6 +26,20 @@ ropey = "1.6"
 toml = "1.1"
 unicode-segmentation = "1.11"
 unicode-width = "0.2"
+# The highlighter Helix extracted and has run since 25.07. Taken for its rope
+# support and its injections: `tree-sitter-highlight` wants the whole file as
+# one `&[u8]`, which for a rope means `to_string()` on every parse.
+tree-house = "0.4"
+# tree-house-bindings' TryFrom<LanguageFn> for Grammar is behind this feature,
+# off by default. Naming the crate directly turns it on for tree-house's own
+# copy via feature unification, without which a compiled-in grammar crate has
+# no path into tree-house at all.
+tree-house-bindings = { version = "0.3", features = ["tree-sitter-language"] }
+tree-sitter-rust = "0.24"
+tree-sitter-toml-ng = "0.7"
+tree-sitter-json = "0.24"
+tree-sitter-md = "0.5"
+tree-sitter-yaml = "0.7"
 # musl-only, and only because it was measured. musl's mallocng cost find_all
 # 2.48x against glibc — 10.2 ms best-of-five against a 16 ms keystroke budget,
 # where glibc managed 4.1 ms. jemalloc puts it back to 4.05 ms. See
@@ -40,6 +54,7 @@ typ-registry = { path = "crates/typ-registry", version = "0.2.6" }
 typ-panel-editor = { path = "crates/typ-panel-editor", version = "0.2.6" }
 typ-panel-tree = { path = "crates/typ-panel-tree", version = "0.2.6" }
 typ-app = { path = "crates/typ-app", version = "0.2.6" }
+typ-syntax = { path = "crates/typ-syntax", version = "0.2.6" }
 
 [profile.release]
 opt-level = 3

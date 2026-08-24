@@ -1,8 +1,10 @@
 //! Turning a line of text plus the selections covering it into styled spans.
 //!
 //! Split out of `lib.rs` because this is where display-column arithmetic
-//! lives, and it is the part most likely to grow: highlighting arrives in M2.5
-//! and has to compose with selection styling rather than fight it.
+//! lives, and it is the part most likely to grow: highlighting arrived in M2.7
+//! and had to compose with selection styling rather than fight it.
+
+use std::ops::Range;
 
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
@@ -79,6 +81,12 @@ enum Overlay {
     Mark,
     /// An indent guide.
     Guide,
+    /// A tree-sitter capture, as an index into [`LineStyle::syntax`].
+    ///
+    /// An index rather than a `Style` so `Overlay` stays `Copy` and the
+    /// run-break test stays an integer compare. The loop runs once per cell on
+    /// the keystroke path.
+    Syntax(u32),
 }
 
 /// The glyph a whitespace grapheme is drawn as.
@@ -94,8 +102,15 @@ fn mark_for(grapheme: &str) -> Option<char> {
 ///
 /// Spelling this out as a type rather than as a chain of `if`s inside the loop
 /// is what makes the precedence reviewable: there is exactly one place that
-/// decides, and adding syntax highlighting at M2.5 adds a variant here rather
-/// than another branch in the middle of a run-accumulating loop.
+/// decides.
+///
+/// This comment used to predict that syntax highlighting would add a variant
+/// *here*. The instinct was right and the placement was wrong: M2.5 split the
+/// per-cell style into two axes this comment predates, and a capture sets a
+/// foreground. It is an [`Overlay`]. Had it landed here, every scope would
+/// multiply with every selection state, and the first thing to break would be
+/// the one that already worked — a selected keyword keeping the selection's
+/// background.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Paint {
     Plain,
@@ -157,6 +172,17 @@ pub struct LineStyle<'a> {
     /// a blank line's depth comes from its neighbours, and the panel is the
     /// only thing here that can see them.
     pub indent_guides: usize,
+    /// Resolved syntax styles for this line, ascending and non-overlapping, in
+    /// **grapheme columns of the whole line**.
+    ///
+    /// Columns, not bytes: invariant 4 says `col` is a grapheme index, and a
+    /// render loop taking byte offsets is how that gets broken quietly on the
+    /// first non-ASCII file. The panel converts, once per line, before this
+    /// slice exists.
+    ///
+    /// Styles rather than scope names, because resolving a name against the
+    /// theme is a `BTreeMap` walk and this runs once per cell.
+    pub syntax: &'a [(Range<usize>, Style)],
     pub theme: &'a ThemeColors,
 }
 
@@ -186,6 +212,10 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
 
     let mut runs = Runs::default();
     let mut column = start;
+    // Walks forward with the loop rather than searching per cell: the spans
+    // are ascending and non-overlapping, so this is one pass over both
+    // sequences instead of a scan of the line's spans for every grapheme.
+    let mut span = 0usize;
 
     for (offset, (byte, grapheme)) in visible.grapheme_indices(true).enumerate() {
         let position = Position {
@@ -193,6 +223,13 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
             col: skipped + offset,
         };
         let paint = paint_for(position, ctx);
+        while span < ctx.syntax.len() && ctx.syntax[span].0.end <= position.col {
+            span += 1;
+        }
+        let scope = match ctx.syntax.get(span) {
+            Some((range, _)) if range.contains(&position.col) => Overlay::Syntax(span as u32),
+            _ => Overlay::None,
+        };
         // The *original* grapheme's width, always. A tab drawn as one arrow
         // still occupies its whole run of columns; anything else loses three of
         // them and leaves every glyph after it out of step with a cursor that
@@ -205,7 +242,7 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
             // to see that character; a guide is ambient, and the one that can
             // be switched off is not the one to overdraw.
             Some(glyph) => {
-                runs.push(glyph, (paint, Overlay::Mark), ctx.theme);
+                runs.push(glyph, (paint, Overlay::Mark), ctx);
                 // Then blank to the end of what the grapheme occupied.
                 for cell in 1..width {
                     runs.blank(column + cell, guides_end, paint, ctx);
@@ -220,7 +257,11 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
                     runs.blank(column + cell, guides_end, paint, ctx);
                 }
             }
-            None => runs.push_str(grapheme, (paint, Overlay::None), ctx.theme),
+            // Text. The only branch a capture can reach: the two above are a
+            // mark and indentation, which is the whole of "mark > guide >
+            // syntax" — no grammar captures a space, and a guide stands only
+            // where indentation is.
+            None => runs.push_str(grapheme, (paint, scope), ctx),
         }
         column += width;
     }
@@ -238,7 +279,7 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
         column += 1;
     }
 
-    let mut spans = runs.finish(ctx.theme);
+    let mut spans = runs.finish(ctx);
 
     // Carry the current-line tint past the end of the text. A highlight that
     // stops at the last character leaves a ragged right edge that reads as a
@@ -267,37 +308,37 @@ struct Runs {
 }
 
 impl Runs {
-    fn open(&mut self, run: (Paint, Overlay), theme: &ThemeColors) {
+    fn open(&mut self, run: (Paint, Overlay), ctx: &LineStyle) {
         if self.run != Some(run) && !self.current.is_empty() {
-            let style = style_of(self.run.unwrap_or((Paint::Plain, Overlay::None)), theme);
+            let style = style_of(self.run.unwrap_or((Paint::Plain, Overlay::None)), ctx);
             self.spans
                 .push(Span::styled(std::mem::take(&mut self.current), style));
         }
         self.run = Some(run);
     }
 
-    fn push(&mut self, ch: char, run: (Paint, Overlay), theme: &ThemeColors) {
-        self.open(run, theme);
+    fn push(&mut self, ch: char, run: (Paint, Overlay), ctx: &LineStyle) {
+        self.open(run, ctx);
         self.current.push(ch);
     }
 
-    fn push_str(&mut self, s: &str, run: (Paint, Overlay), theme: &ThemeColors) {
-        self.open(run, theme);
+    fn push_str(&mut self, s: &str, run: (Paint, Overlay), ctx: &LineStyle) {
+        self.open(run, ctx);
         self.current.push_str(s);
     }
 
     /// One blank cell, or the guide standing in it.
     fn blank(&mut self, column: usize, guides_end: usize, paint: Paint, ctx: &LineStyle) {
         if column < guides_end && column.is_multiple_of(ctx.tab_width) {
-            self.push('│', (paint, Overlay::Guide), ctx.theme);
+            self.push('│', (paint, Overlay::Guide), ctx);
         } else {
-            self.push(' ', (paint, Overlay::None), ctx.theme);
+            self.push(' ', (paint, Overlay::None), ctx);
         }
     }
 
-    fn finish(mut self, theme: &ThemeColors) -> Vec<Span<'static>> {
+    fn finish(mut self, ctx: &LineStyle) -> Vec<Span<'static>> {
         if !self.current.is_empty() {
-            let style = style_of(self.run.unwrap_or((Paint::Plain, Overlay::None)), theme);
+            let style = style_of(self.run.unwrap_or((Paint::Plain, Overlay::None)), ctx);
             self.spans.push(Span::styled(self.current, style));
         }
         self.spans
@@ -305,12 +346,37 @@ impl Runs {
 }
 
 /// A run's style: its paint, with any overlay laid over the foreground.
-fn style_of((paint, overlay): (Paint, Overlay), theme: &ThemeColors) -> Style {
-    let style = paint.style(theme);
+///
+/// Takes the whole `LineStyle` rather than just the theme because a syntax
+/// overlay carries an index into this line's resolved spans, and only the
+/// caller's context can turn that back into a colour.
+fn style_of((paint, overlay): (Paint, Overlay), ctx: &LineStyle) -> Style {
+    let style = paint.style(ctx.theme);
     match overlay {
         Overlay::None => style,
-        Overlay::Mark => style.fg(theme.whitespace),
-        Overlay::Guide => style.fg(theme.indent_guide),
+        Overlay::Mark => style.fg(ctx.theme.whitespace),
+        Overlay::Guide => style.fg(ctx.theme.indent_guide),
+        Overlay::Syntax(i) => match ctx.syntax.get(i as usize) {
+            Some((_, syntax)) => {
+                let mut out = style;
+                if let Some(fg) = syntax.fg {
+                    out = out.fg(fg);
+                }
+                // A theme may put a background on a scope, and it gets one only
+                // where nothing more urgent has claimed the ground. A selected
+                // keyword keeps the selection's background — that is the whole
+                // reason a capture is an overlay rather than a paint.
+                if let Some(bg) = syntax.bg
+                    && matches!(paint, Paint::Plain | Paint::CursorLine)
+                {
+                    out = out.bg(bg);
+                }
+                // Bold keywords, italic comments. `Paint` sets no modifiers, so
+                // there is nothing here to conflict with.
+                out.add_modifier(syntax.add_modifier)
+            }
+            None => style,
+        },
     }
 }
 

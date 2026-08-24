@@ -23,6 +23,14 @@ pub struct TextBuffer {
     /// the file must not change the answer — a user deleting the first line
     /// does not thereby convert the file to LF.
     line_ending: LineEnding,
+    /// Bumped on every change to the text, and never reset.
+    ///
+    /// `dirty` cannot answer "did the text change?" — it is false again after
+    /// a save and says nothing about an edit that returned the buffer to what
+    /// was on disk. A monotonic counter is what lets the app ask for a reparse
+    /// exactly when there is something new to parse, rather than hooking every
+    /// call site that might have edited something and missing one.
+    revision: u64,
 }
 
 impl TextBuffer {
@@ -37,6 +45,7 @@ impl TextBuffer {
             history: History::default(),
             group_depth: 0,
             line_ending: LineEnding::detect(s),
+            revision: 0,
         }
     }
 
@@ -57,6 +66,7 @@ impl TextBuffer {
             // Nothing to detect from, and a file TYPE is about to create has no
             // existing convention to honour.
             line_ending: LineEnding::default(),
+            revision: 0,
         }
     }
 
@@ -79,6 +89,7 @@ impl TextBuffer {
         };
         Ok(Self {
             line_ending,
+            revision: 0,
             rope: Rope::from_str(&text),
             path: Some(path.to_path_buf()),
             dirty: false,
@@ -91,12 +102,35 @@ impl TextBuffer {
         self.rope.len_lines()
     }
 
+    /// Bytes of text, without allocating any of them.
+    ///
+    /// `text().len()` answers the same question by copying the whole file to
+    /// do it, which is the trap AGENTS.md names about `line_text`.
+    pub fn byte_len(&self) -> usize {
+        self.rope.len_bytes()
+    }
+
     /// The whole buffer as a `String`.
     ///
     /// Allocates the entire text, so it is for whole-file work and never for
     /// anything on the keystroke path.
     pub fn text(&self) -> String {
         self.rope.to_string()
+    }
+
+    /// A consistent copy of the text, for a worker to read while editing
+    /// continues.
+    ///
+    /// Ropey's nodes are reference-counted and shared, so this is cheap and
+    /// the clone diverges from the original only where one of them is edited.
+    /// Zed builds the same property deliberately into its sum trees; here it
+    /// comes with the buffer that was already chosen.
+    ///
+    /// Note what this is *not*: `text()` allocates the whole file and is the
+    /// trap AGENTS.md names about `line_text`. A snapshot is the cheap one and
+    /// is what anything off-thread should take.
+    pub fn snapshot(&self) -> Rope {
+        self.rope.clone()
     }
 
     /// The whole buffer as `save` would write it, line endings and all.
@@ -123,6 +157,26 @@ impl TextBuffer {
 
     pub fn is_dirty(&self) -> bool {
         self.dirty
+    }
+
+    /// How many times the text has changed, ever.
+    ///
+    /// Compare two readings to know whether anything needs reparsing. Never
+    /// compare it across buffers: a freshly opened file starts at zero again,
+    /// so the caller invalidates rather than compares when the buffer itself
+    /// is replaced.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// The text changed.
+    ///
+    /// Every mutation goes through here so `dirty` and `revision` cannot drift
+    /// apart — the alternative was six call sites each remembering to set two
+    /// fields, which is five chances to set one.
+    fn touch(&mut self) {
+        self.dirty = true;
+        self.revision += 1;
     }
 
     /// Call `f` with one line's text, borrowed from the rope when possible.
@@ -186,7 +240,7 @@ impl TextBuffer {
         self.record_snapshot(pos);
         let offset = self.char_offset(pos);
         self.rope.insert_char(offset, ch);
-        self.dirty = true;
+        self.touch();
     }
 
     /// Delete the grapheme immediately before `pos` (backspace).
@@ -206,7 +260,7 @@ impl TextBuffer {
         };
         self.record_snapshot(pos);
         self.rope.remove(offset - n..offset);
-        self.dirty = true;
+        self.touch();
     }
 
     /// Delete the grapheme at `pos` (forward delete).
@@ -224,7 +278,7 @@ impl TextBuffer {
         });
         self.record_snapshot(pos);
         self.rope.remove(offset..offset + n);
-        self.dirty = true;
+        self.touch();
     }
 
     /// The text between two positions.
@@ -330,7 +384,7 @@ impl TextBuffer {
         if !text.is_empty() {
             self.rope.insert(from, text);
         }
-        self.dirty = true;
+        self.touch();
     }
 
     /// Take an undo snapshot unless an edit group is open.
@@ -384,14 +438,14 @@ impl TextBuffer {
     pub fn undo(&mut self, current: &Selections) -> Option<Selections> {
         let snapshot = self.history.undo(self.rope.clone(), current)?;
         self.rope = snapshot.rope;
-        self.dirty = true;
+        self.touch();
         Some(snapshot.selections)
     }
 
     pub fn redo(&mut self, current: &Selections) -> Option<Selections> {
         let snapshot = self.history.redo(self.rope.clone(), current)?;
         self.rope = snapshot.rope;
-        self.dirty = true;
+        self.touch();
         Some(snapshot.selections)
     }
 

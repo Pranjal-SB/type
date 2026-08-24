@@ -81,6 +81,19 @@ pub struct SyntaxTheme {
 }
 
 impl SyntaxTheme {
+    /// A theme with no scopes, borrowable for `'static`.
+    ///
+    /// `RenderContext` holds `&SyntaxTheme`, so a caller with nothing to say
+    /// needs something to point at that outlives the context — which rules out
+    /// both `&Default::default()` and a `const`, since a reference to a `const`
+    /// is a reference to a temporary inlined at the use site.
+    pub fn empty() -> &'static SyntaxTheme {
+        static EMPTY: SyntaxTheme = SyntaxTheme {
+            scopes: BTreeMap::new(),
+        };
+        &EMPTY
+    }
+
     /// The style for a capture name, falling back to its longest defined
     /// prefix.
     ///
@@ -102,6 +115,44 @@ impl SyntaxTheme {
 
     pub fn is_empty(&self) -> bool {
         self.scopes.is_empty()
+    }
+
+    /// Every scope's colours brought down to `depth`.
+    ///
+    /// Applied once at load, like [`crate::colour::downgrade_theme`], so that
+    /// nothing downstream knows colour depth exists. A method rather than a
+    /// function beside `downgrade_theme` because `scopes` is private and
+    /// `colour.rs` is a sibling module, not a child.
+    ///
+    /// Helix's alternative is to refuse a truecolor theme outright and ship
+    /// separate `base16_*` files for terminals that cannot take one. That is
+    /// the "six shipped themes become eighteen" outcome `downgrade_theme`
+    /// already rejected for the palette, and it is no better for scopes.
+    pub fn downgraded(&self, depth: crate::Depth) -> SyntaxTheme {
+        let scopes = self
+            .scopes
+            .iter()
+            .map(|(name, style)| {
+                let mut style = *style;
+                if let Some(fg) = style.fg {
+                    style.fg = Some(crate::colour::downgrade(fg, depth));
+                }
+                if let Some(bg) = style.bg {
+                    style.bg = Some(crate::colour::downgrade(bg, depth));
+                }
+                (name.clone(), style)
+            })
+            .collect();
+        SyntaxTheme { scopes }
+    }
+}
+
+/// So a test can state the scopes it cares about without writing a theme file.
+impl FromIterator<(String, Style)> for SyntaxTheme {
+    fn from_iter<T: IntoIterator<Item = (String, Style)>>(iter: T) -> Self {
+        SyntaxTheme {
+            scopes: iter.into_iter().collect(),
+        }
     }
 }
 

@@ -14,9 +14,11 @@ categories.workspace = true
 anyhow.workspace = true
 crossterm.workspace = true
 ratatui.workspace = true
+ropey.workspace = true
 unicode-segmentation.workspace = true
 typ-buffer.workspace = true
 typ-core.workspace = true
+typ-syntax.workspace = true
 
 [target.'cfg(all(target_env = "musl", target_pointer_width = "64"))'.dev-dependencies]
 mimalloc.workspace = true

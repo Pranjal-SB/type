@@ -92,3 +92,27 @@ diagnostic_error = "red"
 diagnostic_warning = "amber"
 diagnostic_info = "accent"
 diagnostic_hint = "teal"
+
+# Syntax captures, from tree-sitter. Names are matched by longest defined
+# prefix, so `keyword.control` resolves through `keyword` and a grammar TYPE
+# has never seen still colours.
+#
+# Slate has one accent by design, and thirteen new hues would end that. So the
+# scopes are placed on the palette that already exists: the accent carries what
+# the language *does*, the semantic colours carry literal values, and the base
+# ramp carries everything structural. Code reads as the page it sits on rather
+# than as a fruit salad.
+[syntax]
+keyword = "accent"
+function = "base08"
+type = "accent_bright"
+string = "teal"
+comment = { fg = "base05", modifiers = ["italic"] }
+number = "amber"
+constant = "amber"
+variable = "base07"
+property = "base06"
+operator = "base05"
+punctuation = "base04"
+tag = "accent"
+attribute = "teal"

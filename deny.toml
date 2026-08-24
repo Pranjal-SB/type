@@ -28,6 +28,7 @@ allow = [
     "Unicode-DFS-2016",
     "Unlicense",
     "WTFPL",         # terminfo — permissive, if unserious
+    "MPL-2.0",       # tree-house — file-scoped copyleft, links into MIT fine
 ]
 confidence-threshold = 0.9
 

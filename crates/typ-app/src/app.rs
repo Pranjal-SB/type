@@ -14,6 +14,7 @@ use typ_panel_editor::EditorPanel;
 use typ_panel_editor::render::Whitespace;
 use typ_panel_tree::TreePanel;
 use typ_registry::Registry;
+use typ_syntax::ParseWorker;
 
 use crate::prompt::{Prompt, PromptKind};
 use crate::status::{Segment, StatusFacts, segments};
@@ -74,6 +75,39 @@ pub struct App {
     /// `whitespace` from `config.toml`. Held here for the same reason as
     /// `indent_width`: opening a file builds a new panel.
     whitespace: Whitespace,
+    /// Parses buffers off the render thread. `None` until `set_event_sender`,
+    /// because the worker needs somewhere to send results.
+    ///
+    /// The app owns it, not the panel: a panel returns `PanelEvent`s and never
+    /// holds a channel to the app.
+    parse_worker: Option<ParseWorker>,
+    /// The buffer revision the last parse was requested for.
+    ///
+    /// `None` means the buffer was replaced and must be parsed regardless —
+    /// revisions restart at zero with a new `TextBuffer`, so comparing across
+    /// one would silently skip the parse of a newly opened file.
+    parsed_revision: Option<u64>,
+    /// The generation of the only parse result worth applying.
+    ///
+    /// **The panel cannot make this decision.** `EditorPanel::set_syntax`
+    /// discards a result older than the one it holds, which is right within
+    /// one buffer and useless across two: `open_path` builds a *new* panel
+    /// whose counter starts at zero, while the worker's counter is app-global
+    /// and never resets, so a result still in flight for the previous file
+    /// arrives above zero and passes that guard — painting the newly opened
+    /// file with the previous one's tree.
+    ///
+    /// Exact match rather than a floor, because only one result is ever wanted:
+    /// the worker coalesces queued jobs down to the newest, so the newest
+    /// request is always the one that runs and always arrives. Anything else
+    /// is a job that was already mid-parse when the buffer changed.
+    awaited_generation: Option<u64>,
+    /// Syntax capture styles, degraded at load like `theme` is.
+    ///
+    /// Empty until a theme with a `[syntax]` table is loaded, which is a normal
+    /// state: an empty table means every scope lookup misses and the buffer
+    /// renders in one colour, exactly as it did before this milestone.
+    syntax_theme: typ_core::SyntaxTheme,
 }
 
 /// Between status segments. Two spaces rather than a glyph separator: a
@@ -106,6 +140,10 @@ impl App {
             dirty: true,
             indent_width: None,
             whitespace: Whitespace::default(),
+            parse_worker: None,
+            parsed_revision: None,
+            awaited_generation: None,
+            syntax_theme: typ_core::SyntaxTheme::default(),
         })
     }
 
@@ -128,8 +166,58 @@ impl App {
     /// without one is exactly what most tests want: no watcher thread, no
     /// events arriving from somewhere the test did not ask about.
     pub fn set_event_sender(&mut self, sender: crate::run::AppSender) {
+        self.parse_worker = Some(ParseWorker::spawn(sender.clone()));
         self.sender = Some(sender);
         self.rewatch();
+        // Whatever is already open has never been parsed.
+        self.request_parse_if_stale();
+    }
+
+    /// Ask for a parse if the buffer has changed since the last request.
+    ///
+    /// Called from three places, and the third is the one that is easy to miss
+    /// reading only "after an edit": a buffer opened, an edit, and M2.4's
+    /// external-change reload — which replaces the text without going through
+    /// an `Action` at all. Missing that one leaves a file edited outside TYPE
+    /// showing the previous version's highlights indefinitely.
+    ///
+    /// Cheap enough to call on every event loop pass: a `u64` comparison, and
+    /// nothing at all for a buffer whose extension has no grammar.
+    pub(crate) fn request_parse_if_stale(&mut self) {
+        let Some(language) = self.editor.language() else {
+            return;
+        };
+        let revision = self.editor.buffer().revision();
+        if self.parsed_revision == Some(revision) {
+            return;
+        }
+        let Some(worker) = &mut self.parse_worker else {
+            return;
+        };
+
+        worker.request(language, self.editor.buffer().snapshot());
+        self.parsed_revision = Some(revision);
+        self.awaited_generation = Some(worker.generation());
+    }
+
+    /// A completed parse arrived.
+    ///
+    /// One editor panel exists today, so there is no question of which buffer
+    /// this belongs to. When tabs arrive in M4 the answer becomes a panel id
+    /// on the event rather than a lookup here.
+    pub fn handle_parsed(&mut self, parsed: typ_syntax::Parsed) -> bool {
+        // A tree for text nobody is looking at any more. Dropping it is not a
+        // loss: the buffer that replaced it queued its own parse.
+        if self.editor.language().is_none() {
+            return false;
+        }
+        // Not the parse we are waiting for. It describes a buffer that has
+        // since been replaced, and its byte offsets index text that is gone.
+        if self.awaited_generation != Some(parsed.generation) {
+            return false;
+        }
+        self.editor.set_syntax(parsed.generation, parsed.syntax);
+        true
     }
 
     /// Watch whatever file is open now, and stop watching the last one.
@@ -186,6 +274,11 @@ impl App {
         }
 
         self.editor.reload()?;
+        // `reload` swaps in a fresh `TextBuffer`, so revisions restart and the
+        // comparison in `request_parse_if_stale` would be against a number
+        // from a buffer that no longer exists.
+        self.parsed_revision = None;
+        self.request_parse_if_stale();
         Ok(true)
     }
 
@@ -335,6 +428,10 @@ impl App {
         self.focus = Focus::Editor;
         self.open_pending = None;
         self.rewatch();
+        // A new buffer counts revisions from zero, so this is an invalidation
+        // rather than a comparison.
+        self.parsed_revision = None;
+        self.request_parse_if_stale();
         Ok(())
     }
 
@@ -374,6 +471,16 @@ impl App {
     /// panel branches on depth, and none should — see `config::load_theme`.
     pub fn set_theme(&mut self, theme: ThemeColors) {
         self.theme = theme;
+    }
+
+    /// The syntax half of the theme, also already degraded.
+    ///
+    /// Separate setter rather than a second argument to `set_theme` because
+    /// `ThemeColors` is `Copy` and this is not; keeping them apart is what
+    /// stopped a `BTreeMap` landing inside the palette every render path holds
+    /// by value.
+    pub fn set_syntax_theme(&mut self, syntax: typ_core::SyntaxTheme) {
+        self.syntax_theme = syntax;
     }
 
     /// Route one keypress.
@@ -706,6 +813,7 @@ impl App {
 
         let tree_ctx = RenderContext {
             theme: &self.theme,
+            syntax: &self.syntax_theme,
             is_focused: self.focus == Focus::Tree,
             panel_index: 0,
             terminal_width: w,
@@ -713,6 +821,7 @@ impl App {
         };
         let editor_ctx = RenderContext {
             theme: &self.theme,
+            syntax: &self.syntax_theme,
             is_focused: self.focus == Focus::Editor,
             panel_index: 1,
             terminal_width: w,
@@ -811,6 +920,10 @@ impl App {
 
     pub fn tree_mut(&mut self) -> &mut TreePanel {
         &mut self.tree
+    }
+
+    pub fn editor(&self) -> &EditorPanel {
+        &self.editor
     }
 
     pub fn editor_mut(&mut self) -> &mut EditorPanel {

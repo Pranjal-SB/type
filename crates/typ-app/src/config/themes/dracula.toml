@@ -79,3 +79,24 @@ diagnostic_error = "red"
 diagnostic_warning = "yellow"
 diagnostic_info = "cyan"
 diagnostic_hint = "green"
+
+# Syntax captures, from tree-sitter. Matched by longest defined prefix, so
+# `keyword.control` resolves through `keyword`.
+#
+# Dracula's published mapping, with one substitution: upstream puts keywords,
+# operators and tags on pink, and this palette carries no pink. Red is the
+# nearest warm accent and takes all three, so they still read as one family.
+[syntax]
+keyword = "red"
+function = "green"
+type = "cyan"
+string = "yellow"
+comment = { fg = "comment", modifiers = ["italic"] }
+number = "purple"
+constant = "purple"
+variable = "foreground"
+property = "cyan"
+operator = "red"
+punctuation = "foreground"
+tag = "red"
+attribute = "green"

@@ -178,12 +178,13 @@ fn real_main() -> Result<()> {
     // The line to look at when somebody reports that the colours are wrong.
     typ_app::log_info!("colour depth: {depth:?}, theme: {}", settings.theme);
 
-    let (colors, warning) = typ_app::config::load_theme(
+    let (colors, syntax, warning) = typ_app::config::load_theme(
         typ_app::config::config_dir().as_deref(),
         &settings.theme,
         depth,
     );
     app.set_theme(colors);
+    app.set_syntax_theme(syntax);
     complaints.extend(warning);
 
     if !complaints.is_empty() {
