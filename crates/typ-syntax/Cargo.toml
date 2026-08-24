@@ -1,0 +1,15 @@
+[package]
+name = "typ-syntax"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+ropey.workspace = true
+tree-house.workspace = true
+tree-house-bindings.workspace = true
+tree-sitter-rust.workspace = true
