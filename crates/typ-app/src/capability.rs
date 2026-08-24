@@ -9,7 +9,7 @@
 /// consumes it, because `typ-core` cannot depend on this crate.
 pub use typ_core::Depth;
 
-/// Decide from the two variables that carry the answer.
+/// Decide from the three variables that carry the answer.
 ///
 /// Pure, and every input is an argument, because the alternative is a test that
 /// reads process environment. Environment is global and cargo runs tests in
@@ -35,17 +35,27 @@ pub use typ_core::Depth;
 ///
 /// So the claim is believed, and the escape hatch is a setting rather than a
 /// better guess. `config.toml` gets `color_depth` when it lands.
-pub fn depth_from(colorterm: Option<&str>, term: Option<&str>) -> Depth {
+///
+/// **`wt_session` is Windows Terminal, and it is an unconditional claim.**
+/// Windows Terminal sets `WT_SESSION` to a session GUID and has historically
+/// not set `COLORTERM`, so a stock install fell through to the 256-colour path
+/// and quantised every theme for nothing — on the platform this editor is most
+/// developed on. It renders 24-bit colour and has since it shipped, so the
+/// presence of the variable is enough. oh-my-pi reads it the same way.
+/// Set-but-empty is not a claim, for the same reason it is not one for
+/// `COLORTERM`: scripts export variables unconditionally.
+pub fn depth_from(colorterm: Option<&str>, term: Option<&str>, wt_session: Option<&str>) -> Depth {
     let claims_truecolor = colorterm.is_some_and(|value| {
         value.eq_ignore_ascii_case("truecolor") || value.eq_ignore_ascii_case("24bit")
     });
+    let windows_terminal = wt_session.is_some_and(|value| !value.is_empty());
     // terminfo's convention for a direct-colour entry: `xterm-direct`,
     // `konsole-direct`, `vte-direct`. Unlike a `256color` suffix this is an
     // unambiguous 24-bit claim, and it is the one thing `TERM` says about colour
     // that can be relied on.
     let direct_colour_entry = term.is_some_and(|value| value.contains("-direct"));
 
-    if claims_truecolor || direct_colour_entry {
+    if claims_truecolor || direct_colour_entry || windows_terminal {
         return Depth::TrueColor;
     }
 
@@ -60,9 +70,10 @@ pub fn depth_from(colorterm: Option<&str>, term: Option<&str>) -> Depth {
 /// The only thing here that reads the environment.
 ///
 /// No test covers it, and none should: there is no logic in it beyond handing
-/// two variables to `depth_from`.
+/// three variables to `depth_from`.
 pub fn detect() -> Depth {
     let colorterm = std::env::var("COLORTERM").ok();
     let term = std::env::var("TERM").ok();
-    depth_from(colorterm.as_deref(), term.as_deref())
+    let wt_session = std::env::var("WT_SESSION").ok();
+    depth_from(colorterm.as_deref(), term.as_deref(), wt_session.as_deref())
 }
