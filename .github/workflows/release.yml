@@ -275,7 +275,15 @@ jobs:
           # The tag is the claim; the binary is the evidence. A release whose
           # binary reports a different version than its tag is worse than a
           # failed release, because nothing downstream will notice.
-          test "$got" = "typ ${TAG#v}"
+          #
+          # A prerelease suffix is dropped before comparing: v0.2.6-rc.1 is a
+          # rehearsal of v0.2.6 and has to build the same bytes, so the tree
+          # stays at 0.2.6 across both. Requiring the binary to say "rc.1"
+          # would mean the artifact that was tested is not the artifact that
+          # ships. Everything before the hyphen still has to match, so a tag
+          # cut against the wrong tree fails exactly as before.
+          want="${TAG#v}"
+          test "$got" = "typ ${want%%-*}"
           test -s "$name/THIRD-PARTY-LICENSES.md"
 
       - name: Verify (windows)
@@ -296,7 +304,8 @@ jobs:
           Expand-Archive -Path "$name.zip" -DestinationPath .
           $v = & "./$name/typ.exe" --version
           Write-Host $v
-          $expect = "typ " + $env:TAG.TrimStart("v")
+          # Prerelease suffix dropped, same reasoning as the unix step above.
+          $expect = "typ " + ($env:TAG.TrimStart("v") -split "-")[0]
           if ($v -ne $expect) { throw "version mismatch: '$v' vs '$expect'" }
           if (-not (Test-Path "$name/THIRD-PARTY-LICENSES.md")) { throw "licence notices missing" }
 
