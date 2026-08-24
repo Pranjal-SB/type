@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.2.6, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.2.7, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -70,7 +70,15 @@ single glibc-linked Linux archive that failed on anything older than Ubuntu 24.0
 builds are static musl now, x86_64 and aarch64. Every release downloads its own archives back,
 checks the sums, runs them and asserts the version before it stops being a draft.
 
-No syntax highlighting, no LSP, no tabs or splits yet; see the roadmap. Full history in
+**Code is parsed rather than pattern-matched.** Rust, TOML, JSON, YAML and Markdown are
+highlighted by tree-sitter, with the grammars compiled into the binary — there is no runtime
+directory to find and no C compiler to install. Parsing happens on a worker thread, so a 50k-line
+file highlights without costing a frame, and a fenced code block in a Markdown file is
+highlighted as whatever language the fence names. Every shipped theme carries a `[syntax]` table,
+and capture names fall back through their dotted prefixes, so a theme colours a grammar it has
+never heard of.
+
+No LSP, no tabs or splits yet; see the roadmap. Full history in
 [CHANGELOG.md](CHANGELOG.md).
 
 Every editing primitive is a named action and every key binding is a table row, so a command
@@ -284,14 +292,22 @@ one that plainly did nothing.
 | v0.2.3 | M2.3 | Polish: gutter, truecolor theme, current line, brackets, status segments, `Ctrl+D`, goto-line, logging | shipped |
 | v0.2.4 | M2.4 | Live: wakeable event loop, file watching, damage-driven redraw, resize, save correctness | shipped |
 | v0.2.5 | M2.5 | Colour: themes as files, contrast rubric, capability detection, indent detection, whitespace and indent guides | shipped |
-| v0.2.6 | M2.6 | Ship: static musl and aarch64 Linux builds, one-line installers, self-verifying releases | **current** |
-| v0.2.7 | M2.7 | Parse: tree-sitter highlighting, grammar distribution, `config.toml`, terminal light/dark, kitty keyboard protocol | next |
+| v0.2.6 | M2.6 | Ship: static musl and aarch64 Linux builds, one-line installers, self-verifying releases | shipped |
+| v0.2.7 | M2.7 | Parse: tree-sitter highlighting for five languages, grammars compiled in, syntax themes | **current** |
+| v0.2.8 | M2.8 | Find: fuzzy file picker and project search | next |
 | v0.3.0 | M3 | Code intelligence: LSP client | |
 | v0.4.0 | M4 | Workspace: splits, tabs, sessions, command palette, project search | |
 | v0.5.0 | M5 | Terminal panel and git integration | |
 | v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |
 
 Then: extension host (v1.1), then debugger (v1.2).
+
+Terminal capability work — the kitty keyboard protocol and following the terminal's own
+light/dark — was scoped into M2.7 and cut from it. Getting a reply back from a terminal needs
+an escape parser that reads `ESC ]`, which the current backend does not have, and the shape of
+that fix is still open: a targeted query before the event loop starts, or a backend that parses
+replies properly. It buys polish rather than capability, so it waits for a milestone it does not
+hold up.
 
 **Versioning.** `0.<milestone>.<patch milestone>`: the minor is the milestone number, the
 patch is a correctness milestone landing on top of it. One version for the whole workspace;

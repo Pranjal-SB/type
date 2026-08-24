@@ -230,7 +230,7 @@ under-split. The middle:
 ```
 typ-core/            Panel trait, events, commands, keychord, terminal capabilities
 typ-buffer/          ropey wrapper, undo, multi-cursor, selections
-typ-syntax/          tree-sitter: highlight, folds, indents, injections
+typ-syntax/          tree-sitter: highlight, injections (folds and indents unbuilt)
 typ-lsp/             LSP client — async, multi-server, per-language
 typ-git/             status, diff, blame, hunks
 typ-registry/        filetype -> handler mapping
@@ -244,9 +244,11 @@ typ-app/             event loop, layout, session, palette, fuzzy find
 typ/                 thin binary
 ```
 
-**Two of the fourteen were decided against rather than deferred.** `typ-syntax`, `typ-lsp`,
-`typ-git` and the two remaining panel crates are forward-looking — they arrive with the
-milestone that needs them. `typ-ui` and `typ-config` are different: they were reached for at
+**Two of the fourteen were decided against rather than deferred.** `typ-syntax` arrived at M2.7
+carrying highlighting and injections; folds and indents are still forward-looking, and the crate
+is named here with the contents it was predicted to have rather than the contents it has.
+`typ-lsp`, `typ-git` and the two remaining panel crates are forward-looking entire — they arrive
+with the milestone that needs them. `typ-ui` and `typ-config` are different: they were reached for at
 M2.5 and the seam turned out to fall somewhere else.
 
 `Keymap::merge_toml` lives in `typ-core` beside the type it produces, and theme parsing followed

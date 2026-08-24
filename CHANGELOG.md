@@ -3,6 +3,50 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.2.7] - 2026-08-25 (M2.7, parse)
+
+The editor understands the file it is showing. A tree-sitter grammar parses the buffer on a
+worker thread and the result is painted through the theme, so code is parsed rather than
+pattern-matched.
+
+Scoped larger than it shipped. Terminal capability work — the kitty keyboard protocol, following
+the terminal's own light and dark — was cut: it needs an escape parser that reads replies from
+the terminal, which is a backend question still open, and it buys polish rather than capability.
+
+### Added
+- Syntax highlighting for Rust, TOML, JSON, YAML and Markdown, by tree-sitter.
+- Grammars are compiled into the binary. No runtime directory to locate, no C compiler to
+  install, nothing to fetch — the two failure modes the field's other approaches carry.
+- Parsing runs on a worker thread and coalesces: a burst of typing costs one parse per parse,
+  not one per keystroke, with no debounce timer and so no latency floor on the common case of
+  typing one character and stopping.
+- Injections. A fenced code block in a Markdown file is highlighted as the language its fence
+  names, YAML and TOML frontmatter as themselves, and a paragraph's emphasis and inline code
+  through Markdown's second grammar.
+- A `[syntax]` table in all six shipped themes, thirteen capture names each. Names resolve
+  through their dotted prefixes, so `keyword.control` finds `keyword` and a theme colours a
+  grammar it was never written for.
+- `WT_SESSION` is read as a truecolor claim. Windows Terminal does not set `COLORTERM`, so a
+  stock install had been quantising every theme for nothing.
+- Cold start and time-to-first-highlight are measured, alongside the frame and keystroke budgets
+  that already were.
+
+### Fixed
+- A parse belonging to a buffer that has since been closed is no longer applied to the one that
+  replaced it. Opening a second file before the first finished parsing painted it in the
+  previous file's colours until the next parse landed.
+- Markdown paragraphs reach the inline grammar. The injection query shipped by the grammar crate
+  is written for another editor's defaults, and under this highlighter it produced an empty
+  range: the layer was created and parsed nothing, silently.
+
+### Performance
+- A highlighted frame deep in a 50k-line file: 864 µs, against a 16 ms budget and 511 µs for the
+  same frame unhighlighted.
+- Cold start over a real repository: 7.2 ms, against 100 ms.
+- Loading six grammars and compiling their queries: 102 ms, once per process, on the worker —
+  so it costs latency to the first highlight and nothing at startup.
+- The binary grows from 1.19 MB to 4.87 MB, which is what five compiled-in languages cost.
+
 ## [0.2.6] - 2026-08-24 (M2.6, ship)
 
 The milestone that makes the previous five reachable. v0.2.5 published one Linux archive and it
@@ -257,7 +301,8 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.7
 [0.2.6]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.6
 [0.2.5]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.5
 [0.2.4]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.4
