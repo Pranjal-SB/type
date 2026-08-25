@@ -73,6 +73,7 @@ typ-panel-tree = { path = "crates/typ-panel-tree", version = "0.2.7" }
 typ-app = { path = "crates/typ-app", version = "0.2.7" }
 typ-syntax = { path = "crates/typ-syntax", version = "0.2.7" }
 typ-find = { path = "crates/typ-find", version = "0.2.7" }
+typ-picker = { path = "crates/typ-picker", version = "0.2.7" }
 
 [profile.release]
 opt-level = 3

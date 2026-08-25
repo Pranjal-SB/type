@@ -1953,6 +1953,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "typ-picker"
+version = "0.2.7"
+dependencies = [
+ "crossterm",
+ "ratatui",
+ "typ-core",
+ "typ-find",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "typ-registry"
 version = "0.2.7"
 dependencies = [

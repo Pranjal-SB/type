@@ -1,0 +1,18 @@
+[package]
+name = "typ-picker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Fuzzy file picker and project search overlay for the TYPE terminal IDE"
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+crossterm.workspace = true
+ratatui.workspace = true
+typ-core.workspace = true
+typ-find.workspace = true
+unicode-segmentation.workspace = true
