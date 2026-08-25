@@ -231,6 +231,7 @@ under-split. The middle:
 typ-core/            Panel trait, events, commands, keychord, terminal capabilities
 typ-buffer/          ropey wrapper, undo, multi-cursor, selections
 typ-syntax/          tree-sitter: highlight, injections (folds and indents unbuilt)
+typ-find/            gitignore-aware parallel walk, fuzzy ranking, project search
 typ-lsp/             LSP client — async, multi-server, per-language
 typ-git/             status, diff, blame, hunks
 typ-registry/        filetype -> handler mapping
@@ -238,15 +239,23 @@ typ-ui/              shared ratatui widgets, theme, render helpers   [not built 
 typ-config/          config, keybindings, theme loading              [not built — see below]
 typ-panel-editor/
 typ-panel-tree/
+typ-picker/          the file-picker and project-search overlay
 typ-panel-terminal/
 typ-panel-git/
-typ-app/             event loop, layout, session, palette, fuzzy find
+typ-app/             event loop, layout, session, palette
 typ/                 thin binary
 ```
 
 **Two of the fourteen were decided against rather than deferred.** `typ-syntax` arrived at M2.7
 carrying highlighting and injections; folds and indents are still forward-looking, and the crate
 is named here with the contents it was predicted to have rather than the contents it has.
+
+`typ-find` and `typ-picker` arrived at M2.8 and are **not** on the original list of fourteen —
+this plan put fuzzy find inside `typ-app`, which the dependency graph does not allow. `typ-core`
+names the worker's result type on `AppEvent`, so the walking and ranking half has to sit below
+`typ-core`; the widget implements `Panel`, so it has to sit above. One crate cannot do both, and
+neither half belongs in `typ-app`. The same split, for the same reason, as `typ-syntax` and the
+highlighting inside `typ-panel-editor`.
 `typ-lsp`, `typ-git` and the two remaining panel crates are forward-looking entire — they arrive
 with the milestone that needs them. `typ-ui` and `typ-config` are different: they were reached for at
 M2.5 and the seam turned out to fall somewhere else.

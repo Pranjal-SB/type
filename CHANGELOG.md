@@ -3,6 +3,54 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.2.8] - 2026-08-25 (M2.8, find)
+
+You can reach any file in the project without knowing where it is, and find any string in it
+without leaving the editor. A fuzzy picker floats over the body; a parallel, gitignore-aware walk
+feeds it; ripgrep's searcher answers the second question.
+
+### Added
+- `Ctrl+P` opens a fuzzy file picker over the editor. Type to filter, and the characters that
+  matched are highlighted.
+- `Ctrl+Shift+F` searches the project's text. Results show `path:line` and the matching line;
+  Enter opens the file at that line and column.
+- Both work with the mouse: click a row to open it, wheel to scroll, click away to dismiss.
+- The walk respects `.gitignore`, `.ignore`, nested ignore files and the global one — and applies
+  them outside a git repository too, which `ignore` does not do by default.
+- The file you have open is searched from memory rather than from disk, so a project search finds
+  unsaved edits instead of reporting the previous version of the file.
+- Binary files are skipped, and a very long line is truncated rather than shipped whole.
+- Two new crates: `typ-find` (the walk, the ranking and the search) and `typ-picker` (the widget).
+
+### Changed
+- `PanelEvent::OpenFile`'s `line` and `col` are now honoured. They have been on the event since
+  M1 and nothing read them; harmless while the only producer was the file tree, which always
+  means the top of the file, and wrong the moment a search result names a line.
+- Search, replace and goto-line moved out of `app.rs` into a module of their own. The file was
+  948 lines and this milestone adds overlay ownership and worker plumbing to it.
+
+### Fixed
+- `typ-syntax` shipped in v0.2.7 with no `description`, `keywords` or `categories`. crates.io
+  rejects a package without them, which was discovered during the release rather than before it.
+  A test now checks every crate, and a second checks that every path dependency names the
+  workspace version.
+
+### Performance
+Release build, best of five, on the development machine:
+
+| | |
+|---|---|
+| Rank 50,000 paths, worst-case one-character query | 4.75 ms |
+| Rank 50,000 paths, typical six-character query | 2.60 ms |
+| Walk 10,000 files | 17.8 ms |
+| Search 10,000 files | 10.0 ms |
+| Cold start | 16.4 ms |
+| Binary | 4.93 MB, from 4.88 MB |
+
+The walk is parallel and that is not an optimisation: a serial walk of a 37,586-file tree
+measured 2596 ms against 94.7 ms. Nothing walks at startup — the index is built when the picker
+first opens.
+
 ## [0.2.7] - 2026-08-25 (M2.7, parse)
 
 The editor understands the file it is showing. A tree-sitter grammar parses the buffer on a
@@ -301,7 +349,8 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.7...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.8...HEAD
+[0.2.8]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.8
 [0.2.7]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.7
 [0.2.6]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.6
 [0.2.5]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.5
