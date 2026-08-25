@@ -4,8 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+description = "Tree-sitter parsing and highlight spans for the TYPE terminal IDE"
 repository.workspace = true
 homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 anyhow.workspace = true
