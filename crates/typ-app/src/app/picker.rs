@@ -6,7 +6,7 @@
 //! back in there would undo that in one milestone.
 
 use anyhow::Result;
-use typ_core::{KeyChord, Panel};
+use typ_core::{KeyChord, Panel, PanelEvent};
 use typ_picker::Picker;
 
 use super::App;
@@ -73,17 +73,35 @@ impl App {
         // `CloseSelf` from the overlay means the overlay, not the focused
         // panel. Routing it through `apply` would close the editor or the tree
         // and leave the picker floating over whatever was left.
-        if events.contains(&typ_core::PanelEvent::CloseSelf) {
+        if events.contains(&PanelEvent::CloseSelf) {
             self.close_picker();
             return Ok(());
         }
 
-        // An `OpenFile` closes the overlay too: choosing a file is the other
-        // way out of it, and leaving it up over the file just opened is the
-        // kind of thing that reads as a bug even when every test passes.
-        let opened = events
-            .iter()
-            .any(|event| matches!(event, typ_core::PanelEvent::OpenFile { .. }));
+        // **Candidates are root-relative and `OpenFile` is not.** The picker
+        // holds `src/highlight.rs` because that is what gets ranked — an
+        // absolute path puts the user's home directory in front of every
+        // candidate, wasting the width and giving the matcher a long identical
+        // prefix to score through. The root lives here, so the join happens
+        // here; the panel knowing about filesystems is the thing being avoided.
+        let mut opened = false;
+        let events: Vec<PanelEvent> = events
+            .into_iter()
+            .map(|event| match event {
+                PanelEvent::OpenFile { path, line, col } => {
+                    opened = true;
+                    PanelEvent::OpenFile {
+                        path: self.root.join(path),
+                        line,
+                        col,
+                    }
+                }
+                other => other,
+            })
+            .collect();
+
+        // Choosing a file is the other way out of the overlay. Leaving it up
+        // over the file just opened reads as a bug even when every test passes.
         if opened {
             self.close_picker();
         }

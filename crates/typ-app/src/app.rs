@@ -700,6 +700,7 @@ impl App {
     fn perform_app_action(&mut self, action: Action) -> bool {
         match action {
             Action::FocusNext => self.cycle_focus(),
+            Action::OpenFilePicker => self.open_picker(),
             Action::Quit => self.request_quit(),
             Action::Save => match self.editor.save() {
                 Ok(()) => self.status = Some("Saved.".to_string()),

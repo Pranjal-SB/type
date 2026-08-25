@@ -154,6 +154,7 @@ fn every_default_binding_resolves_to_something_that_handles_it() {
         typ_core::Action::SearchNext,
         typ_core::Action::SearchPrevious,
         typ_core::Action::ReplaceOpen,
+        typ_core::Action::OpenFilePicker,
     ];
 
     let mut a = app("bindings");
