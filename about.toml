@@ -26,6 +26,7 @@ accepted = [
     "Unlicense",
     "WTFPL",
     "MPL-2.0",
+    "BSD-3-Clause",
 ]
 
 # Only what actually ends up in the shipped binary. Build-time and test-only
