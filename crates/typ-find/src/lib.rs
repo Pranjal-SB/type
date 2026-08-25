@@ -6,6 +6,8 @@
 //! must not depend on `typ-core` — not even in dev-dependencies, where the
 //! cycle surfaces as a publish-order failure rather than a build failure.
 
+mod rank;
 mod walk;
 
+pub use rank::{FileHit, rank};
 pub use walk::walk;

@@ -13,3 +13,4 @@ categories.workspace = true
 [dependencies]
 ignore.workspace = true
 nucleo-matcher.workspace = true
+unicode-segmentation.workspace = true

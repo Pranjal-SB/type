@@ -51,7 +51,12 @@ ignore = "0.4"
 # adds a rayon pool and streaming injection; measured here, one thread ranks 50k
 # paths against a 6-character needle in 4.51 ms, and it already runs on a worker.
 # See docs/plans/m2.8-find.md for the numbers.
-nucleo-matcher = "0.3"
+# `unicode-segmentation` is already a default feature; naming it makes the
+# dependency explicit. `Utf32Str`'s indices are grapheme offsets only because
+# that feature collapses each cluster to one char — without it they are char
+# offsets, and typ-find's `to_graphemes` would be silently wrong rather than
+# failing to build. See crates/typ-find/src/rank.rs.
+nucleo-matcher = { version = "0.3", features = ["unicode-segmentation"] }
 # musl-only, and only because it was measured. musl's mallocng cost find_all
 # 2.48x against glibc — 10.2 ms best-of-five against a 16 ms keystroke budget,
 # where glibc managed 4.1 ms. jemalloc puts it back to 4.05 ms. See

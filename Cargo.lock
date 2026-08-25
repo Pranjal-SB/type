@@ -1922,6 +1922,7 @@ version = "0.2.7"
 dependencies = [
  "ignore",
  "nucleo-matcher",
+ "unicode-segmentation",
 ]
 
 [[package]]
