@@ -1878,6 +1878,7 @@ dependencies = [
  "typ-find",
  "typ-panel-editor",
  "typ-panel-tree",
+ "typ-picker",
  "typ-registry",
  "typ-syntax",
  "unicode-segmentation",

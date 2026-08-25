@@ -20,6 +20,7 @@ typ-core.workspace = true
 typ-find.workspace = true
 typ-panel-editor.workspace = true
 typ-panel-tree.workspace = true
+typ-picker.workspace = true
 typ-registry.workspace = true
 typ-syntax.workspace = true
 unicode-segmentation.workspace = true

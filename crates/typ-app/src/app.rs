@@ -3,6 +3,7 @@ use std::path::Path;
 /// Search, replace and goto-line. A child module rather than a sibling so it
 /// reaches `App`'s private fields without any of them widening to `pub(crate)`
 /// — the extraction is meant to shorten this file, not to open it up.
+mod picker;
 mod search;
 
 use anyhow::Result;
@@ -19,6 +20,7 @@ use typ_find::{FileHit, FindWorker, Found};
 use typ_panel_editor::EditorPanel;
 use typ_panel_editor::render::Whitespace;
 use typ_panel_tree::TreePanel;
+use typ_picker::Picker;
 use typ_registry::Registry;
 use typ_syntax::ParseWorker;
 
@@ -130,6 +132,15 @@ pub struct App {
     find_hits: Vec<FileHit>,
     /// The project root, kept so the picker can index it without re-deriving it.
     root: std::path::PathBuf,
+    /// The overlay, when it is up. `None` is the ordinary state.
+    ///
+    /// Not a `Panel` in the panel list: it floats over the body rather than
+    /// tiling beside it, and everything about focus, layout and hit-testing
+    /// treats it as "ahead of the others" rather than "one of them".
+    picker: Option<Picker>,
+    /// Whether a walk has ever been asked for. The corpus survives the picker
+    /// closing, so reopening shows the previous list while the re-walk runs.
+    index_requested: bool,
 }
 
 /// Between status segments. Two spaces rather than a glyph separator: a
@@ -170,6 +181,8 @@ impl App {
             awaited_filter: None,
             find_hits: Vec::new(),
             root: root.to_path_buf(),
+            picker: None,
+            index_requested: false,
         })
     }
 
@@ -287,6 +300,9 @@ impl App {
                     return false;
                 }
                 self.find_hits = hits;
+                if let Some(picker) = self.picker.as_mut() {
+                    picker.set_hits(self.find_hits.clone());
+                }
                 true
             }
         }
@@ -584,6 +600,13 @@ impl App {
     /// until then the raw-key fallback is four lines and invents no vocabulary
     /// that would have to be guessed at now and lived with later.
     pub fn handle_chord(&mut self, chord: KeyChord) -> Result<()> {
+        // The picker owns the keyboard while it is up, ahead of the prompt and
+        // ahead of the keymap — otherwise typing a filename fires every editing
+        // action bound to a letter, which edits the buffer behind the overlay.
+        if self.picker.is_some() {
+            return self.handle_picker_chord(chord);
+        }
+
         // An open prompt owns the keyboard, ahead of everything. Routing
         // through the keymap first would let a chord bound to an editing action
         // fire while the user is typing a search term.
@@ -775,6 +798,30 @@ impl App {
         }
 
         self.render_status(status_area, frame.buffer_mut());
+
+        // The overlay draws last, over the body — after the status bar too, so a
+        // tall picker on a short terminal covers the bar rather than being
+        // clipped by it. `chrome::frame` fills every cell of its rect, which is
+        // what stops the editor showing through.
+        if self.picker.is_some() {
+            let area = crate::layout::picker_area(frame.area());
+            let ctx = RenderContext {
+                theme: &self.theme,
+                syntax: &self.syntax_theme,
+                // Always focused: it owns the keyboard for as long as it is up,
+                // so a dimmed border would be lying about where keys go.
+                is_focused: true,
+                panel_index: 2,
+                terminal_width: w,
+                terminal_height: h,
+            };
+            if let Some(picker) = self.picker.as_mut() {
+                picker.render(area, frame.buffer_mut(), &ctx);
+            }
+            // The overlay has its own text cursor at the end of the query, and
+            // the panel underneath must not also claim one.
+            return;
+        }
 
         // Only the focused panel gets a cursor, and it is the terminal's real
         // one — set after drawing, so it lands on top of the frame. Panels with
