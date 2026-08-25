@@ -86,6 +86,10 @@ pub enum Action {
     SearchNext,
     SearchPrevious,
     ReplaceOpen,
+    /// Open the fuzzy file picker over the body.
+    OpenFilePicker,
+    /// Open the project-search picker over the body.
+    OpenProjectSearch,
     Copy,
     Cut,
     Paste,
@@ -226,6 +230,8 @@ impl Action {
         Action::SearchNext,
         Action::SearchPrevious,
         Action::ReplaceOpen,
+        Action::OpenFilePicker,
+        Action::OpenProjectSearch,
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -300,6 +306,8 @@ impl Action {
             Action::SearchNext => "search_next",
             Action::SearchPrevious => "search_previous",
             Action::ReplaceOpen => "replace_open",
+            Action::OpenFilePicker => "open_file_picker",
+            Action::OpenProjectSearch => "open_project_search",
             Action::Copy => "copy",
             Action::Cut => "cut",
             Action::Paste => "paste",

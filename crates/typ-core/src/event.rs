@@ -23,6 +23,8 @@ pub enum AppEvent {
     /// never" and "cannot, and here is the counter that proves it" are
     /// different claims.
     Parsed(typ_syntax::Parsed),
+    /// A worker finished walking the project, or ranking a query against it.
+    Found(typ_find::Found),
 }
 
 /// So `ParseWorker::spawn` can take the app's own sender.
@@ -34,6 +36,14 @@ pub enum AppEvent {
 impl From<typ_syntax::Parsed> for AppEvent {
     fn from(parsed: typ_syntax::Parsed) -> Self {
         AppEvent::Parsed(parsed)
+    }
+}
+
+/// So `FindWorker::spawn` can take the app's own sender. Same arrangement as
+/// `Parsed` above, and for the same reason: `typ-find` sits below this crate.
+impl From<typ_find::Found> for AppEvent {
+    fn from(found: typ_find::Found) -> Self {
+        AppEvent::Found(found)
     }
 }
 

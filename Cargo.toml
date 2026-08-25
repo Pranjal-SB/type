@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.7"
+version = "0.2.8"
 edition = "2024"
 # Matches rust-toolchain.toml. Without it, someone on an older compiler gets a
 # wall of syntax errors from edition-2024 code and let-chains instead of cargo
@@ -40,6 +40,32 @@ tree-sitter-toml-ng = "0.7"
 tree-sitter-json = "0.24"
 tree-sitter-md = "0.5"
 tree-sitter-yaml = "0.7"
+# ripgrep's walker. Taken for its gitignore semantics — `.gitignore`, `.ignore`,
+# nested ignore files, the global one, negations — which is a specification
+# rather than a pattern match, and for `build_parallel`: a serial walk of a
+# 37,586-file tree measured 2596 ms against the parallel walk's 94.7 ms on this
+# machine. 27x is not an optimisation, it is the difference between a picker and
+# a hang. Its own thread pool is crossbeam-deque, so no rayon enters the graph.
+ignore = "0.4"
+# ripgrep's searcher and regex bridge. Taken for two things that are specs
+# rather than code: binary detection, and correct handling of encodings and line
+# terminators. A project search built on `TextBuffer::find_all` would offer
+# forty matches inside a .png, which is worse than offering none.
+grep-searcher = "0.1"
+grep-regex = "0.1"
+# The `Matcher` trait itself, needed to ask a match for its byte offset.
+# Helix lists all three for the same reason.
+grep-matcher = "0.1"
+# The matcher Helix extracted, without the `nucleo` wrapper around it. `nucleo`
+# adds a rayon pool and streaming injection; measured here, one thread ranks 50k
+# paths against a 6-character needle in 4.51 ms, and it already runs on a worker.
+# See docs/plans/m2.8-find.md for the numbers.
+# `unicode-segmentation` is already a default feature; naming it makes the
+# dependency explicit. `Utf32Str`'s indices are grapheme offsets only because
+# that feature collapses each cluster to one char — without it they are char
+# offsets, and typ-find's `to_graphemes` would be silently wrong rather than
+# failing to build. See crates/typ-find/src/rank.rs.
+nucleo-matcher = { version = "0.3", features = ["unicode-segmentation"] }
 # musl-only, and only because it was measured. musl's mallocng cost find_all
 # 2.48x against glibc — 10.2 ms best-of-five against a 16 ms keystroke budget,
 # where glibc managed 4.1 ms. jemalloc puts it back to 4.05 ms. See
@@ -48,13 +74,15 @@ mimalloc = { version = "0.1", default-features = false }
 
 # Version alongside path: cargo resolves the path locally and publishes the
 # version, and refuses to publish a crate whose dependencies carry only a path.
-typ-core = { path = "crates/typ-core", version = "0.2.7" }
-typ-buffer = { path = "crates/typ-buffer", version = "0.2.7" }
-typ-registry = { path = "crates/typ-registry", version = "0.2.7" }
-typ-panel-editor = { path = "crates/typ-panel-editor", version = "0.2.7" }
-typ-panel-tree = { path = "crates/typ-panel-tree", version = "0.2.7" }
-typ-app = { path = "crates/typ-app", version = "0.2.7" }
-typ-syntax = { path = "crates/typ-syntax", version = "0.2.7" }
+typ-core = { path = "crates/typ-core", version = "0.2.8" }
+typ-buffer = { path = "crates/typ-buffer", version = "0.2.8" }
+typ-registry = { path = "crates/typ-registry", version = "0.2.8" }
+typ-panel-editor = { path = "crates/typ-panel-editor", version = "0.2.8" }
+typ-panel-tree = { path = "crates/typ-panel-tree", version = "0.2.8" }
+typ-app = { path = "crates/typ-app", version = "0.2.8" }
+typ-syntax = { path = "crates/typ-syntax", version = "0.2.8" }
+typ-find = { path = "crates/typ-find", version = "0.2.8" }
+typ-picker = { path = "crates/typ-picker", version = "0.2.8" }
 
 [profile.release]
 opt-level = 3

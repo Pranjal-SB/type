@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.2.7, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.2.8, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -77,6 +77,14 @@ file highlights without costing a frame, and a fenced code block in a Markdown f
 highlighted as whatever language the fence names. Every shipped theme carries a `[syntax]` table,
 and capture names fall back through their dotted prefixes, so a theme colours a grammar it has
 never heard of.
+
+**`Ctrl+P` reaches any file; `Ctrl+Shift+F` finds any string.** The picker floats over the
+editor, ranks paths as you type, and shows which characters matched. The walk respects
+`.gitignore` and runs in parallel — 37,586 files in 95 ms, against 2.6 seconds serial — on a
+worker thread, so nothing walks at startup and the previous results stay on screen while it
+refreshes. Project search is ripgrep's searcher: binary files are skipped, and **the file you
+have open is searched from memory**, so unsaved edits are found rather than missed. Both work
+with the mouse, and Enter on a search result opens the file at that line and column.
 
 No LSP, no tabs or splits yet; see the roadmap. Full history in
 [CHANGELOG.md](CHANGELOG.md).
@@ -293,10 +301,10 @@ one that plainly did nothing.
 | v0.2.4 | M2.4 | Live: wakeable event loop, file watching, damage-driven redraw, resize, save correctness | shipped |
 | v0.2.5 | M2.5 | Colour: themes as files, contrast rubric, capability detection, indent detection, whitespace and indent guides | shipped |
 | v0.2.6 | M2.6 | Ship: static musl and aarch64 Linux builds, one-line installers, self-verifying releases | shipped |
-| v0.2.7 | M2.7 | Parse: tree-sitter highlighting for five languages, grammars compiled in, syntax themes | **current** |
-| v0.2.8 | M2.8 | Find: fuzzy file picker and project search | next |
-| v0.3.0 | M3 | Code intelligence: LSP client | |
-| v0.4.0 | M4 | Workspace: splits, tabs, sessions, command palette, project search | |
+| v0.2.7 | M2.7 | Parse: tree-sitter highlighting for five languages, grammars compiled in, syntax themes | shipped |
+| v0.2.8 | M2.8 | Find: fuzzy file picker and project search | **current** |
+| v0.3.0 | M3 | Code intelligence: LSP client | next |
+| v0.4.0 | M4 | Workspace: splits, tabs, sessions, command palette | |
 | v0.5.0 | M5 | Terminal panel and git integration | |
 | v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |
 

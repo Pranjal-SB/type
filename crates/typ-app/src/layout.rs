@@ -17,6 +17,44 @@ pub fn split_frame(area: Rect) -> (Rect, Rect) {
     (body, status)
 }
 
+/// A `width` by `height` rect centred in `area`, never larger than it.
+///
+/// Clamped rather than assumed to fit. A `Rect` wider than the buffer it is
+/// drawn into panics on the first write, and the terminal really does get this
+/// small — `split` already degrades the sidebar under 60 columns, so a picker
+/// asking for 60 is asking for more than the whole frame on a narrow terminal.
+///
+/// Integer division puts the remainder at the bottom-right, which is the same
+/// bias every other centring in the editor takes.
+pub fn centered(area: Rect, width: u16, height: u16) -> Rect {
+    let width = width.min(area.width);
+    let height = height.min(area.height);
+    Rect::new(
+        area.x + (area.width - width) / 2,
+        area.y + (area.height - height) / 2,
+        width,
+        height,
+    )
+}
+
+/// Where the picker overlay lands in a frame.
+///
+/// One function rather than two call sites doing the same arithmetic: `render`
+/// draws there and `App::areas` hit-tests there, and a one-cell disagreement
+/// between them lands every click a row from the pointer. The gutter learned
+/// this at M2.3 through `chrome::inner`.
+pub fn picker_area(frame: Rect) -> Rect {
+    centered(frame, PICKER_WIDTH, PICKER_HEIGHT)
+}
+
+/// Preferred overlay size, clamped to the frame by `centered`.
+///
+/// Wide enough for a deep path without wrapping, short enough that the file
+/// underneath stays visible — the picker is a way to move around the project,
+/// and hiding it entirely while you do is disorienting.
+pub const PICKER_WIDTH: u16 = 72;
+pub const PICKER_HEIGHT: u16 = 18;
+
 /// Split the body into `(tree_area, editor_area)`.
 ///
 /// A fixed sidebar matches what people arriving from GUI editors expect. On

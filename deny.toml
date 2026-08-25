@@ -29,6 +29,7 @@ allow = [
     "Unlicense",
     "WTFPL",         # terminfo — permissive, if unserious
     "MPL-2.0",       # tree-house — file-scoped copyleft, links into MIT fine
+    "BSD-3-Clause",  # encoding_rs, via grep-searcher — permissive, attribution only
 ]
 confidence-threshold = 0.9
 

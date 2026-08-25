@@ -1,0 +1,19 @@
+[package]
+name = "typ-find"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Project-wide file walking, fuzzy ranking and text search for the TYPE terminal IDE"
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+grep-matcher.workspace = true
+grep-regex.workspace = true
+grep-searcher.workspace = true
+ignore.workspace = true
+nucleo-matcher.workspace = true
+unicode-segmentation.workspace = true

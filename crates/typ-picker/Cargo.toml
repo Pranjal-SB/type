@@ -1,26 +1,18 @@
 [package]
-name = "typ-app"
+name = "typ-picker"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Event loop, layout and dispatch for the TYPE terminal IDE"
+description = "Fuzzy file picker and project search overlay for the TYPE terminal IDE"
 repository.workspace = true
 homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-anyhow.workspace = true
 crossterm.workspace = true
 ratatui.workspace = true
-toml.workspace = true
-typ-buffer.workspace = true
 typ-core.workspace = true
 typ-find.workspace = true
-typ-panel-editor.workspace = true
-typ-panel-tree.workspace = true
-typ-picker.workspace = true
-typ-registry.workspace = true
-typ-syntax.workspace = true
 unicode-segmentation.workspace = true

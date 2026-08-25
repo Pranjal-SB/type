@@ -1,5 +1,11 @@
 use std::path::Path;
 
+/// Search, replace and goto-line. A child module rather than a sibling so it
+/// reaches `App`'s private fields without any of them widening to `pub(crate)`
+/// — the extraction is meant to shorten this file, not to open it up.
+mod picker;
+mod search;
+
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::Rect;
@@ -10,9 +16,11 @@ use typ_buffer::SearchQuery;
 use typ_core::{
     Action, Direction, KeyChord, Keymap, Panel, PanelEvent, RenderContext, ThemeColors,
 };
+use typ_find::{FileHit, FindWorker, Found, LineHit};
 use typ_panel_editor::EditorPanel;
 use typ_panel_editor::render::Whitespace;
 use typ_panel_tree::TreePanel;
+use typ_picker::Picker;
 use typ_registry::Registry;
 use typ_syntax::ParseWorker;
 
@@ -108,6 +116,39 @@ pub struct App {
     /// state: an empty table means every scope lookup misses and the buffer
     /// renders in one colour, exactly as it did before this milestone.
     syntax_theme: typ_core::SyntaxTheme,
+    /// Walks the project and ranks queries against it, off the render thread.
+    ///
+    /// `None` until `set_event_sender`, like `parse_worker` and for the same
+    /// reason: the worker needs somewhere to send results.
+    find_worker: Option<FindWorker>,
+    /// The generation of the only filter result worth applying.
+    ///
+    /// Exact match rather than a floor, the same shape `awaited_generation` uses
+    /// for parses and for the same reason: the worker coalesces, so the newest
+    /// request always runs and always arrives. Anything else was mid-rank when
+    /// the query changed under it.
+    awaited_filter: Option<u64>,
+    /// The visible page of results. Never the corpus — that lives on the worker.
+    find_hits: Vec<FileHit>,
+    /// The visible page of project-search results.
+    ///
+    /// Separate from `find_hits` rather than an enum over the two: the picker
+    /// keeps whichever list belongs to the mode it is in, and a single field
+    /// would mean a late result from one mode overwriting the other's list.
+    grep_hits: Vec<LineHit>,
+    /// False when the last search hit its cap.
+    grep_complete: bool,
+    /// The project root, kept so the picker can index it without re-deriving it.
+    root: std::path::PathBuf,
+    /// The overlay, when it is up. `None` is the ordinary state.
+    ///
+    /// Not a `Panel` in the panel list: it floats over the body rather than
+    /// tiling beside it, and everything about focus, layout and hit-testing
+    /// treats it as "ahead of the others" rather than "one of them".
+    picker: Option<Picker>,
+    /// Whether a walk has ever been asked for. The corpus survives the picker
+    /// closing, so reopening shows the previous list while the re-walk runs.
+    index_requested: bool,
 }
 
 /// Between status segments. Two spaces rather than a glyph separator: a
@@ -144,6 +185,14 @@ impl App {
             parsed_revision: None,
             awaited_generation: None,
             syntax_theme: typ_core::SyntaxTheme::default(),
+            find_worker: None,
+            awaited_filter: None,
+            find_hits: Vec::new(),
+            grep_hits: Vec::new(),
+            grep_complete: true,
+            root: root.to_path_buf(),
+            picker: None,
+            index_requested: false,
         })
     }
 
@@ -167,6 +216,7 @@ impl App {
     /// events arriving from somewhere the test did not ask about.
     pub fn set_event_sender(&mut self, sender: crate::run::AppSender) {
         self.parse_worker = Some(ParseWorker::spawn(sender.clone()));
+        self.find_worker = Some(FindWorker::spawn(sender.clone()));
         self.sender = Some(sender);
         self.rewatch();
         // Whatever is already open has never been parsed.
@@ -218,6 +268,80 @@ impl App {
         }
         self.editor.set_syntax(parsed.generation, parsed.syntax);
         true
+    }
+
+    /// Walk the project and make it the picker's corpus.
+    ///
+    /// **Never called at startup.** Cold start is budgeted at 100 ms and a
+    /// parallel walk of a mid-size projects directory measured 94.7 ms, which
+    /// would spend the entire budget on a list nobody has asked to see yet. The
+    /// picker calls this when it opens.
+    pub fn request_index(&mut self) {
+        if let Some(worker) = &mut self.find_worker {
+            worker.index(self.root.clone());
+        }
+    }
+
+    /// Ask for the best `limit` matches, and return the generation to await.
+    pub fn request_filter(&mut self, query: String, limit: usize) -> u64 {
+        let Some(worker) = &mut self.find_worker else {
+            // No sender wired up, which is most tests. Advance the counter
+            // anyway so a caller comparing two generations still sees them
+            // differ — returning 0 twice would make a staleness test pass by
+            // accident.
+            self.awaited_filter = Some(self.awaited_filter.unwrap_or(0) + 1);
+            return self.awaited_filter.expect("just set");
+        };
+        let generation = worker.filter(query, limit);
+        self.awaited_filter = Some(generation);
+        generation
+    }
+
+    /// A find result arrived. Returns whether anything changed on screen.
+    pub fn handle_found(&mut self, found: Found) -> bool {
+        match found {
+            // Answers no query, so it carries no generation to check against.
+            // Filtering it through the staleness test below would drop every
+            // walk that landed while a filter was outstanding.
+            Found::Indexed { .. } => true,
+            Found::Lines {
+                generation,
+                hits,
+                complete,
+            } => {
+                if self.awaited_filter != Some(generation) {
+                    return false;
+                }
+                self.grep_hits = hits;
+                self.grep_complete = complete;
+                self.push_hits_to_picker();
+                true
+            }
+            Found::Files { generation, hits } => {
+                if self.awaited_filter != Some(generation) {
+                    // A ranking for a query the user has already typed past.
+                    return false;
+                }
+                self.find_hits = hits;
+                self.push_hits_to_picker();
+                true
+            }
+        }
+    }
+
+    /// The visible page of find results.
+    pub fn find_hits(&self) -> &[FileHit] {
+        &self.find_hits
+    }
+
+    /// The visible page of project-search results.
+    pub fn grep_hits(&self) -> &[LineHit] {
+        &self.grep_hits
+    }
+
+    /// Whether the last project search ran to completion.
+    pub fn grep_complete(&self) -> bool {
+        self.grep_complete
     }
 
     /// Watch whatever file is open now, and stop watching the last one.
@@ -507,6 +631,13 @@ impl App {
     /// until then the raw-key fallback is four lines and invents no vocabulary
     /// that would have to be guessed at now and lived with later.
     pub fn handle_chord(&mut self, chord: KeyChord) -> Result<()> {
+        // The picker owns the keyboard while it is up, ahead of the prompt and
+        // ahead of the keymap — otherwise typing a filename fires every editing
+        // action bound to a letter, which edits the buffer behind the overlay.
+        if self.picker.is_some() {
+            return self.handle_picker_chord(chord);
+        }
+
         // An open prompt owns the keyboard, ahead of everything. Routing
         // through the keymap first would let a chord bound to an editing action
         // fire while the user is typing a search term.
@@ -592,157 +723,6 @@ impl App {
         self.status = Some(message);
     }
 
-    /// Keys while a prompt is open.
-    fn handle_prompt_chord(&mut self, chord: KeyChord) -> Result<()> {
-        // Decide first, mutate second. Holding `self.prompt.as_mut()` across an
-        // assignment to `self.prompt` does not compile, and threading the
-        // borrow through every arm is worse than naming the outcome.
-        enum Outcome {
-            Stay,
-            Close,
-            Search(String),
-            AskReplacement(String),
-            Replace { needle: String, replacement: String },
-            Goto(String),
-        }
-
-        // A chord is never text, in the prompt exactly as in the buffer —
-        // otherwise Ctrl+F while searching types an "f" into the needle.
-        let is_chorded = chord
-            .raw
-            .modifiers
-            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
-
-        let Some(prompt) = self.prompt.as_mut() else {
-            return Ok(());
-        };
-
-        let outcome = match chord.raw.code {
-            KeyCode::Esc => Outcome::Close,
-            KeyCode::Backspace if !is_chorded => {
-                prompt.delete_backward();
-                Outcome::Stay
-            }
-            KeyCode::Char(c) if !is_chorded => {
-                prompt.insert_char(c);
-                Outcome::Stay
-            }
-            KeyCode::Enter => {
-                let input = prompt.take_input();
-                match prompt.kind() {
-                    // Ctrl+H's first Enter banks the needle and asks the second
-                    // question; the prompt stays open across both.
-                    PromptKind::Search if prompt.is_replace_flow() => {
-                        Outcome::AskReplacement(input)
-                    }
-                    PromptKind::Search => Outcome::Search(input),
-                    PromptKind::Replace => Outcome::Replace {
-                        needle: prompt.pending_needle().unwrap_or_default().to_string(),
-                        replacement: input,
-                    },
-                    PromptKind::GotoLine => Outcome::Goto(input),
-                }
-            }
-            _ => Outcome::Stay,
-        };
-
-        match outcome {
-            Outcome::Stay => {}
-            Outcome::Close => self.prompt = None,
-            Outcome::Search(needle) => {
-                self.prompt = None;
-                self.run_search(needle);
-            }
-            Outcome::AskReplacement(needle) => {
-                if let Some(prompt) = self.prompt.as_mut() {
-                    prompt.set_pending_needle(needle);
-                    prompt.become_replace();
-                }
-            }
-            Outcome::Replace {
-                needle,
-                replacement,
-            } => {
-                self.prompt = None;
-                self.run_replace_all(&needle, &replacement);
-            }
-            Outcome::Goto(input) => {
-                if input.is_empty() {
-                    // Answering nothing is answering "never mind".
-                    self.prompt = None;
-                } else if let Some(line) = parse_line_number(&input) {
-                    self.prompt = None;
-                    self.editor.goto_line(line);
-                } else {
-                    // Rejected, and the prompt stays open with the input still
-                    // in it: closing on a typo throws the answer away and makes
-                    // the user reopen and retype it.
-                    self.status = Some(format!("Not a line number: {input}"));
-                    if let Some(prompt) = self.prompt.as_mut() {
-                        prompt.restore_input(input);
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Select the first match at or after the cursor, wrapping.
-    fn run_search(&mut self, needle: String) {
-        if needle.is_empty() {
-            return;
-        }
-        // Case-insensitive unless the user typed a capital — "smart case",
-        // which is what makes a lowercase search find everything without a
-        // setting, and a capitalised one mean it.
-        let case_sensitive = needle.chars().any(char::is_uppercase);
-        let query = SearchQuery::new(needle, case_sensitive);
-        self.last_query = Some(query.clone());
-        self.jump_to_match(&query, Direction::Forward);
-    }
-
-    fn jump_to_match(&mut self, query: &SearchQuery, direction: Direction) {
-        let hits = self.editor.buffer_find_all(query);
-        if hits.is_empty() {
-            self.status = Some(format!("No matches for {}", query.needle));
-            return;
-        }
-        let from = self.editor.cursor();
-        let next = match direction {
-            // `>=`, not `>`: opening a search with the cursor at the top of the
-            // file must find a match that starts there. Jumping leaves the
-            // cursor at the match's *end*, so repeating never re-finds the one
-            // it is sitting on.
-            Direction::Forward => hits
-                .iter()
-                .find(|hit| hit.range().0 >= from)
-                .or_else(|| hits.first()),
-            Direction::Backward => hits
-                .iter()
-                .rev()
-                .find(|hit| hit.range().1 < from)
-                .or_else(|| hits.last()),
-        };
-        if let Some(hit) = next.copied() {
-            self.editor.select_range(hit);
-            self.status = Some(format!("{} matches", hits.len()));
-        }
-    }
-
-    fn run_replace_all(&mut self, needle: &str, replacement: &str) {
-        if needle.is_empty() {
-            return;
-        }
-        let case_sensitive = needle.chars().any(char::is_uppercase);
-        let query = SearchQuery::new(needle.to_string(), case_sensitive);
-        let count = self.editor.replace_all(&query, replacement);
-        self.status = Some(match count {
-            0 => format!("No matches for {needle}"),
-            1 => "1 replacement".to_string(),
-            n => format!("{n} replacements"),
-        });
-    }
-
     /// Actions no panel claimed. Returns whether the app handled it.
     ///
     /// The bool is what lets an unclaimed action fall through to the raw key
@@ -751,6 +731,8 @@ impl App {
     fn perform_app_action(&mut self, action: Action) -> bool {
         match action {
             Action::FocusNext => self.cycle_focus(),
+            Action::OpenFilePicker => self.open_picker(),
+            Action::OpenProjectSearch => self.open_search(),
             Action::Quit => self.request_quit(),
             Action::Save => match self.editor.save() {
                 Ok(()) => self.status = Some("Saved.".to_string()),
@@ -791,7 +773,18 @@ impl App {
         for event in events {
             match event {
                 PanelEvent::Quit => self.request_quit(),
-                PanelEvent::OpenFile { path, .. } | PanelEvent::OpenWith { path, .. } => {
+                PanelEvent::OpenFile { path, line, col } => {
+                    self.open_path(&path)?;
+                    // **The event has carried `line` and `col` since M1 and
+                    // nothing read them until M2.8.** Harmless while the only
+                    // producer was the file tree, which always means the top of
+                    // the file; a project-search result that opens at line 0 has
+                    // thrown away the only thing the search found out.
+                    if line > 0 || col > 0 {
+                        self.editor.goto(line, col);
+                    }
+                }
+                PanelEvent::OpenWith { path, .. } => {
                     self.open_path(&path)?;
                 }
                 // Redraw happens every loop pass in the walking skeleton.
@@ -849,6 +842,30 @@ impl App {
         }
 
         self.render_status(status_area, frame.buffer_mut());
+
+        // The overlay draws last, over the body — after the status bar too, so a
+        // tall picker on a short terminal covers the bar rather than being
+        // clipped by it. `chrome::frame` fills every cell of its rect, which is
+        // what stops the editor showing through.
+        if self.picker.is_some() {
+            let area = crate::layout::picker_area(frame.area());
+            let ctx = RenderContext {
+                theme: &self.theme,
+                syntax: &self.syntax_theme,
+                // Always focused: it owns the keyboard for as long as it is up,
+                // so a dimmed border would be lying about where keys go.
+                is_focused: true,
+                panel_index: 2,
+                terminal_width: w,
+                terminal_height: h,
+            };
+            if let Some(picker) = self.picker.as_mut() {
+                picker.render(area, frame.buffer_mut(), &ctx);
+            }
+            // The overlay has its own text cursor at the end of the query, and
+            // the panel underneath must not also claim one.
+            return;
+        }
 
         // Only the focused panel gets a cursor, and it is the terminal's real
         // one — set after drawing, so it lands on top of the frame. Panels with
@@ -936,13 +953,4 @@ impl App {
             Focus::Editor => &mut self.editor,
         }
     }
-}
-
-/// A 1-based line number typed into the goto prompt, as a 0-based index.
-///
-/// Line 0 is line 1: a user who types `0` means the top of the file, and there
-/// is no other thing they could have meant.
-fn parse_line_number(input: &str) -> Option<usize> {
-    let n: usize = input.trim().parse().ok()?;
-    Some(n.saturating_sub(1))
 }

@@ -198,6 +198,12 @@ fn scroll_step(app: &mut App, m: MouseEvent, delta: i32, area: Rect) -> Result<F
 
 /// Send a scroll to whichever panel the pointer is over.
 fn route_scroll(app: &mut App, m: MouseEvent, delta: i32, area: Rect) -> Vec<PanelEvent> {
+    // The overlay first, wherever the pointer is. A wheel while the picker is
+    // up scrolls the picker — scrolling the file underneath a modal is what
+    // every other program treats as a bug.
+    if app.picker().is_some() {
+        return app.route_picker_scroll(delta, area);
+    }
     let (tree_area, editor_area) = app.areas(area);
     if m.column < tree_area.width {
         app.tree_mut().handle_scroll(delta, tree_area)
@@ -249,6 +255,7 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
     match event {
         AppEvent::FileChanged(path) => changed = app.handle_external_change(&path)?,
         AppEvent::Parsed(parsed) => changed = app.handle_parsed(parsed),
+        AppEvent::Found(found) => changed = app.handle_found(found),
         AppEvent::Input(input) => match input {
             // Every binding lives in the keymap now, so there is nothing left
             // here to special-case. The dispatcher owns the order.
@@ -270,6 +277,14 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
                 if matches!(m.kind, MouseEventKind::Moved) {
                     changed = false;
                 }
+                // The overlay is ahead of both panels, because it is drawn
+                // over them: a click that lands on the picker must not also
+                // reach whatever it is floating above.
+                if app.picker().is_some() {
+                    events = app.route_picker_mouse(m, area);
+                    return finish(app, events, changed);
+                }
+
                 let (tree_area, editor_area) = app.areas(area);
                 let in_tree = m.column < tree_area.width;
 

@@ -59,3 +59,37 @@ fn every_crate_declares_what_crates_io_requires() {
         missing.join("\n  ")
     );
 }
+
+#[test]
+fn every_path_dependency_names_the_workspace_version() {
+    // A path dependency carries a version because cargo refuses to publish a
+    // crate whose dependencies are path-only — and a *stale* one publishes a
+    // package that cannot resolve, which is only discovered by a stranger
+    // trying to install it.
+    //
+    // The bump is a search-and-replace across nine lines and it has already
+    // been done wrong once: a regex that stopped at the first hyphen left
+    // `typ-panel-editor` and `typ-panel-tree` a version behind while the other
+    // seven moved.
+    let manifest = fs::read_to_string(workspace_root().join("Cargo.toml")).expect("root manifest");
+
+    let workspace_version = manifest
+        .lines()
+        .find_map(|line| line.strip_prefix("version = "))
+        .expect("[workspace.package] version")
+        .trim()
+        .trim_matches('"')
+        .to_string();
+
+    let stale: Vec<&str> = manifest
+        .lines()
+        .filter(|line| line.contains("path = \"crates/"))
+        .filter(|line| !line.contains(&format!("version = \"{workspace_version}\"")))
+        .collect();
+
+    assert!(
+        stale.is_empty(),
+        "these path dependencies are not at {workspace_version}:\n  {}",
+        stale.join("\n  ")
+    );
+}

@@ -247,6 +247,12 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("ctrl+tab", Action::FocusNext),
     ("ctrl+g", Action::GotoLine),
     ("ctrl+f", Action::SearchOpen),
+    // Ctrl+P is where every GUI editor puts "go to file", and it was the one
+    // chord in that family still unbound.
+    ("ctrl+p", Action::OpenFilePicker),
+    // Ctrl+Shift+F beside Ctrl+F, the same relationship VS Code uses: the
+    // buffer, then the project.
+    ("ctrl+shift+f", Action::OpenProjectSearch),
     ("f3", Action::SearchNext),
     ("shift+f3", Action::SearchPrevious),
     ("ctrl+h", Action::ReplaceOpen),
