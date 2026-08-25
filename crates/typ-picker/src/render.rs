@@ -23,8 +23,10 @@ pub(crate) fn draw(picker: &mut Picker, area: Rect, buf: &mut Buffer, ctx: &Rend
         return;
     }
 
-    // Row 0 is the query, row 1 the rule, the rest is the list.
-    let list_rows = inner.height.saturating_sub(2) as usize;
+    // Row 0 is the query, row 1 the rule, the rest is the list. Asked of
+    // `Picker` against the *outer* rect so render, the hit-test and the scroll
+    // cannot disagree by a row.
+    let list_rows = Picker::list_rows(area);
     // Settle the offset once, here, where the height is known. Everything below
     // reads it.
     picker.visible(list_rows);

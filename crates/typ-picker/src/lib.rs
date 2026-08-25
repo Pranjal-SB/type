@@ -16,7 +16,7 @@
 
 use std::any::Any;
 
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
@@ -143,6 +143,28 @@ impl Picker {
         }
     }
 
+    /// How many rows of list fit in `panel_area`.
+    ///
+    /// Two rows to the border, one to the query, one to the rule. **The single
+    /// place that arithmetic lives** — render, the hit-test and the scroll all
+    /// ask here, because three copies of "minus four" is three chances for one
+    /// of them to drift and land every click a row from the pointer.
+    pub fn list_rows(panel_area: Rect) -> usize {
+        panel_area.height.saturating_sub(4) as usize
+    }
+
+    /// Which list row a screen `y` falls on, if any.
+    ///
+    /// `None` for the border, the query line and the rule — parts of the
+    /// overlay that are not results.
+    fn row_at(&self, y: u16, panel_area: Rect) -> Option<usize> {
+        let first = panel_area.y.checked_add(3)?;
+        if y < first || y >= panel_area.bottom().saturating_sub(1) {
+            return None;
+        }
+        Some((y - first) as usize)
+    }
+
     fn insert(&mut self, c: char) {
         self.query.push(c);
     }
@@ -208,6 +230,53 @@ impl Panel for Picker {
             KeyCode::End => self.move_selection(self.hits.len() as isize),
             _ => return Vec::new(),
         }
+        vec![PanelEvent::NeedsRedraw]
+    }
+
+    /// Invariant 8: a click does what Enter does, a wheel does what Up and Down
+    /// do.
+    fn handle_mouse(&mut self, event: MouseEvent, panel_area: Rect) -> Vec<PanelEvent> {
+        if !matches!(event.kind, MouseEventKind::Down(MouseButton::Left)) {
+            return Vec::new();
+        }
+
+        let (x, y) = (event.column, event.row);
+        let inside = x >= panel_area.x
+            && x < panel_area.right()
+            && y >= panel_area.y
+            && y < panel_area.bottom();
+        if !inside {
+            // Every GUI picker closes on a click away from it, and a modal
+            // whose only exit is the keyboard is what invariant 8 exists to
+            // prevent.
+            return vec![PanelEvent::CloseSelf];
+        }
+
+        let Some(row) = self.row_at(y, panel_area) else {
+            // The border, the query line or the rule. All part of the overlay,
+            // so not a dismissal, and none of them is a result.
+            return Vec::new();
+        };
+
+        // **Against the offset, not the whole list.** Clicking the third
+        // visible row after scrolling must open the third visible file, not the
+        // third file in the project — a distinction that is invisible until
+        // someone scrolls, which is why it has a test of its own.
+        let index = self.offset + row;
+        let Some(hit) = self.hits.get(index) else {
+            // A blank row below the last result.
+            return Vec::new();
+        };
+        self.selected = index;
+        vec![PanelEvent::OpenFile {
+            path: hit.path.clone().into(),
+            line: 0,
+            col: 0,
+        }]
+    }
+
+    fn handle_scroll(&mut self, delta: i32, panel_area: Rect) -> Vec<PanelEvent> {
+        self.scroll(delta as isize, Self::list_rows(panel_area));
         vec![PanelEvent::NeedsRedraw]
     }
 

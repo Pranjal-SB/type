@@ -50,6 +50,70 @@ impl App {
         self.index_requested
     }
 
+    /// A click while the overlay is up.
+    ///
+    /// Hit-tested against `layout::picker_area`, the same function `render`
+    /// draws with, so the two cannot drift apart.
+    pub fn route_picker_mouse(
+        &mut self,
+        event: crossterm::event::MouseEvent,
+        frame: ratatui::layout::Rect,
+    ) -> Vec<PanelEvent> {
+        let area = crate::layout::picker_area(frame);
+        let Some(picker) = self.picker.as_mut() else {
+            return Vec::new();
+        };
+        let events = picker.handle_mouse(event, area);
+
+        if events.contains(&PanelEvent::CloseSelf) {
+            self.close_picker();
+            return vec![PanelEvent::NeedsRedraw];
+        }
+        self.dirty = true;
+        self.absolutise(events)
+    }
+
+    /// A wheel notch while the overlay is up.
+    pub fn route_picker_scroll(
+        &mut self,
+        delta: i32,
+        frame: ratatui::layout::Rect,
+    ) -> Vec<PanelEvent> {
+        let area = crate::layout::picker_area(frame);
+        match self.picker.as_mut() {
+            Some(picker) => picker.handle_scroll(delta, area),
+            None => Vec::new(),
+        }
+    }
+
+    /// Rewrite root-relative candidate paths into ones the app can open, and
+    /// close the overlay if one of them is a choice.
+    ///
+    /// Shared by the key and the mouse routes — invariant 8 means both produce
+    /// the same `OpenFile`, and two copies of this join is two chances for one
+    /// of them to be wrong.
+    fn absolutise(&mut self, events: Vec<PanelEvent>) -> Vec<PanelEvent> {
+        let mut opened = false;
+        let events: Vec<PanelEvent> = events
+            .into_iter()
+            .map(|event| match event {
+                PanelEvent::OpenFile { path, line, col } => {
+                    opened = true;
+                    PanelEvent::OpenFile {
+                        path: self.root.join(path),
+                        line,
+                        col,
+                    }
+                }
+                other => other,
+            })
+            .collect();
+        if opened {
+            self.close_picker();
+        }
+        events
+    }
+
     /// Keys while the overlay is up.
     ///
     /// **The query is compared before and after rather than reported by the
@@ -84,27 +148,10 @@ impl App {
         // candidate, wasting the width and giving the matcher a long identical
         // prefix to score through. The root lives here, so the join happens
         // here; the panel knowing about filesystems is the thing being avoided.
-        let mut opened = false;
-        let events: Vec<PanelEvent> = events
-            .into_iter()
-            .map(|event| match event {
-                PanelEvent::OpenFile { path, line, col } => {
-                    opened = true;
-                    PanelEvent::OpenFile {
-                        path: self.root.join(path),
-                        line,
-                        col,
-                    }
-                }
-                other => other,
-            })
-            .collect();
-
-        // Choosing a file is the other way out of the overlay. Leaving it up
-        // over the file just opened reads as a bug even when every test passes.
-        if opened {
-            self.close_picker();
-        }
+        //
+        // Choosing a file also closes the overlay: leaving it up over the file
+        // just opened reads as a bug even when every test passes.
+        let events = self.absolutise(events);
         self.apply(events)
     }
 }
