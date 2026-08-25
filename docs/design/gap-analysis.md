@@ -2,8 +2,8 @@
 type: design
 status: living
 area: audit
-verified: 2026-08-24
-verified-against: v0.2.6
+verified: 2026-08-25
+verified-against: v0.2.7
 ---
 
 # Gap analysis — TYPE against itself and against the field
@@ -207,7 +207,7 @@ editors set the *achievable* bar and show which capabilities survive the transla
 | Language | Rust | Rust | Rust | Go | Rust |
 | Modal | yes (Kakoune) | optional vim | no | no | **no** |
 | Mouse parity | afterthought | good | partial | partial | **peer, by rule** |
-| Highlighting | tree-sitter | tree-sitter, 22 langs | tree-sitter + syntect | regex (chroma) | **none yet** |
+| Highlighting | tree-sitter | tree-sitter, 22 langs | tree-sitter + syntect | regex (chroma) | **tree-sitter, 5 langs** |
 | LSP | yes | yes | yes | hand-rolled | no |
 | DAP | no | no | partial | no | planned v1.2 |
 | Terminal panel | **no** | yes | yes | yes | planned M5 |

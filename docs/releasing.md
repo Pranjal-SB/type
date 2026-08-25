@@ -89,10 +89,11 @@ first two would each have landed on a permanent tag.
 
 ## 4. Publish to crates.io
 
-Seven crates, and **the order is a dependency order** — cargo will not accept a crate whose
+Eight crates, and **the order is a dependency order** — cargo will not accept a crate whose
 dependencies are not already on the registry at the version it names:
 
 ```
+cargo publish -p typ-syntax
 cargo publish -p typ-core
 cargo publish -p typ-buffer
 cargo publish -p typ-registry
@@ -102,8 +103,12 @@ cargo publish -p typ-app
 cargo publish -p typ-editor
 ```
 
-`typ-core` and `typ-buffer` have no internal dependencies and can go in either order; every
-line after them depends on something above it. The registry takes a moment to index each one,
+`typ-syntax` goes **first**, ahead of `typ-core`, which is the one position that is easy to get
+wrong: it arrived at M2.7 and looks like a leaf, but `typ-core`'s `AppEvent::Parsed` carries a
+`typ_syntax::Parsed`, so it is the bottom of the graph rather than the top. It depends on nothing
+of TYPE's in either dependency table — deliberately, because a dev-dependency back onto `typ-core`
+would build locally and fail here. `typ-buffer` has no internal dependencies either and can swap
+with `typ-core`; every line after them depends on something above it. The registry takes a moment to index each one,
 so a failure on the next line usually means "wait and retry", not "wrong order".
 
 `typ-editor` is the package that carries the `typ` binary, and it goes last.
