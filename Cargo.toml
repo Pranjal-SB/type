@@ -40,6 +40,18 @@ tree-sitter-toml-ng = "0.7"
 tree-sitter-json = "0.24"
 tree-sitter-md = "0.5"
 tree-sitter-yaml = "0.7"
+# ripgrep's walker. Taken for its gitignore semantics — `.gitignore`, `.ignore`,
+# nested ignore files, the global one, negations — which is a specification
+# rather than a pattern match, and for `build_parallel`: a serial walk of a
+# 37,586-file tree measured 2596 ms against the parallel walk's 94.7 ms on this
+# machine. 27x is not an optimisation, it is the difference between a picker and
+# a hang. Its own thread pool is crossbeam-deque, so no rayon enters the graph.
+ignore = "0.4"
+# The matcher Helix extracted, without the `nucleo` wrapper around it. `nucleo`
+# adds a rayon pool and streaming injection; measured here, one thread ranks 50k
+# paths against a 6-character needle in 4.51 ms, and it already runs on a worker.
+# See docs/plans/m2.8-find.md for the numbers.
+nucleo-matcher = "0.3"
 # musl-only, and only because it was measured. musl's mallocng cost find_all
 # 2.48x against glibc — 10.2 ms best-of-five against a 16 ms keystroke budget,
 # where glibc managed 4.1 ms. jemalloc puts it back to 4.05 ms. See
