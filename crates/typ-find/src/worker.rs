@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
 use std::thread;
 
-use crate::{FileHit, rank, walk};
+use crate::{FileHit, LineHit, rank, search, walk};
 
 /// A result on its way back to whoever asked.
 ///
@@ -33,6 +33,14 @@ pub enum Found {
     Indexed { count: usize },
     /// Ranked candidates for one query.
     Files { generation: u64, hits: Vec<FileHit> },
+    /// Lines matching a project search.
+    Lines {
+        generation: u64,
+        hits: Vec<LineHit>,
+        /// False when the cap stopped the search early, so the picker can say
+        /// so rather than implying the project holds exactly this many.
+        complete: bool,
+    },
 }
 
 /// A unit of work the thread has not started yet.
@@ -44,6 +52,14 @@ enum Job {
         generation: u64,
         query: String,
         limit: usize,
+    },
+    Grep {
+        generation: u64,
+        root: PathBuf,
+        query: String,
+        limit: usize,
+        /// Open buffers, searched from memory instead of from disk.
+        overrides: Vec<(PathBuf, String)>,
     },
 }
 
@@ -84,6 +100,7 @@ impl FindWorker {
                     // previous corpus.
                     let mut index: Option<PathBuf> = None;
                     let mut filter: Option<(u64, String, usize)> = None;
+                    let mut grep: Option<Job> = None;
                     for job in std::iter::once(job).chain(std::iter::from_fn(|| rx.try_recv().ok()))
                     {
                         match job {
@@ -93,6 +110,7 @@ impl FindWorker {
                                 query,
                                 limit,
                             } => filter = Some((generation, query, limit)),
+                            job @ Job::Grep { .. } => grep = Some(job),
                         }
                     }
 
@@ -119,6 +137,27 @@ impl FindWorker {
                             .is_err()
                         {
                             // The app is gone. So is the reason to keep ranking.
+                            break;
+                        }
+                    }
+
+                    if let Some(Job::Grep {
+                        generation,
+                        root,
+                        query,
+                        limit,
+                        overrides,
+                    }) = grep
+                    {
+                        let found = search(&root, &query, limit, &overrides);
+                        if results
+                            .send(E::from(Found::Lines {
+                                generation,
+                                hits: found.hits,
+                                complete: found.complete,
+                            }))
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -150,6 +189,30 @@ impl FindWorker {
             generation,
             query,
             limit,
+        });
+        generation
+    }
+
+    /// Search the project's text. Never blocks.
+    ///
+    /// Its own generation counter, shared with `filter`: the two modes are
+    /// mutually exclusive in the picker, and one counter means a late file
+    /// result can never be mistaken for a search result of the same number.
+    pub fn grep(
+        &mut self,
+        root: PathBuf,
+        query: String,
+        limit: usize,
+        overrides: Vec<(PathBuf, String)>,
+    ) -> u64 {
+        self.generation += 1;
+        let generation = self.generation;
+        self.send(Job::Grep {
+            generation,
+            root,
+            query,
+            limit,
+            overrides,
         });
         generation
     }

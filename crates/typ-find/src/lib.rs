@@ -7,9 +7,11 @@
 //! cycle surfaces as a publish-order failure rather than a build failure.
 
 mod rank;
+mod search;
 mod walk;
 mod worker;
 
 pub use rank::{FileHit, rank};
+pub use search::{LineHit, Search, search};
 pub use walk::walk;
 pub use worker::{FindWorker, Found};

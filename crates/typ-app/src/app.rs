@@ -16,7 +16,7 @@ use typ_buffer::SearchQuery;
 use typ_core::{
     Action, Direction, KeyChord, Keymap, Panel, PanelEvent, RenderContext, ThemeColors,
 };
-use typ_find::{FileHit, FindWorker, Found};
+use typ_find::{FileHit, FindWorker, Found, LineHit};
 use typ_panel_editor::EditorPanel;
 use typ_panel_editor::render::Whitespace;
 use typ_panel_tree::TreePanel;
@@ -130,6 +130,14 @@ pub struct App {
     awaited_filter: Option<u64>,
     /// The visible page of results. Never the corpus — that lives on the worker.
     find_hits: Vec<FileHit>,
+    /// The visible page of project-search results.
+    ///
+    /// Separate from `find_hits` rather than an enum over the two: the picker
+    /// keeps whichever list belongs to the mode it is in, and a single field
+    /// would mean a late result from one mode overwriting the other's list.
+    grep_hits: Vec<LineHit>,
+    /// False when the last search hit its cap.
+    grep_complete: bool,
     /// The project root, kept so the picker can index it without re-deriving it.
     root: std::path::PathBuf,
     /// The overlay, when it is up. `None` is the ordinary state.
@@ -180,6 +188,8 @@ impl App {
             find_worker: None,
             awaited_filter: None,
             find_hits: Vec::new(),
+            grep_hits: Vec::new(),
+            grep_complete: true,
             root: root.to_path_buf(),
             picker: None,
             index_requested: false,
@@ -294,15 +304,26 @@ impl App {
             // Filtering it through the staleness test below would drop every
             // walk that landed while a filter was outstanding.
             Found::Indexed { .. } => true,
+            Found::Lines {
+                generation,
+                hits,
+                complete,
+            } => {
+                if self.awaited_filter != Some(generation) {
+                    return false;
+                }
+                self.grep_hits = hits;
+                self.grep_complete = complete;
+                self.push_hits_to_picker();
+                true
+            }
             Found::Files { generation, hits } => {
                 if self.awaited_filter != Some(generation) {
                     // A ranking for a query the user has already typed past.
                     return false;
                 }
                 self.find_hits = hits;
-                if let Some(picker) = self.picker.as_mut() {
-                    picker.set_hits(self.find_hits.clone());
-                }
+                self.push_hits_to_picker();
                 true
             }
         }
@@ -311,6 +332,16 @@ impl App {
     /// The visible page of find results.
     pub fn find_hits(&self) -> &[FileHit] {
         &self.find_hits
+    }
+
+    /// The visible page of project-search results.
+    pub fn grep_hits(&self) -> &[LineHit] {
+        &self.grep_hits
+    }
+
+    /// Whether the last project search ran to completion.
+    pub fn grep_complete(&self) -> bool {
+        self.grep_complete
     }
 
     /// Watch whatever file is open now, and stop watching the last one.

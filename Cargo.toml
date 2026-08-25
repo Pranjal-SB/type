@@ -47,6 +47,15 @@ tree-sitter-yaml = "0.7"
 # machine. 27x is not an optimisation, it is the difference between a picker and
 # a hang. Its own thread pool is crossbeam-deque, so no rayon enters the graph.
 ignore = "0.4"
+# ripgrep's searcher and regex bridge. Taken for two things that are specs
+# rather than code: binary detection, and correct handling of encodings and line
+# terminators. A project search built on `TextBuffer::find_all` would offer
+# forty matches inside a .png, which is worse than offering none.
+grep-searcher = "0.1"
+grep-regex = "0.1"
+# The `Matcher` trait itself, needed to ask a match for its byte offset.
+# Helix lists all three for the same reason.
+grep-matcher = "0.1"
 # The matcher Helix extracted, without the `nucleo` wrapper around it. `nucleo`
 # adds a rayon pool and streaming injection; measured here, one thread ranks 50k
 # paths against a 6-character needle in 4.51 ms, and it already runs on a worker.

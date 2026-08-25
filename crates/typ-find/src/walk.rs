@@ -69,7 +69,7 @@ pub fn walk(root: &Path) -> Vec<String> {
 /// scores differently from `crates/typ-core` under path-aware scoring. A picker
 /// that ranks differently on Windows is a picker with two behaviours, and the
 /// one nobody tests is the one that is wrong.
-fn relative_to(root: &Path, path: &Path) -> Option<String> {
+pub(crate) fn relative_to(root: &Path, path: &Path) -> Option<String> {
     let relative = path.strip_prefix(root).ok()?;
     let text = relative.to_str()?;
     if text.is_empty() {

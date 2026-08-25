@@ -114,6 +114,17 @@ impl App {
         events
     }
 
+    /// Hand the open overlay whichever result list its mode calls for.
+    ///
+    /// One place rather than one per arm of `handle_found`, so a new result
+    /// kind cannot land in the app and quietly fail to reach the screen.
+    pub(crate) fn push_hits_to_picker(&mut self) {
+        let Some(picker) = self.picker.as_mut() else {
+            return;
+        };
+        picker.set_hits(self.find_hits.clone());
+    }
+
     /// Keys while the overlay is up.
     ///
     /// **The query is compared before and after rather than reported by the
