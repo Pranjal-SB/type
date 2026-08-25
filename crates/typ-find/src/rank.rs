@@ -64,77 +64,60 @@ pub fn rank(query: &str, candidates: &[String], limit: usize) -> Vec<FileHit> {
     scored.truncate(limit);
 
     let mut buffer = Vec::new();
-    let mut raw = Vec::new();
+    let mut indices = Vec::new();
     scored
         .into_iter()
         .map(|(path, _score)| {
-            raw.clear();
-            buffer.clear();
-            let haystack = Utf32Str::new(path, &mut buffer);
-            // What `raw` is indexed in depends on which variant nucleo chose,
-            // which is the whole reason this is not a one-liner. See
-            // `to_graphemes`.
-            let byte_indexed = matches!(haystack, Utf32Str::Ascii(_));
-            pattern.indices(haystack, &mut matcher, &mut raw);
+            indices.clear();
+            let haystack = haystack_of(path, &mut buffer);
+            pattern.indices(haystack, &mut matcher, &mut indices);
             // `indices` can report the same position twice and out of order once
             // normalisation is involved; the picker wants each cell named once,
             // ascending.
-            raw.sort_unstable();
-            raw.dedup();
+            indices.sort_unstable();
+            indices.dedup();
             FileHit {
                 path: path.clone(),
-                indices: to_graphemes(path, &raw, byte_indexed),
+                indices: indices.clone(),
             }
         })
         .collect()
 }
 
-/// Whatever `Pattern::indices` just reported, as grapheme offsets.
+/// Build the haystack so that `Pattern::indices` reports **grapheme** offsets.
 ///
-/// **The unit depends on the variant `Utf32Str::new` picked, and it is not the
-/// same unit in both cases.** Established by probe against nucleo-matcher 0.3.1
-/// rather than assumed:
+/// **Not `Utf32Str::new`, and that is the whole point.** Its two variants are
+/// indexed in different units — `Unicode(&[char])` holds one char per grapheme
+/// cluster, so indices into it are grapheme indices, while `Ascii(&[u8])` holds
+/// UTF-8 bytes. That would be harmless if the variant tracked whether the string
+/// was ASCII, but it does not: `Utf32Str::new` collapses the graphemes, tests
+/// whether the *collapsed* chars are all ASCII, and if so returns
+/// `Ascii(str.as_bytes())` — the uncollapsed bytes. `"e\u{301}x.rs"` is 5
+/// graphemes, 6 chars and 7 bytes, takes that path, and reports 3 for the `x`,
+/// which is neither its char nor its grapheme index.
 ///
-/// - `Utf32Str::Unicode(&[char])` holds *one char per grapheme cluster* —
-///   `chars::graphemes` keeps each cluster's first codepoint and drops the rest.
-///   Indices into it are already grapheme indices, so there is nothing to do.
-///   (That collapse is nucleo's `unicode-segmentation` feature, which is on by
-///   default and which this crate names explicitly in `Cargo.toml` so a future
-///   change to their defaults is a compile-time decision rather than a silent
-///   re-indexing.)
-/// - `Utf32Str::Ascii(&[u8])` holds the **original UTF-8 bytes**, so indices
-///   into it are byte offsets.
+/// Established by probe against nucleo-matcher 0.3.1, then confirmed against the
+/// source. The owned `Utf32String::from` does not have the extra branch, which
+/// is why Helix — which pre-builds owned haystacks per candidate — can treat
+/// nucleo's indices as grapheme indices unconditionally and be right.
 ///
-/// The trap is that the second case is reachable for a string that is *not*
-/// ASCII. `Utf32Str::new` collapses graphemes, checks whether the collapsed
-/// chars are all ASCII, and if so returns `Ascii(str.as_bytes())` — the
-/// uncollapsed bytes. `"e\u{301}x.rs"` is 5 graphemes, 6 chars and 7 bytes, and
-/// takes that path: nucleo reports index 3 for the `x`, which is its byte
-/// offset and neither its char nor its grapheme index.
-fn to_graphemes(text: &str, indices: &[u32], byte_indexed: bool) -> Vec<u32> {
-    if !byte_indexed {
-        return indices.to_vec();
-    }
-    // A genuinely ASCII string has one byte per grapheme, which is most paths
-    // and every path in most projects.
+/// So the rule is theirs and the reason is local: split on `is_ascii` and
+/// nothing else. Then ASCII is one byte per grapheme and everything else is one
+/// char per grapheme, and both are grapheme indices with no conversion to get
+/// wrong. Borrowed rather than owned because this runs per visible row per
+/// keystroke and the buffer is reused.
+fn haystack_of<'a>(text: &'a str, buffer: &'a mut Vec<char>) -> Utf32Str<'a> {
     if text.is_ascii() {
-        return indices.to_vec();
+        return Utf32Str::Ascii(text.as_bytes());
     }
-
-    // Byte offset of each grapheme's start, ascending — so a reported byte lands
-    // on the grapheme containing it.
-    let starts: Vec<usize> = text.grapheme_indices(true).map(|(at, _)| at).collect();
-    let mut out: Vec<u32> = indices
-        .iter()
-        .map(|&byte| match starts.binary_search(&(byte as usize)) {
-            Ok(grapheme) => grapheme as u32,
-            // Inside a cluster rather than at its start: `partition_point`
-            // semantics — the grapheme before the insertion point.
-            Err(next) => next.saturating_sub(1) as u32,
-        })
-        .collect();
-    // Two bytes of one cluster collapse to one grapheme, so the mapping is not
-    // injective and the result can repeat.
-    out.dedup();
-    out
+    buffer.clear();
+    // One char per grapheme cluster — the first, discarding the rest. Exactly
+    // what nucleo's own (private) `chars::graphemes` does, and what makes an
+    // index into this slice a grapheme index.
+    buffer.extend(
+        text.graphemes(true)
+            .filter_map(|cluster| cluster.chars().next()),
+    );
+    Utf32Str::Unicode(buffer)
 }
+
