@@ -26,7 +26,9 @@ impl Fixture {
         fs::create_dir_all(&dir).expect("fixture root");
         for (rel, body) in [
             ("src/main.rs", "fn main() {}\n"),
-            ("src/highlight.rs", "pub fn paint() {}\n"),
+            // The match is deliberately not on the first line, so a search
+            // result that opens at line 0 fails rather than passing by luck.
+            ("src/highlight.rs", "// one\n// two\npub fn paint() {}\n"),
             ("README.md", "# hi\n"),
         ] {
             let path = dir.join(rel);
@@ -136,4 +138,103 @@ fn an_empty_query_lists_the_project() {
     pump_until_hits(&mut app, &rx);
 
     assert_eq!(app.picker().expect("open").hits().len(), 3);
+}
+
+#[test]
+fn ctrl_shift_f_is_bound_to_project_search() {
+    let keymap = Keymap::default_bindings();
+    let chord = KeyChord::from_event(KeyEvent::new(
+        KeyCode::Char('F'),
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    ));
+    assert_eq!(keymap.lookup(&chord), Some(Action::OpenProjectSearch));
+}
+
+/// Pump until the search picker holds line results.
+fn pump_until_lines(app: &mut App, rx: &AppReceiver) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while app.picker().is_some_and(|p| p.lines().is_empty()) {
+        assert!(Instant::now() < deadline, "no search results within 20s");
+        match rx.recv_timeout(Duration::from_secs(10)) {
+            Ok(event) => step(app, event, AREA).expect("step"),
+            Err(e) => panic!("no event: {e}"),
+        };
+    }
+}
+
+#[test]
+fn searching_the_project_and_pressing_enter_opens_at_that_line() {
+    // The whole of the second mode, end to end. A search result that opens the
+    // file at line 0 has thrown away the only thing the search found out.
+    let fixture = Fixture::new("grep");
+    let (tx, rx) = channel();
+    let mut app = App::new(&fixture.0).expect("app");
+    app.set_event_sender(tx);
+
+    app.handle_chord(KeyChord::from_event(KeyEvent::new(
+        KeyCode::Char('F'),
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    )))
+    .expect("key");
+    assert!(
+        app.picker().is_some(),
+        "ctrl+shift+f did not open the picker"
+    );
+
+    for c in "paint".chars() {
+        app.handle_chord(chord(KeyCode::Char(c))).expect("key");
+    }
+    pump_until_lines(&mut app, &rx);
+
+    let hit = &app.picker().expect("open").lines()[0];
+    assert_eq!(hit.path, "src/highlight.rs");
+    assert_eq!(hit.line, 2, "the match is on the third line");
+
+    app.handle_chord(chord(KeyCode::Enter)).expect("key");
+
+    assert!(
+        app.picker().is_none(),
+        "choosing a result left the overlay up"
+    );
+    assert!(
+        app.editor().buffer().text().contains("paint"),
+        "the wrong file is open: {:?}",
+        app.editor().buffer().text()
+    );
+    // **The cursor, not just the file.** A search result that opens at line 0
+    // has thrown away the only thing the search found out.
+    assert_eq!(
+        app.editor().cursor().line,
+        2,
+        "opened the file but not at the line the search reported"
+    );
+}
+
+#[test]
+fn an_unsaved_edit_is_visible_to_a_project_search() {
+    // The reason the open buffer is searched from memory. Type a word, search
+    // for it without saving, and it must be found — a search that only sees
+    // disk is answering a question about a file the user is not looking at.
+    let fixture = Fixture::new("unsaved");
+    let (tx, rx) = channel();
+    let mut app = App::new(&fixture.0).expect("app");
+    app.set_event_sender(tx);
+    app.open_path(&fixture.0.join("README.md")).expect("open");
+
+    for c in "zzunsavedzz".chars() {
+        app.handle_chord(chord(KeyCode::Char(c))).expect("key");
+    }
+    assert!(app.editor().buffer().is_dirty());
+
+    app.handle_chord(KeyChord::from_event(KeyEvent::new(
+        KeyCode::Char('F'),
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    )))
+    .expect("key");
+    for c in "zzunsavedzz".chars() {
+        app.handle_chord(chord(KeyCode::Char(c))).expect("key");
+    }
+    pump_until_lines(&mut app, &rx);
+
+    assert_eq!(app.picker().expect("open").lines()[0].path, "README.md");
 }

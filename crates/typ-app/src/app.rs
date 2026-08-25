@@ -732,6 +732,7 @@ impl App {
         match action {
             Action::FocusNext => self.cycle_focus(),
             Action::OpenFilePicker => self.open_picker(),
+            Action::OpenProjectSearch => self.open_search(),
             Action::Quit => self.request_quit(),
             Action::Save => match self.editor.save() {
                 Ok(()) => self.status = Some("Saved.".to_string()),
@@ -772,7 +773,18 @@ impl App {
         for event in events {
             match event {
                 PanelEvent::Quit => self.request_quit(),
-                PanelEvent::OpenFile { path, .. } | PanelEvent::OpenWith { path, .. } => {
+                PanelEvent::OpenFile { path, line, col } => {
+                    self.open_path(&path)?;
+                    // **The event has carried `line` and `col` since M1 and
+                    // nothing read them until M2.8.** Harmless while the only
+                    // producer was the file tree, which always means the top of
+                    // the file; a project-search result that opens at line 0 has
+                    // thrown away the only thing the search found out.
+                    if line > 0 || col > 0 {
+                        self.editor.goto(line, col);
+                    }
+                }
+                PanelEvent::OpenWith { path, .. } => {
                     self.open_path(&path)?;
                 }
                 // Redraw happens every loop pass in the walking skeleton.

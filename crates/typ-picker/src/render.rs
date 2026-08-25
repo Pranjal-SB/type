@@ -4,9 +4,10 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use typ_core::{Panel, RenderContext, chrome};
+use typ_find::LineHit;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::Picker;
+use crate::{Mode, Picker};
 
 /// Drawn before the query, so an empty prompt still reads as one.
 const CARET: &str = "> ";
@@ -78,17 +79,21 @@ fn draw_rows(
     let matched = ctx.theme.status_bar_accent;
     let offset = picker.offset();
     let selected = picker.selected();
-    let hits = picker.hits();
-    let end = (offset + list_rows).min(hits.len());
-    // Indexed rather than collected: a `String` per row per frame is the
-    // `line_text` trap in miniature — cheap once, and this runs on every
-    // keystroke for every visible row.
-    for (row, hit) in hits[offset.min(end)..end].iter().enumerate() {
+
+    let count = match picker.mode() {
+        Mode::Files => picker.hits().len(),
+        Mode::Search => picker.lines().len(),
+    };
+    let end = (offset + list_rows).min(count);
+    let start = offset.min(end);
+
+    for row in 0..end.saturating_sub(start) {
         let y = inner.y + 2 + row as u16;
         if y >= inner.bottom() {
             break;
         }
-        let style = if offset + row == selected {
+        let index = start + row;
+        let style = if index == selected {
             Style::default()
                 .fg(ctx.theme.selection_fg)
                 .bg(ctx.theme.selection_primary_bg)
@@ -102,17 +107,96 @@ fn draw_rows(
         for x in inner.x..inner.right() {
             buf[(x, y)].set_symbol(" ").set_style(style);
         }
-        write_clipped(
-            buf,
-            inner.x,
-            y,
-            inner.width,
-            &hit.path,
-            style,
-            &hit.indices,
-            matched,
-        );
+
+        match picker.mode() {
+            Mode::Files => {
+                // Borrowed rather than formatted: a `String` per row per frame
+                // is the `line_text` trap in miniature — cheap once, and this
+                // runs on every keystroke for every visible row.
+                let hit = &picker.hits()[index];
+                write_clipped(
+                    buf,
+                    inner.x,
+                    y,
+                    inner.width,
+                    &hit.path,
+                    style,
+                    &hit.indices,
+                    matched,
+                );
+            }
+            Mode::Search => draw_search_row(
+                &picker.lines()[index],
+                inner,
+                y,
+                buf,
+                ctx,
+                style,
+                index == selected,
+            ),
+        }
     }
+}
+
+/// `path:line  the matching text`, in two colours.
+///
+/// The location is quieter than the text: you scan a search result for the line
+/// you meant, and the code is what tells you, not the path you already typed.
+///
+/// **The line number is rendered 1-based.** `LineHit.line` is 0-based because
+/// that is what `PanelEvent::OpenFile` takes, and every gutter in every editor —
+/// including this one — counts from one. Storing one and showing the other is
+/// the only arrangement where neither is surprising.
+fn draw_search_row(
+    hit: &LineHit,
+    inner: Rect,
+    y: u16,
+    buf: &mut Buffer,
+    ctx: &RenderContext,
+    style: Style,
+    is_selected: bool,
+) {
+    let location = format!("{}:{}", hit.path, hit.line + 1);
+    let location_style = if is_selected {
+        style
+    } else {
+        style.fg(ctx.theme.status_bar_inactive_fg)
+    };
+    write_clipped(
+        buf,
+        inner.x,
+        y,
+        inner.width,
+        &location,
+        location_style,
+        &[],
+        matched_placeholder(ctx),
+    );
+
+    // Two spaces, the same gap the status bar uses between segments.
+    let gap = 2u16;
+    let used = location.graphemes(true).count() as u16 + gap;
+    if used >= inner.width {
+        return;
+    }
+    // Leading whitespace is indentation, and indentation in a one-line excerpt
+    // is width spent saying nothing.
+    write_clipped(
+        buf,
+        inner.x + used,
+        y,
+        inner.width - used,
+        hit.text.trim_start(),
+        style,
+        &[],
+        matched_placeholder(ctx),
+    );
+}
+
+/// `write_clipped` always takes a match colour; with no indices it is never
+/// read. Naming it here beats threading an `Option` through the hot path.
+fn matched_placeholder(ctx: &RenderContext) -> Color {
+    ctx.theme.status_bar_accent
 }
 
 /// Write `text` at `(x, y)`, stopping at `width` cells.

@@ -20,16 +20,40 @@ use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEven
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
-use typ_find::FileHit;
+use typ_find::{FileHit, LineHit};
 use unicode_segmentation::UnicodeSegmentation;
 
 mod render;
 
+/// What the query means.
+///
+/// **Two modes, one widget.** The rows differ and where the corpus lives
+/// differs — file candidates are ranked against a list the worker holds, search
+/// results are produced by the worker per query — but the query line, the
+/// selection, the scrolling and every mouse interaction are identical. A second
+/// widget would be the same four hundred lines with different row text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Mode {
+    /// Fuzzy-rank a corpus of paths. `ctrl+p`.
+    #[default]
+    Files,
+    /// Search the project's text. `ctrl+shift+f`.
+    Search,
+}
+
 /// The overlay.
 #[derive(Default)]
 pub struct Picker {
+    mode: Mode,
     query: String,
     hits: Vec<FileHit>,
+    /// Search results. **A separate field from `hits`, not an enum over the
+    /// two.** A late result from the mode you are no longer in must not
+    /// overwrite the list you are looking at, and one field would make that a
+    /// question of arrival order.
+    lines: Vec<LineHit>,
+    /// False when the last search hit its cap.
+    complete: bool,
     /// Index into `hits`. Meaningless when `hits` is empty — ask
     /// [`selection`](Self::selection) rather than reading it directly.
     selected: usize,
@@ -39,7 +63,71 @@ pub struct Picker {
 
 impl Picker {
     pub fn new() -> Self {
-        Picker::default()
+        Picker {
+            complete: true,
+            ..Picker::default()
+        }
+    }
+
+    /// A picker over the project's text rather than its filenames.
+    pub fn search() -> Self {
+        Picker {
+            mode: Mode::Search,
+            complete: true,
+            ..Picker::default()
+        }
+    }
+
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    /// Replace the search results.
+    pub fn set_lines(&mut self, lines: Vec<LineHit>, complete: bool) {
+        self.lines = lines;
+        self.complete = complete;
+        self.clamp_selection();
+    }
+
+    pub fn lines(&self) -> &[LineHit] {
+        &self.lines
+    }
+
+    /// How many rows the current mode has.
+    fn len(&self) -> usize {
+        match self.mode {
+            Mode::Files => self.hits.len(),
+            Mode::Search => self.lines.len(),
+        }
+    }
+
+    /// What Enter or a click on `index` opens.
+    ///
+    /// `None` when there is no such row — an empty list has no row zero, and
+    /// conflating the two is how `OpenFile { path: "" }` reaches the app.
+    fn open_at(&self, index: usize) -> Option<PanelEvent> {
+        match self.mode {
+            Mode::Files => self.hits.get(index).map(|hit| PanelEvent::OpenFile {
+                path: hit.path.clone().into(),
+                line: 0,
+                col: 0,
+            }),
+            Mode::Search => self.lines.get(index).map(|hit| PanelEvent::OpenFile {
+                path: hit.path.clone().into(),
+                line: hit.line,
+                col: hit.col,
+            }),
+        }
+    }
+
+    fn clamp_selection(&mut self) {
+        let len = self.len();
+        self.selected = self.selected.min(len.saturating_sub(1));
+        if len == 0 {
+            self.selected = 0;
+            self.offset = 0;
+        }
+        self.offset = self.offset.min(self.selected);
     }
 
     pub fn query(&self) -> &str {
@@ -53,12 +141,7 @@ impl Picker {
     /// out-of-bounds index on the very next render.
     pub fn set_hits(&mut self, hits: Vec<FileHit>) {
         self.hits = hits;
-        self.selected = self.selected.min(self.hits.len().saturating_sub(1));
-        if self.hits.is_empty() {
-            self.selected = 0;
-            self.offset = 0;
-        }
-        self.offset = self.offset.min(self.selected);
+        self.clamp_selection();
     }
 
     pub fn hits(&self) -> &[FileHit] {
@@ -77,8 +160,13 @@ impl Picker {
         self.hits.get(self.selected)
     }
 
-    /// The rows that fit in `rows` lines, with the selection guaranteed among
-    /// them.
+    /// Whether the last search ran to completion.
+    pub fn complete(&self) -> bool {
+        self.complete
+    }
+
+    /// The file rows that fit in `rows` lines, with the selection guaranteed
+    /// among them. File mode only — search mode has no `FileHit`s.
     ///
     /// `&mut` because keeping that guarantee means moving the offset, and the
     /// height is not known until someone asks. An earlier draft scrolled inside
@@ -102,7 +190,7 @@ impl Picker {
 
     /// Choose a row directly — what a mouse click resolves to.
     pub fn select(&mut self, index: usize) {
-        if index < self.hits.len() {
+        if index < self.len() {
             self.selected = index;
         }
     }
@@ -113,17 +201,17 @@ impl Picker {
     /// the last row silently returns to the top, and the row under the cursor
     /// stops being predictable from how far you have travelled.
     pub fn move_selection(&mut self, delta: isize) {
-        if self.hits.is_empty() {
+        if self.len() == 0 {
             return;
         }
-        let last = self.hits.len() - 1;
+        let last = self.len() - 1;
         let next = self.selected as isize + delta;
         self.selected = next.clamp(0, last as isize) as usize;
     }
 
     /// Scroll without moving the selection — what a wheel event resolves to.
     pub fn scroll(&mut self, delta: isize, rows: usize) {
-        let max = self.hits.len().saturating_sub(rows);
+        let max = self.len().saturating_sub(rows);
         let next = self.offset as isize + delta;
         self.offset = next.clamp(0, max as isize) as usize;
     }
@@ -187,7 +275,13 @@ impl Panel for Picker {
     }
 
     fn title(&self) -> String {
-        "Open file".to_string()
+        match self.mode {
+            Mode::Files => "Open file".to_string(),
+            // The `+` says the cap stopped it: without it a full list implies
+            // the project holds exactly that many matches.
+            Mode::Search if !self.complete => format!("Search  {}+ matches", self.lines.len()),
+            Mode::Search => format!("Search  {} matches", self.lines.len()),
+        }
     }
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, ctx: &RenderContext) {
@@ -205,17 +299,11 @@ impl Panel for Picker {
         match chord.raw.code {
             KeyCode::Esc => return vec![PanelEvent::CloseSelf],
             KeyCode::Enter => {
-                // No selection is a real state, not row zero. Emitting an
-                // `OpenFile` here with an empty path fails somewhere far from
-                // the keypress that caused it.
-                let Some(hit) = self.selection() else {
+                // No selection is a real state, not row zero.
+                let Some(event) = self.open_at(self.selected) else {
                     return vec![PanelEvent::NeedsRedraw];
                 };
-                return vec![PanelEvent::OpenFile {
-                    path: hit.path.clone().into(),
-                    line: 0,
-                    col: 0,
-                }];
+                return vec![event];
             }
             KeyCode::Backspace if !is_chorded => self.delete_backward(),
             KeyCode::Char(c) if !is_chorded => self.insert(c),
@@ -227,7 +315,7 @@ impl Panel for Picker {
             KeyCode::PageDown => self.move_selection(PAGE as isize),
             KeyCode::PageUp => self.move_selection(-(PAGE as isize)),
             KeyCode::Home => self.selected = 0,
-            KeyCode::End => self.move_selection(self.hits.len() as isize),
+            KeyCode::End => self.move_selection(self.len() as isize),
             _ => return Vec::new(),
         }
         vec![PanelEvent::NeedsRedraw]
@@ -263,16 +351,12 @@ impl Panel for Picker {
         // third file in the project — a distinction that is invisible until
         // someone scrolls, which is why it has a test of its own.
         let index = self.offset + row;
-        let Some(hit) = self.hits.get(index) else {
+        let Some(event) = self.open_at(index) else {
             // A blank row below the last result.
             return Vec::new();
         };
         self.selected = index;
-        vec![PanelEvent::OpenFile {
-            path: hit.path.clone().into(),
-            line: 0,
-            col: 0,
-        }]
+        vec![event]
     }
 
     fn handle_scroll(&mut self, delta: i32, panel_area: Rect) -> Vec<PanelEvent> {

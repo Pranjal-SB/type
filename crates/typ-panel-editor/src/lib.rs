@@ -524,8 +524,18 @@ impl EditorPanel {
     /// Out-of-range clamps to the last line. Someone typing 9999 means the end
     /// of the file, and erroring at them is pedantry rather than correctness.
     pub fn goto_line(&mut self, line: usize) {
+        self.goto(line, 0);
+    }
+
+    /// Put the caret at a line and column, and centre it.
+    ///
+    /// `col` is a **grapheme index**, invariant 4, and is clamped to the line's
+    /// length: a project-search result names a column in the file as it was
+    /// when the search ran, and the buffer may have moved on.
+    pub fn goto(&mut self, line: usize, col: usize) {
         let line = line.min(self.last_line());
-        self.set_caret(Position { line, col: 0 });
+        let col = col.min(self.buffer.line_grapheme_count(line));
+        self.set_caret(Position { line, col });
 
         if self.height > 0 {
             // Saturating: near the top of the file there is nothing above to

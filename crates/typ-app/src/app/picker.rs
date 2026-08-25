@@ -7,7 +7,7 @@
 
 use anyhow::Result;
 use typ_core::{KeyChord, Panel, PanelEvent};
-use typ_picker::Picker;
+use typ_picker::{Mode, Picker};
 
 use super::App;
 
@@ -18,6 +18,14 @@ use super::App;
 /// rather than fifty thousand. Not the corpus size — that is the number this
 /// whole design exists to keep off the render thread.
 pub(crate) const HITS: usize = 100;
+
+/// How many matching lines one project search returns.
+///
+/// Larger than `HITS` because a search over a real project finds many more
+/// matches than a filename query does, and smaller than unbounded because the
+/// user is typing the query — every keystroke starts another search, and an
+/// uncapped one is an unbounded allocation driven by a half-written pattern.
+pub(crate) const GREP_HITS: usize = 500;
 
 impl App {
     /// Put the overlay up and start a walk.
@@ -33,6 +41,18 @@ impl App {
         // Ask for the opening screen — an empty query, which ranks nothing and
         // lists the corpus.
         self.request_filter(String::new(), HITS);
+        self.dirty = true;
+    }
+
+    /// Put the overlay up in search mode.
+    ///
+    /// No index and no opening list: the corpus for a project search is the
+    /// project's *text*, which nothing can rank until there is something to
+    /// search for. An empty query legitimately shows nothing.
+    pub fn open_search(&mut self) {
+        self.picker = Some(Picker::search());
+        self.grep_hits.clear();
+        self.grep_complete = true;
         self.dirty = true;
     }
 
@@ -122,7 +142,50 @@ impl App {
         let Some(picker) = self.picker.as_mut() else {
             return;
         };
-        picker.set_hits(self.find_hits.clone());
+        match picker.mode() {
+            Mode::Files => picker.set_hits(self.find_hits.clone()),
+            Mode::Search => picker.set_lines(self.grep_hits.clone(), self.grep_complete),
+        }
+    }
+
+    /// Ask the worker for whatever the current mode's query means.
+    ///
+    /// The two modes ask different questions of the same worker: file mode
+    /// ranks against a corpus the worker holds, search mode hands it a query to
+    /// run. They share one generation counter, so a late answer from the mode
+    /// you have left can never be mistaken for an answer to the one you are in.
+    fn request_for_mode(&mut self, mode: Mode, query: String) {
+        match mode {
+            Mode::Files => {
+                self.request_filter(query, HITS);
+            }
+            Mode::Search => {
+                self.request_grep(query);
+            }
+        }
+    }
+
+    /// Run a project search, with the open buffer searched from memory.
+    ///
+    /// **The override is the point.** A search that reports what is on disk
+    /// while the user is looking at unsaved edits is answering a question
+    /// nobody asked. One editor panel today makes this a one-element vector;
+    /// M4's tabs make it a list.
+    fn request_grep(&mut self, query: String) -> u64 {
+        let overrides = match self.editor.path() {
+            Some(path) if self.editor.buffer().is_dirty() => {
+                vec![(path.to_path_buf(), self.editor.buffer().text())]
+            }
+            _ => Vec::new(),
+        };
+        let root = self.root.clone();
+        let Some(worker) = &mut self.find_worker else {
+            self.awaited_filter = Some(self.awaited_filter.unwrap_or(0) + 1);
+            return self.awaited_filter.expect("just set");
+        };
+        let generation = worker.grep(root, query, GREP_HITS, overrides);
+        self.awaited_filter = Some(generation);
+        generation
     }
 
     /// Keys while the overlay is up.
@@ -136,12 +199,13 @@ impl App {
             return Ok(());
         };
 
+        let mode = picker.mode();
         let before = picker.query().to_string();
         let events = picker.handle_key(chord);
         let after = picker.query().to_string();
 
         if before != after {
-            self.request_filter(after, HITS);
+            self.request_for_mode(mode, after);
         }
         self.dirty = true;
 
