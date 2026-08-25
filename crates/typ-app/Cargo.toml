@@ -17,6 +17,7 @@ ratatui.workspace = true
 toml.workspace = true
 typ-buffer.workspace = true
 typ-core.workspace = true
+typ-find.workspace = true
 typ-panel-editor.workspace = true
 typ-panel-tree.workspace = true
 typ-registry.workspace = true

@@ -249,6 +249,7 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
     match event {
         AppEvent::FileChanged(path) => changed = app.handle_external_change(&path)?,
         AppEvent::Parsed(parsed) => changed = app.handle_parsed(parsed),
+        AppEvent::Found(found) => changed = app.handle_found(found),
         AppEvent::Input(input) => match input {
             // Every binding lives in the keymap now, so there is nothing left
             // here to special-case. The dispatcher owns the order.

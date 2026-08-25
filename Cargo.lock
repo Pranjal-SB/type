@@ -1875,6 +1875,7 @@ dependencies = [
  "toml",
  "typ-buffer",
  "typ-core",
+ "typ-find",
  "typ-panel-editor",
  "typ-panel-tree",
  "typ-registry",
@@ -1903,6 +1904,7 @@ dependencies = [
  "crossterm",
  "ratatui",
  "toml",
+ "typ-find",
  "typ-syntax",
 ]
 

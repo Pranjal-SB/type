@@ -15,6 +15,7 @@ use typ_buffer::SearchQuery;
 use typ_core::{
     Action, Direction, KeyChord, Keymap, Panel, PanelEvent, RenderContext, ThemeColors,
 };
+use typ_find::{FileHit, FindWorker, Found};
 use typ_panel_editor::EditorPanel;
 use typ_panel_editor::render::Whitespace;
 use typ_panel_tree::TreePanel;
@@ -113,6 +114,22 @@ pub struct App {
     /// state: an empty table means every scope lookup misses and the buffer
     /// renders in one colour, exactly as it did before this milestone.
     syntax_theme: typ_core::SyntaxTheme,
+    /// Walks the project and ranks queries against it, off the render thread.
+    ///
+    /// `None` until `set_event_sender`, like `parse_worker` and for the same
+    /// reason: the worker needs somewhere to send results.
+    find_worker: Option<FindWorker>,
+    /// The generation of the only filter result worth applying.
+    ///
+    /// Exact match rather than a floor, the same shape `awaited_generation` uses
+    /// for parses and for the same reason: the worker coalesces, so the newest
+    /// request always runs and always arrives. Anything else was mid-rank when
+    /// the query changed under it.
+    awaited_filter: Option<u64>,
+    /// The visible page of results. Never the corpus — that lives on the worker.
+    find_hits: Vec<FileHit>,
+    /// The project root, kept so the picker can index it without re-deriving it.
+    root: std::path::PathBuf,
 }
 
 /// Between status segments. Two spaces rather than a glyph separator: a
@@ -149,6 +166,10 @@ impl App {
             parsed_revision: None,
             awaited_generation: None,
             syntax_theme: typ_core::SyntaxTheme::default(),
+            find_worker: None,
+            awaited_filter: None,
+            find_hits: Vec::new(),
+            root: root.to_path_buf(),
         })
     }
 
@@ -172,6 +193,7 @@ impl App {
     /// events arriving from somewhere the test did not ask about.
     pub fn set_event_sender(&mut self, sender: crate::run::AppSender) {
         self.parse_worker = Some(ParseWorker::spawn(sender.clone()));
+        self.find_worker = Some(FindWorker::spawn(sender.clone()));
         self.sender = Some(sender);
         self.rewatch();
         // Whatever is already open has never been parsed.
@@ -223,6 +245,56 @@ impl App {
         }
         self.editor.set_syntax(parsed.generation, parsed.syntax);
         true
+    }
+
+    /// Walk the project and make it the picker's corpus.
+    ///
+    /// **Never called at startup.** Cold start is budgeted at 100 ms and a
+    /// parallel walk of a mid-size projects directory measured 94.7 ms, which
+    /// would spend the entire budget on a list nobody has asked to see yet. The
+    /// picker calls this when it opens.
+    pub fn request_index(&mut self) {
+        if let Some(worker) = &mut self.find_worker {
+            worker.index(self.root.clone());
+        }
+    }
+
+    /// Ask for the best `limit` matches, and return the generation to await.
+    pub fn request_filter(&mut self, query: String, limit: usize) -> u64 {
+        let Some(worker) = &mut self.find_worker else {
+            // No sender wired up, which is most tests. Advance the counter
+            // anyway so a caller comparing two generations still sees them
+            // differ — returning 0 twice would make a staleness test pass by
+            // accident.
+            self.awaited_filter = Some(self.awaited_filter.unwrap_or(0) + 1);
+            return self.awaited_filter.expect("just set");
+        };
+        let generation = worker.filter(query, limit);
+        self.awaited_filter = Some(generation);
+        generation
+    }
+
+    /// A find result arrived. Returns whether anything changed on screen.
+    pub fn handle_found(&mut self, found: Found) -> bool {
+        match found {
+            // Answers no query, so it carries no generation to check against.
+            // Filtering it through the staleness test below would drop every
+            // walk that landed while a filter was outstanding.
+            Found::Indexed { .. } => true,
+            Found::Files { generation, hits } => {
+                if self.awaited_filter != Some(generation) {
+                    // A ranking for a query the user has already typed past.
+                    return false;
+                }
+                self.find_hits = hits;
+                true
+            }
+        }
+    }
+
+    /// The visible page of find results.
+    pub fn find_hits(&self) -> &[FileHit] {
+        &self.find_hits
     }
 
     /// Watch whatever file is open now, and stop watching the last one.
