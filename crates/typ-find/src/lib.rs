@@ -8,6 +8,8 @@
 
 mod rank;
 mod walk;
+mod worker;
 
 pub use rank::{FileHit, rank};
 pub use walk::walk;
+pub use worker::{FindWorker, Found};
