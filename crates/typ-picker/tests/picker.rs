@@ -266,3 +266,70 @@ fn a_zero_sized_area_does_not_panic() {
     let mut buf = Buffer::empty(Rect::new(0, 0, 1, 1));
     picker.render(area, &mut buf, &ctx);
 }
+
+#[test]
+fn matched_graphemes_are_styled_differently_from_the_rest() {
+    // The thing that makes a fuzzy picker readable: without it you can see
+    // *that* a row matched but not *why*, and a fuzzy match on a long path is
+    // not obvious from looking at it.
+    use ratatui::style::Color;
+
+    let theme = ThemeColors::default();
+    let mut picker = Picker::new();
+    picker.set_hits(vec![FileHit {
+        path: "abcdef.rs".to_string(),
+        // "a" and "c" matched.
+        indices: vec![0, 2],
+    }]);
+
+    let area = Rect::new(0, 0, 30, 8);
+    let ctx = RenderContext {
+        theme: &theme,
+        syntax: typ_core::SyntaxTheme::empty(),
+        is_focused: true,
+        panel_index: 0,
+        terminal_width: 30,
+        terminal_height: 8,
+    };
+    let mut buf = Buffer::empty(area);
+    picker.render(area, &mut buf, &ctx);
+
+    // Border column 0, so text starts at column 1; the list starts at row 3.
+    let row = 3;
+    let fg_at = |x: u16| buf[(x, row)].fg;
+    assert_eq!(buf[(1, row)].symbol(), "a", "the row is not where expected");
+
+    let matched: Color = fg_at(1);
+    let plain: Color = fg_at(2);
+    assert_ne!(matched, plain, "matched and unmatched share a colour");
+    assert_eq!(
+        fg_at(3),
+        matched,
+        "the second matched grapheme is not styled"
+    );
+    assert_eq!(fg_at(4), plain);
+}
+
+#[test]
+fn an_index_past_the_end_of_a_path_does_not_panic() {
+    // Defensive: indices arrive from another crate across a channel, and a row
+    // whose path was truncated between ranking and rendering must not take the
+    // editor down.
+    let theme = ThemeColors::default();
+    let mut picker = Picker::new();
+    picker.set_hits(vec![FileHit {
+        path: "ab".to_string(),
+        indices: vec![0, 99],
+    }]);
+    let area = Rect::new(0, 0, 20, 8);
+    let ctx = RenderContext {
+        theme: &theme,
+        syntax: typ_core::SyntaxTheme::empty(),
+        is_focused: true,
+        panel_index: 0,
+        terminal_width: 20,
+        terminal_height: 8,
+    };
+    let mut buf = Buffer::empty(area);
+    picker.render(area, &mut buf, &ctx);
+}

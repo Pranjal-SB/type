@@ -120,4 +120,3 @@ fn haystack_of<'a>(text: &'a str, buffer: &'a mut Vec<char>) -> Utf32Str<'a> {
     );
     Utf32Str::Unicode(buffer)
 }
-

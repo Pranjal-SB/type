@@ -2,7 +2,7 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use typ_core::{Panel, RenderContext, chrome};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -44,7 +44,16 @@ fn draw_query(picker: &Picker, inner: Rect, buf: &mut Buffer, ctx: &RenderContex
         .bg(ctx.theme.chrome_bg)
         .add_modifier(Modifier::BOLD);
     let text = format!("{CARET}{}", picker.query());
-    write_clipped(buf, inner.x, inner.y, inner.width, &text, style);
+    write_clipped(
+        buf,
+        inner.x,
+        inner.y,
+        inner.width,
+        &text,
+        style,
+        &[],
+        style.fg.unwrap_or(ctx.theme.fg),
+    );
 }
 
 fn draw_rule(inner: Rect, buf: &mut Buffer, ctx: &RenderContext) {
@@ -63,6 +72,10 @@ fn draw_rows(
     ctx: &RenderContext,
     list_rows: usize,
 ) {
+    // The one accent, the same one focus and links already use. A second colour
+    // invented here would be a widget mixing its own — see the palette note in
+    // `typ_core::panel`, which is what keeps the greys from drifting apart.
+    let matched = ctx.theme.status_bar_accent;
     let offset = picker.offset();
     let selected = picker.selected();
     let hits = picker.hits();
@@ -89,7 +102,16 @@ fn draw_rows(
         for x in inner.x..inner.right() {
             buf[(x, y)].set_symbol(" ").set_style(style);
         }
-        write_clipped(buf, inner.x, y, inner.width, &hit.path, style);
+        write_clipped(
+            buf,
+            inner.x,
+            y,
+            inner.width,
+            &hit.path,
+            style,
+            &hit.indices,
+            matched,
+        );
     }
 }
 
@@ -98,15 +120,43 @@ fn draw_rows(
 /// Grapheme by grapheme rather than by byte or char: a path can carry anything
 /// a filesystem allows, and slicing a `String` by a column count is how a CJK
 /// filename ends up half-drawn. Wide graphemes still occupy one cell here —
-/// full width-aware layout is `typ-buffer`'s job and the picker does not have a
-/// cursor to keep aligned with, so the cost of getting it slightly wrong is a
-/// row that ends one column early rather than a mispositioned caret.
-fn write_clipped(buf: &mut Buffer, x: u16, y: u16, width: u16, text: &str, style: Style) {
+/// full width-aware layout is `typ-buffer`'s job and the picker has no cursor to
+/// keep aligned, so the cost of getting it slightly wrong is a row that ends one
+/// column early rather than a mispositioned caret.
+///
+/// `matched_indices` names the graphemes the query hit, ascending. They are
+/// **grapheme** indices, which is what makes this a walk in step rather than a
+/// lookup — see `typ_find::rank`, where that unit is established. Anything past
+/// the end of `text` is ignored rather than panicking: the indices arrive from
+/// another crate across a channel.
+#[allow(clippy::too_many_arguments)]
+fn write_clipped(
+    buf: &mut Buffer,
+    x: u16,
+    y: u16,
+    width: u16,
+    text: &str,
+    style: Style,
+    matched_indices: &[u32],
+    matched_colour: Color,
+) {
+    // Both sequences are ascending, so one cursor into `matched_indices` walks
+    // alongside the graphemes instead of searching it per cell.
+    let mut next = matched_indices.iter().copied().peekable();
     for (i, grapheme) in text.graphemes(true).take(width as usize).enumerate() {
         let cell_x = x + i as u16;
         if cell_x >= buf.area.right() || y >= buf.area.bottom() {
             break;
         }
+        while next.peek().is_some_and(|&index| (index as usize) < i) {
+            next.next();
+        }
+        let style = if next.peek() == Some(&(i as u32)) {
+            next.next();
+            style.fg(matched_colour).add_modifier(Modifier::BOLD)
+        } else {
+            style
+        };
         buf[(cell_x, y)].set_symbol(grapheme).set_style(style);
     }
 }
