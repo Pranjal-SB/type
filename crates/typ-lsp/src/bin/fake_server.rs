@@ -115,11 +115,16 @@ fn main() {
         }
 
         match message {
-            Message::Request(Request { id, method, .. }) => {
+            Message::Request(Request { id, method, params }) => {
                 let result = match method.as_str() {
+                    // `clientSaw` is not LSP. It echoes the initialize params
+                    // straight back so a test can assert what the client sent
+                    // — a typo in `positionEncodings` would otherwise be
+                    // invisible, falling back to UTF-16 and still working.
                     "initialize" => serde_json::json!({
                         "capabilities": capabilities(&flags),
                         "positionEncoding": if flags.utf8 { "utf-8" } else { "utf-16" },
+                        "clientSaw": params,
                     }),
                     "shutdown" => serde_json::Value::Null,
                     "textDocument/definition" => serde_json::json!({

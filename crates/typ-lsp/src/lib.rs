@@ -12,10 +12,12 @@
 //! The research this is built on, including why these dependencies and not the
 //! obvious ones, is in `docs/design/lsp.md`.
 
+pub mod client;
 pub mod position;
 pub mod transport;
 pub mod uri;
 
+pub use client::{Client, LspEvent};
 pub use position::{Encoding, from_lsp, to_lsp};
 pub use transport::{Incoming, SpawnError, Transport};
 pub use uri::{path_to_uri, uri_to_path};
