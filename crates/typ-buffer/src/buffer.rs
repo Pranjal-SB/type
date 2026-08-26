@@ -223,6 +223,59 @@ impl TextBuffer {
         self.with_line_str(line, |s| s.graphemes(true).count())
     }
 
+    /// The rope behind this buffer.
+    ///
+    /// Exposed for `typ-lsp`, which counts UTF-8, UTF-16 and UTF-32 offsets
+    /// against a line and must not copy one out to do it — that is the
+    /// `line_text` trap at the scale of a whole file. Read-only by
+    /// construction: every mutation still goes through this type.
+    pub fn rope(&self) -> &Rope {
+        &self.rope
+    }
+
+    /// Absolute char offset of a `Position`, clamping out-of-range input.
+    ///
+    /// **The grapheme boundary.** `col` is a grapheme index and everything
+    /// below TYPE — ropey, tree-sitter, LSP — counts something else. This and
+    /// [`position`](Self::position) are the only two places the two units meet.
+    pub fn char_index(&self, pos: Position) -> usize {
+        self.char_offset(pos)
+    }
+
+    /// The `Position` a char offset falls in, snapping into a grapheme.
+    ///
+    /// **Snaps down**, to the start of the cluster the offset is inside. A
+    /// language server may legitimately answer with an offset between the two
+    /// code points of an emoji; there is no `Position` for that and
+    /// `Selections` could not hold one. Snapping up would move a cursor past
+    /// the text the server was pointing at.
+    pub fn position(&self, char_idx: usize) -> Position {
+        let char_idx = char_idx.min(self.rope.len_chars());
+        let line = self.rope.char_to_line(char_idx);
+        let into_line = char_idx - self.rope.line_to_char(line);
+
+        let col = self.with_line_str(line, |text| {
+            let mut start = 0usize;
+            let mut count = 0usize;
+            for (col, grapheme) in text.graphemes(true).enumerate() {
+                let end = start + grapheme.chars().count();
+                // Strictly inside this cluster, which includes starting it.
+                // Testing the *start* instead skips a cluster the offset lands
+                // in the middle of, and reports the one after it.
+                if into_line < end {
+                    return col;
+                }
+                start = end;
+                count = col + 1;
+            }
+            // At or past the end of the line's content, so the offset is in
+            // the line terminator and the answer is the end of the line.
+            count
+        });
+
+        Position { line, col }
+    }
+
     /// Absolute char offset of a `Position`, clamping out-of-range input.
     fn char_offset(&self, pos: Position) -> usize {
         let line = pos.line.min(self.rope.len_lines().saturating_sub(1));
