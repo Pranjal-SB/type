@@ -5,7 +5,7 @@
 //! push `app.rs` further past the point where invariant 9 says to go looking.
 //!
 //! A second `impl App` rather than a `Search` struct: the four methods reach
-//! `self.tabs[self.active]`, `self.prompt` and `self.status`, and threading those through a
+//! `self.tabs[self.active].panel`, `self.prompt` and `self.status`, and threading those through a
 //! new type would be a rewrite wearing a refactor's clothes. The seam here is
 //! the file boundary, which is the one that was actually costing something.
 
@@ -98,7 +98,7 @@ impl App {
                     self.prompt = None;
                 } else if let Some(line) = parse_line_number(&input) {
                     self.prompt = None;
-                    self.tabs[self.active].goto_line(line);
+                    self.tabs[self.active].panel.goto_line(line);
                 } else {
                     // Rejected, and the prompt stays open with the input still
                     // in it: closing on a typo throws the answer away and makes
@@ -128,12 +128,12 @@ impl App {
     }
 
     pub(crate) fn jump_to_match(&mut self, query: &SearchQuery, direction: Direction) {
-        let hits = self.tabs[self.active].buffer_find_all(query);
+        let hits = self.tabs[self.active].panel.buffer_find_all(query);
         if hits.is_empty() {
             self.status = Some(format!("No matches for {}", query.needle));
             return;
         }
-        let from = self.tabs[self.active].cursor();
+        let from = self.tabs[self.active].panel.cursor();
         let next = match direction {
             // `>=`, not `>`: opening a search with the cursor at the top of the
             // file must find a match that starts there. Jumping leaves the
@@ -150,7 +150,7 @@ impl App {
                 .or_else(|| hits.last()),
         };
         if let Some(hit) = next.copied() {
-            self.tabs[self.active].select_range(hit);
+            self.tabs[self.active].panel.select_range(hit);
             self.status = Some(format!("{} matches", hits.len()));
         }
     }
@@ -161,7 +161,9 @@ impl App {
         }
         let case_sensitive = needle.chars().any(char::is_uppercase);
         let query = SearchQuery::new(needle.to_string(), case_sensitive);
-        let count = self.tabs[self.active].replace_all(&query, replacement);
+        let count = self.tabs[self.active]
+            .panel
+            .replace_all(&query, replacement);
         self.status = Some(match count {
             0 => format!("No matches for {needle}"),
             1 => "1 replacement".to_string(),

@@ -39,7 +39,7 @@ pub struct App {
     /// buffer, which is the state the editor starts in. An empty `tabs` would
     /// make `editor()` return an `Option` and every one of its callers handle a
     /// state that never occurs.
-    tabs: Vec<EditorPanel>,
+    tabs: Vec<Tab>,
     /// Index into `tabs`. Always valid, for the same reason.
     active: usize,
     registry: Registry,
@@ -95,27 +95,6 @@ pub struct App {
     /// The app owns it, not the panel: a panel returns `PanelEvent`s and never
     /// holds a channel to the app.
     parse_worker: Option<ParseWorker>,
-    /// The buffer revision the last parse was requested for.
-    ///
-    /// `None` means the buffer was replaced and must be parsed regardless —
-    /// revisions restart at zero with a new `TextBuffer`, so comparing across
-    /// one would silently skip the parse of a newly opened file.
-    parsed_revision: Option<u64>,
-    /// The generation of the only parse result worth applying.
-    ///
-    /// **The panel cannot make this decision.** `EditorPanel::set_syntax`
-    /// discards a result older than the one it holds, which is right within
-    /// one buffer and useless across two: `open_path` builds a *new* panel
-    /// whose counter starts at zero, while the worker's counter is app-global
-    /// and never resets, so a result still in flight for the previous file
-    /// arrives above zero and passes that guard — painting the newly opened
-    /// file with the previous one's tree.
-    ///
-    /// Exact match rather than a floor, because only one result is ever wanted:
-    /// the worker coalesces queued jobs down to the newest, so the newest
-    /// request is always the one that runs and always arrives. Anything else
-    /// is a job that was already mid-parse when the buffer changed.
-    awaited_generation: Option<u64>,
     /// Syntax capture styles, degraded at load like `theme` is.
     ///
     /// Empty until a theme with a `[syntax]` table is loaded, which is a normal
@@ -157,6 +136,43 @@ pub struct App {
     index_requested: bool,
 }
 
+/// One open file, and the parse state that belongs to it rather than to the app.
+///
+/// **Both fields were app-global until tabs, and both were wrong for two
+/// buffers in a different way.** `parsed_revision` compared a revision across
+/// buffers that each start counting at zero, so the second file opened matched
+/// the first's number and was never parsed at all. `awaited_generation` was one
+/// slot, so requesting a parse forgot the previous request — switch tabs while
+/// one is in flight and its result is discarded on arrival, while the revision
+/// it optimistically recorded stops anything from ever asking again.
+///
+/// Keeping them here also removes the question of how to address a tab from a
+/// distance. State that lives on the tab moves with it, so closing a tab cannot
+/// silently re-point an in-flight request at whichever file shifted into that
+/// index.
+struct Tab {
+    panel: EditorPanel,
+    /// The buffer revision the last parse was requested for. `None` means the
+    /// buffer was replaced and must be parsed regardless.
+    parsed_revision: Option<u64>,
+    /// The generation of the only parse result this tab will accept.
+    ///
+    /// Exact match rather than a floor, because the worker coalesces queued
+    /// jobs down to the newest: the newest request is always the one that runs
+    /// and always arrives. Anything else was mid-parse when the buffer changed.
+    awaited_generation: Option<u64>,
+}
+
+impl Tab {
+    fn new(panel: EditorPanel) -> Self {
+        Tab {
+            panel,
+            parsed_revision: None,
+            awaited_generation: None,
+        }
+    }
+}
+
 /// Between status segments. Two spaces rather than a glyph separator: a
 /// separator needs a colour decision of its own and a Nerd Font question at
 /// M6, and whitespace has neither.
@@ -170,7 +186,7 @@ impl App {
     pub fn new(root: &Path) -> Result<Self> {
         Ok(Self {
             tree: TreePanel::new(root)?,
-            tabs: vec![EditorPanel::from_str("")],
+            tabs: vec![Tab::new(EditorPanel::from_str(""))],
             active: 0,
             registry: Registry::with_builtins(),
             keymap: Keymap::default_bindings(),
@@ -189,8 +205,6 @@ impl App {
             indent_width: None,
             whitespace: Whitespace::default(),
             parse_worker: None,
-            parsed_revision: None,
-            awaited_generation: None,
             syntax_theme: typ_core::SyntaxTheme::default(),
             find_worker: None,
             awaited_filter: None,
@@ -241,40 +255,48 @@ impl App {
     /// Cheap enough to call on every event loop pass: a `u64` comparison, and
     /// nothing at all for a buffer whose extension has no grammar.
     pub(crate) fn request_parse_if_stale(&mut self) {
-        let Some(language) = self.tabs[self.active].language() else {
+        let tab = &mut self.tabs[self.active];
+        let Some(language) = tab.panel.language() else {
             return;
         };
-        let revision = self.tabs[self.active].buffer().revision();
-        if self.parsed_revision == Some(revision) {
+        let revision = tab.panel.buffer().revision();
+        if tab.parsed_revision == Some(revision) {
             return;
         }
         let Some(worker) = &mut self.parse_worker else {
             return;
         };
 
-        worker.request(language, self.tabs[self.active].buffer().snapshot());
-        self.parsed_revision = Some(revision);
-        self.awaited_generation = Some(worker.generation());
+        worker.request(language, tab.panel.buffer().snapshot());
+        tab.parsed_revision = Some(revision);
+        tab.awaited_generation = Some(worker.generation());
     }
 
-    /// A completed parse arrived.
+    /// A completed parse arrived. Returns whether the screen changed.
     ///
-    /// One editor panel exists today, so there is no question of which buffer
-    /// this belongs to. When tabs arrive in M4 the answer becomes a panel id
-    /// on the event rather than a lookup here.
+    /// The generation says which *request* this answers, and every tab records
+    /// the one it is waiting for — so the result goes to the tab that asked for
+    /// it, which is not always the active one.
+    ///
+    /// Applying it to a backgrounded tab is not a nicety. That tab already
+    /// recorded the revision as requested, so throwing the answer away would
+    /// leave the buffer unhighlighted for as long as it stays open: nothing
+    /// would ever ask again.
     pub fn handle_parsed(&mut self, parsed: typ_syntax::Parsed) -> bool {
-        // A tree for text nobody is looking at any more. Dropping it is not a
-        // loss: the buffer that replaced it queued its own parse.
-        if self.tabs[self.active].language().is_none() {
+        // Not a parse anyone is still waiting for. It describes a buffer that
+        // has since been replaced, and its byte offsets index text that is gone.
+        let Some(index) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.awaited_generation == Some(parsed.generation))
+        else {
             return false;
-        }
-        // Not the parse we are waiting for. It describes a buffer that has
-        // since been replaced, and its byte offsets index text that is gone.
-        if self.awaited_generation != Some(parsed.generation) {
-            return false;
-        }
-        self.tabs[self.active].set_syntax(parsed.generation, parsed.syntax);
-        true
+        };
+        let tab = &mut self.tabs[index];
+        tab.awaited_generation = None;
+        tab.panel.set_syntax(parsed.generation, parsed.syntax);
+        // Only a tree for the buffer on screen changes what is painted.
+        index == self.active
     }
 
     /// Walk the project and make it the picker's corpus.
@@ -358,7 +380,7 @@ impl App {
     /// which is where the answer will be looked for.
     fn rewatch(&mut self) {
         self.watch = None;
-        let (Some(sender), Some(path)) = (self.sender.clone(), self.tabs[self.active].path())
+        let (Some(sender), Some(path)) = (self.sender.clone(), self.tabs[self.active].panel.path())
         else {
             return;
         };
@@ -379,37 +401,37 @@ impl App {
     /// Returns whether anything on screen changed, so the loop can decline to
     /// repaint for a watcher event that turned out to be our own save.
     pub fn handle_external_change(&mut self, path: &Path) -> Result<bool> {
-        if self.tabs[self.active].path() != Some(path) {
+        if self.tabs[self.active].panel.path() != Some(path) {
             return Ok(false);
         }
 
         if !path.exists() {
             self.status = Some(format!(
                 "{} was deleted on disk. Ctrl+S writes it back.",
-                self.tabs[self.active].file_name()
+                self.tabs[self.active].panel.file_name()
             ));
             return Ok(true);
         }
 
         // Covers our own save: the watcher reports the write, and what is on
         // disk is what we have, so there is nothing to do.
-        if self.tabs[self.active].matches_disk() {
+        if self.tabs[self.active].panel.matches_disk() {
             return Ok(false);
         }
 
-        if self.tabs[self.active].is_dirty() {
+        if self.tabs[self.active].panel.is_dirty() {
             self.status = Some(format!(
                 "{} changed on disk. Your unsaved changes are kept; Ctrl+S overwrites it.",
-                self.tabs[self.active].file_name()
+                self.tabs[self.active].panel.file_name()
             ));
             return Ok(true);
         }
 
-        self.tabs[self.active].reload()?;
+        self.tabs[self.active].panel.reload()?;
         // `reload` swaps in a fresh `TextBuffer`, so revisions restart and the
         // comparison in `request_parse_if_stale` would be against a number
         // from a buffer that no longer exists.
-        self.parsed_revision = None;
+        self.tabs[self.active].parsed_revision = None;
         self.request_parse_if_stale();
         Ok(true)
     }
@@ -444,20 +466,20 @@ impl App {
     /// list and its emphasis rules live in `status.rs` rather than here, that is
     /// a change of source rather than a rewrite of content.
     pub fn status_segments(&self) -> Vec<Segment> {
-        let cursor = self.tabs[self.active].cursor();
-        let path = self.tabs[self.active].path();
+        let cursor = self.tabs[self.active].panel.cursor();
+        let path = self.tabs[self.active].panel.path();
         let file_type = crate::status::file_type_of(path);
-        let file_name = self.tabs[self.active].file_name();
+        let file_name = self.tabs[self.active].panel.file_name();
         segments(&StatusFacts {
             file_name: &file_name,
-            modified: self.tabs[self.active].is_dirty(),
+            modified: self.tabs[self.active].panel.is_dirty(),
             file_type: file_type.as_deref(),
-            line_ending: self.tabs[self.active].line_ending().label(),
-            indent_width: self.tabs[self.active].tab_width(),
-            selection_count: self.tabs[self.active].selections().len(),
+            line_ending: self.tabs[self.active].panel.line_ending().label(),
+            indent_width: self.tabs[self.active].panel.tab_width(),
+            selection_count: self.tabs[self.active].panel.selections().len(),
             line: cursor.line,
             col: cursor.col,
-            total_lines: self.tabs[self.active].line_count(),
+            total_lines: self.tabs[self.active].panel.line_count(),
         })
     }
 
@@ -487,7 +509,7 @@ impl App {
         let blocker = self
             .tabs
             .iter()
-            .find_map(|tab| tab.needs_close_confirmation())
+            .find_map(|tab| tab.panel.needs_close_confirmation())
             .or_else(|| self.tree.needs_close_confirmation());
         match blocker {
             Some(message) => {
@@ -511,12 +533,12 @@ impl App {
     pub fn focused_name(&self) -> &'static str {
         match self.focus {
             Focus::Tree => self.tree.name(),
-            Focus::Editor => self.tabs[self.active].name(),
+            Focus::Editor => self.tabs[self.active].panel.name(),
         }
     }
 
     pub fn editor_title(&self) -> String {
-        self.tabs[self.active].title()
+        self.tabs[self.active].panel.title()
     }
 
     pub fn cycle_focus(&mut self) {
@@ -536,7 +558,7 @@ impl App {
     /// M4 turns this into a per-tab guard on *close* rather than on open. The
     /// trigger moves; the question does not.
     pub fn open_path(&mut self, path: &Path) -> Result<()> {
-        if let Some(message) = self.tabs[self.active].needs_close_confirmation() {
+        if let Some(message) = self.tabs[self.active].panel.needs_close_confirmation() {
             let confirmed = self
                 .open_pending
                 .as_ref()
@@ -548,27 +570,64 @@ impl App {
             }
         }
 
+        self.tabs[self.active] = Tab::new(self.panel_for(path)?);
+        self.settle_active_tab();
+        self.open_pending = None;
+        Ok(())
+    }
+
+    /// Open `path` alongside whatever is already open, and switch to it.
+    ///
+    /// No guard, because nothing is being replaced. That is the difference tabs
+    /// make and it is why `open_path`'s confirmation goes away with them.
+    pub fn open_in_new_tab(&mut self, path: &Path) -> Result<()> {
+        let tab = Tab::new(self.panel_for(path)?);
+        self.tabs.push(tab);
+        // Before `settle_active_tab`, which writes the configured indent width
+        // and whitespace into `tabs[active]` — run it while `active` still
+        // points at the tab being left and the settings land on the wrong file.
+        self.active = self.tabs.len() - 1;
+        self.settle_active_tab();
+        Ok(())
+    }
+
+    /// Make the tab at `index` the visible one.
+    pub fn activate_tab(&mut self, index: usize) {
+        if index >= self.tabs.len() || index == self.active {
+            return;
+        }
+        self.active = index;
+        self.settle_active_tab();
+        self.mark_dirty();
+    }
+
+    /// Build the panel for a path, whether or not there is a file behind it.
+    ///
+    /// A path with no file is one to create, not an error: `typ notes.md` and
+    /// opening a not-yet-existing file from the tree are the same operation, so
+    /// they take the same branch.
+    fn panel_for(&self, path: &Path) -> Result<EditorPanel> {
         // The registry decides the handler. There is one content panel today,
         // but the lookup runs from day one so adding viewers never touches this.
         let _handler = self.registry.handler_for(path);
-        // A path with no file behind it is one to create, not an error. `typ
-        // notes.md` and opening a not-yet-existing file from the tree are the
-        // same operation, so they take the same branch.
-        self.tabs[self.active] = if path.exists() {
-            EditorPanel::from_path(path)?
+        if path.exists() {
+            EditorPanel::from_path(path)
         } else {
-            EditorPanel::new_at(path)
-        };
+            Ok(EditorPanel::new_at(path))
+        }
+    }
+
+    /// Everything that has to happen when a different buffer becomes visible.
+    ///
+    /// Called from opening *and* from switching, because the two leave the app
+    /// in the same place: config the new panel has never seen, a watch pointed
+    /// at the file being left, and a buffer that may want parsing.
+    fn settle_active_tab(&mut self) {
         self.apply_indent_width();
-        self.tabs[self.active].set_whitespace(self.whitespace);
+        self.tabs[self.active].panel.set_whitespace(self.whitespace);
         self.focus = Focus::Editor;
-        self.open_pending = None;
         self.rewatch();
-        // A new buffer counts revisions from zero, so this is an invalidation
-        // rather than a comparison.
-        self.parsed_revision = None;
         self.request_parse_if_stale();
-        Ok(())
     }
 
     pub fn keymap(&self) -> &Keymap {
@@ -583,14 +642,14 @@ impl App {
 
     fn apply_indent_width(&mut self) {
         if let Some(width) = self.indent_width {
-            self.tabs[self.active].set_tab_width(width);
+            self.tabs[self.active].panel.set_tab_width(width);
         }
     }
 
     /// Which whitespace the editor marks.
     pub fn set_whitespace(&mut self, whitespace: Whitespace) {
         self.whitespace = whitespace;
-        self.tabs[self.active].set_whitespace(whitespace);
+        self.tabs[self.active].panel.set_whitespace(whitespace);
     }
 
     pub fn set_keymap(&mut self, keymap: Keymap) {
@@ -746,7 +805,7 @@ impl App {
             Action::OpenFilePicker => self.open_picker(),
             Action::OpenProjectSearch => self.open_search(),
             Action::Quit => self.request_quit(),
-            Action::Save => match self.tabs[self.active].save() {
+            Action::Save => match self.tabs[self.active].panel.save() {
                 Ok(()) => self.status = Some("Saved.".to_string()),
                 // A save that fails silently is how work gets lost. The status
                 // bar says so and the log keeps the whole error chain, which is
@@ -793,7 +852,7 @@ impl App {
                     // the file; a project-search result that opens at line 0 has
                     // thrown away the only thing the search found out.
                     if line > 0 || col > 0 {
-                        self.tabs[self.active].goto(line, col);
+                        self.tabs[self.active].panel.goto(line, col);
                     }
                 }
                 PanelEvent::OpenWith { path, .. } => {
@@ -843,10 +902,14 @@ impl App {
         match self.focus {
             Focus::Editor => {
                 self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
-                self.tabs[self.active].render(editor_area, frame.buffer_mut(), &editor_ctx);
+                self.tabs[self.active]
+                    .panel
+                    .render(editor_area, frame.buffer_mut(), &editor_ctx);
             }
             Focus::Tree => {
-                self.tabs[self.active].render(editor_area, frame.buffer_mut(), &editor_ctx);
+                self.tabs[self.active]
+                    .panel
+                    .render(editor_area, frame.buffer_mut(), &editor_ctx);
                 self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
             }
         }
@@ -934,7 +997,7 @@ impl App {
     fn focused(&self) -> &dyn Panel {
         match self.focus {
             Focus::Tree => &self.tree,
-            Focus::Editor => &self.tabs[self.active],
+            Focus::Editor => &self.tabs[self.active].panel,
         }
     }
 
@@ -956,16 +1019,25 @@ impl App {
     /// outside this file go through here and none of them need to know a list
     /// exists.
     pub fn editor(&self) -> &EditorPanel {
-        &self.tabs[self.active]
+        &self.tabs[self.active].panel
     }
 
     pub fn editor_mut(&mut self) -> &mut EditorPanel {
-        &mut self.tabs[self.active]
+        &mut self.tabs[self.active].panel
     }
 
-    /// Every open file, in tab order.
-    pub fn tabs(&self) -> &[EditorPanel] {
-        &self.tabs
+    /// One open file by position, active or not.
+    ///
+    /// Separate from `editor()` because the two can differ and the difference is
+    /// the whole point: a parse landing on a backgrounded tab is invisible
+    /// through the active-tab accessor.
+    pub fn tab(&self, index: usize) -> &EditorPanel {
+        &self.tabs[index].panel
+    }
+
+    /// How many files are open. Never zero.
+    pub fn tab_count(&self) -> usize {
+        self.tabs.len()
     }
 
     /// Index of the active tab.
@@ -976,7 +1048,7 @@ impl App {
     pub fn focused_mut(&mut self) -> &mut dyn Panel {
         match self.focus {
             Focus::Tree => &mut self.tree,
-            Focus::Editor => &mut self.tabs[self.active],
+            Focus::Editor => &mut self.tabs[self.active].panel,
         }
     }
 }

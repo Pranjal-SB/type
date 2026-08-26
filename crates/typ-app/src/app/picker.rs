@@ -172,9 +172,12 @@ impl App {
     /// nobody asked. One editor panel today makes this a one-element vector;
     /// M4's tabs make it a list.
     fn request_grep(&mut self, query: String) -> u64 {
-        let overrides = match self.tabs[self.active].path() {
-            Some(path) if self.tabs[self.active].buffer().is_dirty() => {
-                vec![(path.to_path_buf(), self.tabs[self.active].buffer().text())]
+        let overrides = match self.tabs[self.active].panel.path() {
+            Some(path) if self.tabs[self.active].panel.buffer().is_dirty() => {
+                vec![(
+                    path.to_path_buf(),
+                    self.tabs[self.active].panel.buffer().text(),
+                )]
             }
             _ => Vec::new(),
         };
