@@ -3,6 +3,53 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.2.9] - 2026-08-26 (M2.9, workspace-lite)
+
+M2.8 made moving between files the primary interaction and `App` held exactly one buffer, so
+every `Ctrl+P` discarded the file you were on. Finding files got easy and keeping them got no
+easier, which is a worse balance than before the picker existed. Now a file opens into a tab.
+
+The command palette rode along because it was nearly free: every editing primitive was already a
+named action and every binding already a table row, so the palette is a mode on the picker rather
+than a feature.
+
+### Added
+- Opening a file adds a tab instead of replacing the buffer. Opening one that is already open
+  switches to it, compared canonically so `./a.rs` and `a.rs` are one tab.
+- A tab bar above the editor, drawn only when more than one file is open. The active tab takes
+  the editor's own colours, which is what joins it to the pane underneath.
+- `Ctrl+PageDown`/`Ctrl+PageUp` and `Alt+.`/`Alt+,` move between tabs, `Alt+1`..`Alt+9` jump,
+  `Ctrl+W` closes. Two spellings because `controls.md` §1 does not list the page keys among the
+  universally deliverable keys and does list `Alt+punctuation`.
+- Clicking a tab selects it, its `×` closes it, and a middle click closes the tab under the
+  pointer.
+- A command palette over every named action, reached by typing `>` in the file picker or with
+  `Ctrl+Shift+P`. Each row shows the key that runs it.
+
+### Changed
+- Closing the active tab activates the tab used most recently, not a neighbour.
+- The confirmation on opening a file over unsaved changes is gone, with the reason for it: a new
+  tab discards nothing. The question moved to closing a tab, where the work is actually at risk.
+
+### Fixed
+- Project search reads **every** unsaved buffer from memory, not only the visible one. Typing in
+  one file, switching tabs and searching for what you typed found nothing.
+- Closing a tab from its `×` asked nothing before discarding unsaved work, while `Ctrl+W` always
+  asked. Both go through one gate now, and the pending answer names which tab it is about.
+- A parse result now goes to the tab that asked for it. Two freshly opened buffers are both at
+  revision 0, so the second file opened was never parsed at all; and switching tabs mid-parse
+  discarded the answer while leaving the revision recorded as requested, so nothing asked again.
+- Rebinding quit silently broke its own confirmation — the dispatcher compared the literal chord
+  `"ctrl+q"` rather than the action.
+
+### Measured
+- Tab switch with 20 open: 640 µs, against a 16 ms keystroke budget. A probe put `watch_file`
+  plus its drop at 909 µs, so the cost is the OS file watcher, rebuilt on the render thread. It
+  is recorded rather than tuned: the milestone that watches a workspace replaces the path.
+- Palette open plus query: 95 µs. Ranked on the render thread deliberately — sixty static names
+  are cheaper than a round trip to the worker.
+- Tab bar with 200 tabs: 88 µs, against 2.9 µs with two.
+
 ## [0.2.8] - 2026-08-25 (M2.8, find)
 
 You can reach any file in the project without knowing where it is, and find any string in it

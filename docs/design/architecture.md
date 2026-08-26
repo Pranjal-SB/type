@@ -322,8 +322,14 @@ silent bug. Adding a cursor at the edge of the document is a real instance of th
 The app's dispatch order follows from that: action → panel → app → **panel's raw
 `handle_key`**. The last tier exists because the file tree navigates on raw arrows and Enter,
 all of which the keymap binds to editor actions; without it the tree goes dead while every
-test still passes. Naming the tree's own primitives as actions is the honest fix and lands
-with the command palette at M4.
+test still passes. Naming the tree's own primitives as actions is the honest fix.
+
+That was written as landing "with the command palette at M4". The palette shipped at M2.9 and
+this did not, because the two turned out to be independent: the palette lists whatever is in
+`Action::ALL`, so it covers the editor and the app, and the raw-key tier is untouched. What
+`apply_action` actually bought was the palette costing a `Mode` on an existing widget instead of
+a feature — 53 names already had a `name()` and a binding lookup. The tree's vocabulary waits for
+a second consumer to want it, which is the only thing invariant 2 requires.
 
 ### The selection model
 
@@ -504,8 +510,8 @@ unavailable. Full modifier fidelity is a prerequisite for VS Code-comparable key
 - File tree panel
 - Integrated terminal panel (PTY)
 - Git — gutter, status, diff, blame, stage hunks
-- Splits, tabs, layout, session restore
-- Command palette, fuzzy file finder, project-wide search
+- Splits, layout, session restore
+- Tabs, command palette, fuzzy file finder, project-wide search
 - Filetype registry, `$EDITOR` invariants, OS-level association, single-instance routing
 - Config, theming, keybindings
 
@@ -595,8 +601,14 @@ declared on and was off" is the most expensive thing this document has been wron
 **M3 — Code intelligence.** `typ-lsp`. Completion, diagnostics, goto-definition, rename,
 code actions. This is the milestone where it becomes an IDE.
 
-**M4 — Workspace.** Splits, tabs, sessions, command palette, fuzzy finder, project search,
-filetype registry.
+**M4 — Workspace.** Splits, sessions, workspace-wide file watching.
+
+Tabs and the command palette came forward to **M2.9**, and the fuzzy finder and project search to
+M2.8, because M2.8 made moving between files the primary interaction while `App` still held one
+buffer — every `Ctrl+P` discarded the file you were on. What is left for M4 is the part that
+needs a layout tree and a second answer to "which panel is active", plus a watcher that follows a
+workspace rather than a file: a tab switch currently rebuilds an OS file watch on the render
+thread, measured at 640 µs of a 16 ms budget.
 
 **M5 — Terminal and git.** PTY panel, git gutter/status/diff/blame.
 

@@ -253,6 +253,35 @@ const DEFAULTS: &[(&str, Action)] = &[
     // Ctrl+Shift+F beside Ctrl+F, the same relationship VS Code uses: the
     // buffer, then the project.
     ("ctrl+shift+f", Action::OpenProjectSearch),
+    // An Enhanced-tier chord, and a documented exception rather than an
+    // oversight: `controls.md` §1 says Ctrl+Shift+P cannot be the *only* way to
+    // the palette in a terminal. Typing `>` into Ctrl+P is the path that always
+    // works; this is here for the terminals that deliver it, the way the
+    // Ctrl+Shift clipboard chords are.
+    ("ctrl+shift+p", Action::OpenCommandPalette),
+    // Tabs, bound twice on purpose. Ctrl+PageUp/PageDown is the spelling every
+    // tabbed application uses and most terminals deliver; `controls.md` §1 does
+    // not list the page keys among the universally deliverable ones, and
+    // `Alt+punctuation` is. So the familiar chord and the guaranteed one both
+    // ship, and neither is the only way in.
+    ("ctrl+pagedown", Action::NextTab),
+    ("ctrl+pageup", Action::PrevTab),
+    ("alt+.", Action::NextTab),
+    ("alt+,", Action::PrevTab),
+    // Ctrl+W is close-tab in VS Code, Zed and every browser. It is also
+    // readline's delete-word-backwards, which is the cost of the choice — the
+    // prompt line is where that habit lives, and the prompt owns the keyboard
+    // ahead of the keymap while it is open.
+    ("ctrl+w", Action::CloseTab),
+    ("alt+1", Action::GoToTab(1)),
+    ("alt+2", Action::GoToTab(2)),
+    ("alt+3", Action::GoToTab(3)),
+    ("alt+4", Action::GoToTab(4)),
+    ("alt+5", Action::GoToTab(5)),
+    ("alt+6", Action::GoToTab(6)),
+    ("alt+7", Action::GoToTab(7)),
+    ("alt+8", Action::GoToTab(8)),
+    ("alt+9", Action::GoToTab(9)),
     ("f3", Action::SearchNext),
     ("shift+f3", Action::SearchPrevious),
     ("ctrl+h", Action::ReplaceOpen),

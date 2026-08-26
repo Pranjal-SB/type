@@ -6,5 +6,6 @@ pub mod log;
 pub mod prompt;
 pub mod run;
 pub mod status;
+pub mod tabbar;
 
 pub use app::{App, Focus};

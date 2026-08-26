@@ -7,9 +7,19 @@
 
 use anyhow::Result;
 use typ_core::{KeyChord, Panel, PanelEvent};
-use typ_picker::{Mode, Picker};
+use typ_picker::{CommandRow, Mode, Picker};
 
 use super::App;
+
+/// Types the file query into the command list. VS Code's convention — `>` for
+/// commands, `@` for symbols, `:` for a line, `#` for workspace symbols — and
+/// the one path into the palette that survives a terminal which cannot deliver
+/// `Ctrl+Shift+letter` at all.
+const COMMAND_PREFIX: &str = ">";
+
+/// How many command rows to rank. Above the number of actions there are, so the
+/// list is never truncated by this rather than by the query.
+const COMMANDS: usize = 200;
 
 /// How many ranked rows to ask the worker for.
 ///
@@ -54,6 +64,104 @@ impl App {
         self.grep_hits.clear();
         self.grep_complete = true;
         self.dirty = true;
+    }
+
+    /// Put the overlay up over the command list.
+    ///
+    /// **Implemented as typing the `>`**, not as a separate mode switch. The
+    /// chord is Enhanced-tier and may never arrive in a given terminal, so it
+    /// cannot be the path the palette actually works through; making it a
+    /// shortcut for the prefix leaves one mode-switch path rather than two that
+    /// can disagree.
+    pub fn open_command_palette(&mut self) {
+        let mut picker = Picker::new();
+        picker.set_query(COMMAND_PREFIX.to_string());
+        picker.set_mode(Mode::Commands);
+        self.picker = Some(picker);
+        // No walk and no filter: the corpus here is a static list of action
+        // names. Backspacing the `>` away turns this into the file picker, and
+        // that is where the walk gets asked for — see `request_for_mode`.
+        self.rank_commands("");
+        self.dirty = true;
+    }
+
+    /// Read the query's first character and set the mode it implies.
+    ///
+    /// Only from `Files`/`Commands`. A project search is text, and `>` in it is
+    /// a perfectly ordinary thing to look for.
+    fn refresh_picker_mode(&mut self) {
+        let Some(picker) = self.picker.as_mut() else {
+            return;
+        };
+        if picker.mode() == Mode::Search {
+            return;
+        }
+        match picker.query().strip_prefix(COMMAND_PREFIX) {
+            Some(_) => picker.set_mode(Mode::Commands),
+            None => picker.set_mode(Mode::Files),
+        }
+    }
+
+    /// Rank the action names and hand the rows to the overlay.
+    ///
+    /// **Ranked here rather than on the worker.** The corpus is sixty-odd
+    /// static names — the round trip would cost more than the ranking, and the
+    /// worker exists to keep a 37,000-entry corpus off this thread, not a
+    /// sixty-entry one.
+    fn rank_commands(&mut self, needle: &str) {
+        let names: Vec<String> = typ_core::Action::ALL
+            .iter()
+            // A row that reopens the overlay you are already in is a no-op
+            // nobody can explain.
+            .filter(|action| **action != typ_core::Action::OpenCommandPalette)
+            .map(|action| action.name().to_string())
+            .collect();
+
+        let rows: Vec<CommandRow> = typ_find::rank(needle, &names, COMMANDS)
+            .into_iter()
+            .map(|hit| {
+                let binding = typ_core::Action::from_name(&hit.path)
+                    .map(|action| self.keymap.bindings_for(action))
+                    .unwrap_or_default()
+                    .first()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                CommandRow {
+                    name: hit.path,
+                    binding,
+                    indices: hit.indices,
+                }
+            })
+            .collect();
+
+        if let Some(picker) = self.picker.as_mut() {
+            picker.set_commands(rows);
+        }
+    }
+
+    /// Run the highlighted command, if the overlay is showing one.
+    ///
+    /// The same two steps a keypress takes — the focused panel first, then the
+    /// app — because a palette that only tried the panel would silently do
+    /// nothing for every action the app owns. The overlay closes *first*: an
+    /// action that opens a prompt or another picker must not find this one
+    /// still standing.
+    fn run_selected_command(&mut self) -> Result<()> {
+        let Some(action) = self
+            .picker
+            .as_ref()
+            .and_then(|picker| picker.selected_command())
+            .and_then(|row| typ_core::Action::from_name(&row.name))
+        else {
+            return Ok(());
+        };
+        self.close_picker();
+
+        if let Some(events) = self.focused_mut().apply_action(action) {
+            return self.apply(events);
+        }
+        self.perform_app_action(action);
+        Ok(())
     }
 
     pub fn close_picker(&mut self) {
@@ -145,6 +253,9 @@ impl App {
         match picker.mode() {
             Mode::Files => picker.set_hits(self.find_hits.clone()),
             Mode::Search => picker.set_lines(self.grep_hits.clone(), self.grep_complete),
+            // Ranked here, not on the worker, so a late `Found` has nothing to
+            // deliver to this mode.
+            Mode::Commands => {}
         }
     }
 
@@ -157,10 +268,27 @@ impl App {
     fn request_for_mode(&mut self, mode: Mode, query: String) {
         match mode {
             Mode::Files => {
+                // The palette can be opened by its own chord, which asks for no
+                // walk because it does not need one. Backspacing the `>` away
+                // arrives here, and without this the file picker would rank
+                // against a corpus nothing ever filled.
+                if !self.index_requested {
+                    self.request_index();
+                    self.index_requested = true;
+                }
                 self.request_filter(query, HITS);
             }
             Mode::Search => {
                 self.request_grep(query);
+            }
+            // No round trip: the corpus is sixty static names and the answer is
+            // already on this thread. The `>` is not part of what gets matched.
+            Mode::Commands => {
+                let needle = query
+                    .strip_prefix(COMMAND_PREFIX)
+                    .unwrap_or(&query)
+                    .to_string();
+                self.rank_commands(&needle);
             }
         }
     }
@@ -169,15 +297,26 @@ impl App {
     ///
     /// **The override is the point.** A search that reports what is on disk
     /// while the user is looking at unsaved edits is answering a question
-    /// nobody asked. One editor panel today makes this a one-element vector;
-    /// M4's tabs make it a list.
+    /// nobody asked — and with tabs, "looking at" includes the two files behind
+    /// this one. Every dirty buffer is sent, not only the active one: an edit
+    /// in a background tab is exactly as unsaved as the one on screen, and it
+    /// is the one the user has stopped thinking about.
+    ///
+    /// Clean tabs are left out. The override is a copy of the whole buffer over
+    /// a channel, the walk already reads the identical bytes off disk, and with
+    /// twenty tabs open that is twenty needless copies per keystroke.
     fn request_grep(&mut self, query: String) -> u64 {
-        let overrides = match self.editor.path() {
-            Some(path) if self.editor.buffer().is_dirty() => {
-                vec![(path.to_path_buf(), self.editor.buffer().text())]
-            }
-            _ => Vec::new(),
-        };
+        let overrides: Vec<(std::path::PathBuf, String)> = self
+            .tabs
+            .iter()
+            .filter_map(|tab| {
+                let path = tab.panel.path()?;
+                tab.panel
+                    .buffer()
+                    .is_dirty()
+                    .then(|| (path.to_path_buf(), tab.panel.buffer().text()))
+            })
+            .collect();
         let root = self.root.clone();
         let Some(worker) = &mut self.find_worker else {
             self.awaited_filter = Some(self.awaited_filter.unwrap_or(0) + 1);
@@ -199,15 +338,28 @@ impl App {
             return Ok(());
         };
 
-        let mode = picker.mode();
+        let code = chord.raw.code;
         let before = picker.query().to_string();
         let events = picker.handle_key(chord);
         let after = picker.query().to_string();
 
+        // The mode is read *after* the key, because the key may have been the
+        // `>` that changed it — or the backspace that took it away again.
         if before != after {
+            self.refresh_picker_mode();
+            let mode = self.picker.as_ref().map(Picker::mode).unwrap_or_default();
             self.request_for_mode(mode, after);
         }
         self.dirty = true;
+
+        // A command leaves through here rather than as a `PanelEvent`. The
+        // picker returned `NeedsRedraw` for that Enter, because `open_at` has
+        // nothing to open — invariant 6 keeps the vocabulary closed.
+        if code == crossterm::event::KeyCode::Enter
+            && self.picker.as_ref().map(Picker::mode) == Some(Mode::Commands)
+        {
+            return self.run_selected_command();
+        }
 
         // `CloseSelf` from the overlay means the overlay, not the focused
         // panel. Routing it through `apply` would close the editor or the tree

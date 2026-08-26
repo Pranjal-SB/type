@@ -156,6 +156,22 @@ fn every_default_binding_resolves_to_something_that_handles_it() {
         typ_core::Action::ReplaceOpen,
         typ_core::Action::OpenFilePicker,
         typ_core::Action::OpenProjectSearch,
+        typ_core::Action::OpenCommandPalette,
+        // Tabs are the app's, not the panel's: a panel that could close itself
+        // would need to know it sits in a list, and invariant 5 says it does
+        // not get to know anything about the app at all.
+        typ_core::Action::NextTab,
+        typ_core::Action::PrevTab,
+        typ_core::Action::CloseTab,
+        typ_core::Action::GoToTab(1),
+        typ_core::Action::GoToTab(2),
+        typ_core::Action::GoToTab(3),
+        typ_core::Action::GoToTab(4),
+        typ_core::Action::GoToTab(5),
+        typ_core::Action::GoToTab(6),
+        typ_core::Action::GoToTab(7),
+        typ_core::Action::GoToTab(8),
+        typ_core::Action::GoToTab(9),
     ];
 
     let mut a = app("bindings");
