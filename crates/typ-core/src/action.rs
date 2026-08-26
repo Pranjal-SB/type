@@ -90,6 +90,8 @@ pub enum Action {
     OpenFilePicker,
     /// Open the project-search picker over the body.
     OpenProjectSearch,
+    /// Open the picker over every named action.
+    OpenCommandPalette,
     /// The next open file, wrapping at the end.
     NextTab,
     /// The previous open file, wrapping at the start.
@@ -258,6 +260,7 @@ impl Action {
         Action::ReplaceOpen,
         Action::OpenFilePicker,
         Action::OpenProjectSearch,
+        Action::OpenCommandPalette,
         Action::NextTab,
         Action::PrevTab,
         Action::CloseTab,
@@ -346,6 +349,7 @@ impl Action {
             Action::ReplaceOpen => "replace_open",
             Action::OpenFilePicker => "open_file_picker",
             Action::OpenProjectSearch => "open_project_search",
+            Action::OpenCommandPalette => "open_command_palette",
             Action::NextTab => "next_tab",
             Action::PrevTab => "prev_tab",
             Action::CloseTab => "close_tab",

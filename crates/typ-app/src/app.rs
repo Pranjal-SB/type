@@ -922,6 +922,7 @@ impl App {
             Action::FocusNext => self.cycle_focus(),
             Action::OpenFilePicker => self.open_picker(),
             Action::OpenProjectSearch => self.open_search(),
+            Action::OpenCommandPalette => self.open_command_palette(),
             Action::Quit => self.request_quit(),
             Action::NextTab => self.next_tab(),
             Action::PrevTab => self.prev_tab(),

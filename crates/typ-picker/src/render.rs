@@ -83,6 +83,7 @@ fn draw_rows(
     let count = match picker.mode() {
         Mode::Files => picker.hits().len(),
         Mode::Search => picker.lines().len(),
+        Mode::Commands => picker.commands().len(),
     };
     let end = (offset + list_rows).min(count);
     let start = offset.min(end);
@@ -134,7 +135,51 @@ fn draw_rows(
                 style,
                 index == selected,
             ),
+            Mode::Commands => {
+                let row = &picker.commands()[index];
+                write_clipped(
+                    buf,
+                    inner.x,
+                    y,
+                    inner.width,
+                    &row.name,
+                    style,
+                    &row.indices,
+                    matched,
+                );
+                draw_binding(&row.binding, inner, y, buf, ctx, style);
+            }
         }
+    }
+}
+
+/// The key that runs a command, right-aligned and quiet.
+///
+/// **Right-aligned because it is a second column, not a suffix.** The names are
+/// what the eye scans; the bindings line up beside them so the palette can be
+/// read as a keymap listing without being one. Helix's palette put its bindings
+/// on the left for exactly the reason its author gave for wanting them on the
+/// right, and it has looked like a compromise ever since.
+///
+/// An unbound action draws nothing at all rather than a dash or a placeholder,
+/// which would have to be explained.
+fn draw_binding(
+    binding: &str,
+    inner: Rect,
+    y: u16,
+    buf: &mut Buffer,
+    ctx: &RenderContext,
+    style: Style,
+) {
+    let width = binding.graphemes(true).count() as u16;
+    if binding.is_empty() || width >= inner.width {
+        return;
+    }
+    let start = inner.right() - width;
+    for (i, grapheme) in binding.graphemes(true).enumerate() {
+        buf[(start + i as u16, y)]
+            .set_symbol(grapheme)
+            .set_style(style.fg(ctx.theme.status_bar_inactive_fg));
     }
 }
 

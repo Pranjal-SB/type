@@ -253,6 +253,12 @@ const DEFAULTS: &[(&str, Action)] = &[
     // Ctrl+Shift+F beside Ctrl+F, the same relationship VS Code uses: the
     // buffer, then the project.
     ("ctrl+shift+f", Action::OpenProjectSearch),
+    // An Enhanced-tier chord, and a documented exception rather than an
+    // oversight: `controls.md` §1 says Ctrl+Shift+P cannot be the *only* way to
+    // the palette in a terminal. Typing `>` into Ctrl+P is the path that always
+    // works; this is here for the terminals that deliver it, the way the
+    // Ctrl+Shift clipboard chords are.
+    ("ctrl+shift+p", Action::OpenCommandPalette),
     // Tabs, bound twice on purpose. Ctrl+PageUp/PageDown is the spelling every
     // tabbed application uses and most terminals deliver; `controls.md` §1 does
     // not list the page keys among the universally deliverable ones, and

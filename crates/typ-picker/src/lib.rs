@@ -39,6 +39,30 @@ pub enum Mode {
     Files,
     /// Search the project's text. `ctrl+shift+f`.
     Search,
+    /// Every named action, ranked by name. Reached by typing `>` at the front
+    /// of a file query, which is VS Code's convention and — because
+    /// `Ctrl+Shift+letter` needs the kitty protocol to arrive at all — the only
+    /// path into the palette that works in every terminal.
+    Commands,
+}
+
+/// One row of the command palette.
+///
+/// Its own type rather than a `FileHit` with the name in `path`: the binding
+/// has nowhere to live in that struct, and a field called `path` holding
+/// `focus_next` is a lie that costs more to read than this costs to declare.
+///
+/// Holds the action's **name**, not the `Action`. `typ-picker` has no reason to
+/// know the vocabulary, and `Action::from_name` is a round trip the action
+/// tests already guarantee.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandRow {
+    pub name: String,
+    /// What key runs it, or empty when nothing does. Empty rather than a
+    /// placeholder, so nothing has to invent a string that looks like a key.
+    pub binding: String,
+    /// Where the query matched, for the same highlighting the file rows get.
+    pub indices: Vec<u32>,
 }
 
 /// The overlay.
@@ -52,6 +76,9 @@ pub struct Picker {
     /// overwrite the list you are looking at, and one field would make that a
     /// question of arrival order.
     lines: Vec<LineHit>,
+    /// Command rows. A third field for the third mode, for the reason `lines`
+    /// is a second one.
+    commands: Vec<CommandRow>,
     /// False when the last search hit its cap.
     complete: bool,
     /// Index into `hits`. Meaningless when `hits` is empty — ask
@@ -82,6 +109,48 @@ impl Picker {
         self.mode
     }
 
+    /// Switch what the query means.
+    ///
+    /// The selection resets, because row 3 of the file list and row 3 of the
+    /// command list have nothing to do with each other and carrying the index
+    /// across makes the highlight jump to an unrelated row.
+    pub fn set_mode(&mut self, mode: Mode) {
+        if self.mode == mode {
+            return;
+        }
+        self.mode = mode;
+        self.selected = 0;
+        self.offset = 0;
+    }
+
+    /// Replace the query outright — what opening the palette by chord does,
+    /// by typing the `>` the user would otherwise have typed.
+    pub fn set_query(&mut self, query: String) {
+        self.query = query;
+    }
+
+    /// Replace the command rows.
+    pub fn set_commands(&mut self, commands: Vec<CommandRow>) {
+        self.commands = commands;
+        self.clamp_selection();
+    }
+
+    pub fn commands(&self) -> &[CommandRow] {
+        &self.commands
+    }
+
+    /// The highlighted command, or `None` when nothing matched.
+    ///
+    /// The app asks this after an Enter it saw go past: a command cannot leave
+    /// through `PanelEvent`, which is a closed vocabulary of about twelve
+    /// variants and not somewhere to put an `Action`.
+    pub fn selected_command(&self) -> Option<&CommandRow> {
+        if self.mode != Mode::Commands {
+            return None;
+        }
+        self.commands.get(self.selected)
+    }
+
     /// Replace the search results.
     pub fn set_lines(&mut self, lines: Vec<LineHit>, complete: bool) {
         self.lines = lines;
@@ -98,6 +167,7 @@ impl Picker {
         match self.mode {
             Mode::Files => self.hits.len(),
             Mode::Search => self.lines.len(),
+            Mode::Commands => self.commands.len(),
         }
     }
 
@@ -117,6 +187,10 @@ impl Picker {
                 line: hit.line,
                 col: hit.col,
             }),
+            // A command opens nothing. The app reads `selected_command` after
+            // the Enter goes past rather than the picker inventing a variant
+            // for it — invariant 6.
+            Mode::Commands => None,
         }
     }
 
@@ -281,6 +355,7 @@ impl Panel for Picker {
             // the project holds exactly that many matches.
             Mode::Search if !self.complete => format!("Search  {}+ matches", self.lines.len()),
             Mode::Search => format!("Search  {} matches", self.lines.len()),
+            Mode::Commands => "Run command".to_string(),
         }
     }
 
