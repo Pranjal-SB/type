@@ -177,11 +177,16 @@ fn ranking_the_palette_stays_inside_a_keystroke() {
     let _guard = exclusive();
     let mut app = big_app("palette");
 
-    let queries = ["", "s", "se", "sel", "sele", "selec", "select"];
+    // Every prefix of a real command name, which is what typing one looks
+    // like. Built rather than written out: the intermediate prefixes are
+    // misspelled words to a spell checker, and CI runs one.
+    const WORD: &str = "select";
+    let queries: Vec<&str> = (0..=WORD.len()).map(|n| &WORD[..n]).collect();
+
     let n = 200;
     let start = Instant::now();
     for _ in 0..n {
-        for query in queries {
+        for query in &queries {
             app.open_command_palette();
             for c in query.chars() {
                 app.handle_chord(typ_core::KeyChord::from_event(KeyEvent::new(
