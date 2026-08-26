@@ -178,17 +178,37 @@ Guaranteed by the protocol leverage in §2, not by grinding out features one at 
 | Language | Rust |
 | TUI | ratatui 0.30 + crossterm 0.29 |
 | Text buffer | `ropey` |
-| Syntax | `tree-sitter`, grammars **dynamically loaded** |
-| LSP | `lsp-types` 0.97 + custom async client |
-| Terminal panel | `portable-pty` + `vte` |
-| Git | `gitoxide` |
-| Fuzzy matching | `nucleo` |
-| Project search | shell out to `ripgrep` |
+| Syntax | `tree-house` + five grammars, **compiled in** — reversed, see below |
+| LSP | not built; the choice and its reasoning are in [`lsp.md`](lsp.md) |
+| Terminal panel | `portable-pty` + `vte` — not built |
+| Git | `gitoxide` — not built |
+| Fuzzy matching | `nucleo-matcher`, without the `nucleo` wrapper |
+| Project search | `grep-searcher` **as a library**, not a subprocess |
 
-Grammars load dynamically rather than static-linking. TermIDE carries a six-line comment
-about tree-sitter ABI-14 versus ABI-15 colliding the exported `tree_sitter_php` C symbol at
-link time and silently disabling PHP highlighting. Dynamic loading sidesteps that class of
-failure entirely.
+**Rows in this table that have been overtaken by the code say so.** Three of them were read as
+decisions for months after the tree stopped agreeing with them, which is the same failure as the
+crate list in §5 — a 2025 prediction being read as a specification. A milestone that changes the
+stack changes this table in the same commit.
+
+**Grammars are compiled in, and the dynamic-loading argument was answered rather than accepted.**
+The original reasoning was TermIDE's six-line comment about tree-sitter ABI-14 versus ABI-15
+colliding the exported `tree_sitter_php` C symbol at link time and silently disabling PHP
+highlighting. Real, and it is a hazard of loading *many* grammars from a directory at runtime.
+M2.7 took the other side: a closed set of five, linked statically, cannot collide at link time
+because the linker sees all of them at once and would fail loudly rather than silently. What
+compiled-in buys is the thing Helix's `--grammar fetch` costs its users — no C compiler, no
+runtime directory to find, no partial install. Measured cost was 4.87 MB against a 1.19 MB
+baseline. Adding a sixth language is a recompile, which is the trade.
+
+**Fuzzy matching is `nucleo-matcher`, not `nucleo`.** The wrapper adds a rayon pool and streaming
+injection; measured at M2.8, one thread ranks 50k paths against a six-character needle in
+4.51 ms, and it already runs on a worker. The pool would have been a second thread pool beside
+`ignore`'s crossbeam-deque one, for no measured gain.
+
+**Project search is `grep-searcher` linked in, not a `ripgrep` subprocess.** Shelling out makes
+the binary depend on something the user may not have installed, and gives up the two things that
+are specifications rather than code — binary detection, and encoding and line-terminator
+handling. A search that offers forty matches inside a `.png` is worse than one that offers none.
 
 **Syntax queries are viewport-scoped, never per-line.** Measured at M0: asking a tree-sitter
 tree for one line's spans costs O(lines above it), twice over — once resolving the line's
