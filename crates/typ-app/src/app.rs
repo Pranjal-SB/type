@@ -52,6 +52,13 @@ pub struct App {
     /// A quit was refused because a panel had something to confirm. The next
     /// quit goes through.
     quit_pending: bool,
+    /// A close was refused because the tab held unsaved work. The next close
+    /// goes through; any other key in between abandons it, because a
+    /// confirmation answered forty keystrokes later is not an answer.
+    close_pending: bool,
+    /// Stamps `Tab::last_used`. Monotonic, so the highest stamp is always the
+    /// most recently active tab however many have been opened and closed.
+    next_use: u64,
     /// The status-bar prompt, when one is open. It owns the keyboard while it
     /// is.
     prompt: Option<Prompt>,
@@ -138,6 +145,18 @@ pub struct App {
 /// index.
 struct Tab {
     panel: EditorPanel,
+    /// A counter stamped every time this tab becomes active.
+    ///
+    /// Closing activates the highest, which is the tab the user was last
+    /// working in. Both mature answers in the field are history-based — VS
+    /// Code's `focusRecentEditorAfterClose` defaults to true and Helix walks
+    /// its jumplist — and the failure a neighbour rule causes is the one the
+    /// picker made common: open a file to check one thing, close it, and land
+    /// somewhere unrelated instead of back in the work.
+    ///
+    /// A stamp rather than a stack of indices, because an index stops naming
+    /// the same tab the moment an earlier one is removed.
+    last_used: u64,
     /// The buffer revision the last parse was requested for. `None` means the
     /// buffer was replaced and must be parsed regardless.
     parsed_revision: Option<u64>,
@@ -155,6 +174,7 @@ impl Tab {
             panel,
             parsed_revision: None,
             awaited_generation: None,
+            last_used: 0,
         }
     }
 }
@@ -181,6 +201,8 @@ impl App {
             quit: false,
             status: None,
             quit_pending: false,
+            close_pending: false,
+            next_use: 0,
             prompt: None,
             last_query: None,
             sender: None,
@@ -477,6 +499,7 @@ impl App {
     pub fn clear_transient(&mut self) {
         self.status = None;
         self.quit_pending = false;
+        self.close_pending = false;
     }
 
     /// Quit, unless a panel has something to confirm first.
@@ -605,6 +628,83 @@ impl App {
         self.mark_dirty();
     }
 
+    /// The next open file, wrapping at the end.
+    pub fn next_tab(&mut self) {
+        let next = (self.active + 1) % self.tabs.len();
+        self.activate_tab(next);
+    }
+
+    /// The previous open file, wrapping at the start.
+    pub fn prev_tab(&mut self) {
+        let previous = (self.active + self.tabs.len() - 1) % self.tabs.len();
+        self.activate_tab(previous);
+    }
+
+    /// Close the tab at `index`, whether or not it is the active one.
+    ///
+    /// **No guard here.** The unsaved-work question belongs to the key that
+    /// asked, because the answer is "press it again" — see `request_close_tab`.
+    /// Callers that reach this directly, like a click on a close box, have
+    /// already asked or have decided not to.
+    pub fn close_tab(&mut self, index: usize) {
+        if index >= self.tabs.len() {
+            return;
+        }
+
+        // Never zero tabs: `editor()` would have to return an `Option` and
+        // every one of its callers would handle a state with no meaning. The
+        // last one closing leaves the empty buffer the editor starts in.
+        if self.tabs.len() == 1 {
+            self.tabs[0] = Tab::new(EditorPanel::from_str(""));
+            self.settle_active_tab();
+            self.mark_dirty();
+            return;
+        }
+
+        self.tabs.remove(index);
+        // Closing a tab that is not on screen must not change what is. Its
+        // index moves when an earlier one goes, which is the whole reason an
+        // index is not a handle.
+        if index != self.active {
+            if index < self.active {
+                self.active -= 1;
+            }
+            self.mark_dirty();
+            return;
+        }
+
+        self.active = self.most_recently_used();
+        self.settle_active_tab();
+        self.mark_dirty();
+    }
+
+    /// The tab with the highest `last_used` stamp.
+    fn most_recently_used(&self) -> usize {
+        self.tabs
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, tab)| tab.last_used)
+            .map(|(index, _)| index)
+            .unwrap_or(0)
+    }
+
+    /// Close the active tab, asking first if it holds unsaved work.
+    ///
+    /// The same shape `request_quit` uses, and for the same reason: the only
+    /// thing that answers "you will lose this" is doing it again.
+    fn request_close_tab(&mut self) {
+        if !self.close_pending
+            && let Some(message) = self.tabs[self.active].panel.needs_close_confirmation()
+        {
+            self.status = Some(format!(
+                "{message}  Close again to discard, Ctrl+S to save."
+            ));
+            self.close_pending = true;
+            return;
+        }
+        self.close_tab(self.active);
+    }
+
     /// Build the panel for a path, whether or not there is a file behind it.
     ///
     /// A path with no file is one to create, not an error: `typ notes.md` and
@@ -627,6 +727,12 @@ impl App {
     /// in the same place: config the new panel has never seen, a watch pointed
     /// at the file being left, and a buffer that may want parsing.
     fn settle_active_tab(&mut self) {
+        // Every path that makes a tab active lands here, which is what keeps
+        // the stamp honest — a switch that forgot it would make the tab look
+        // older than one nobody has touched.
+        self.next_use += 1;
+        self.tabs[self.active].last_used = self.next_use;
+
         self.apply_indent_width();
         self.tabs[self.active].panel.set_whitespace(self.whitespace);
         self.focus = Focus::Editor;
@@ -720,14 +826,22 @@ impl App {
             return self.handle_prompt_chord(chord);
         }
 
-        // Every key except Ctrl+Q retires the current status message and any
-        // quit it left pending, so a confirmation is answered by the very next
-        // keystroke or not at all.
-        if chord.canonical != "ctrl+q" {
+        let bound = self.keymap.lookup(&chord);
+
+        // Every key retires the current status message and anything it left
+        // pending, so a confirmation is answered by the very next keystroke or
+        // not at all — except the keys whose confirmation it is. Those two ask
+        // "press it again", so clearing on the way in would erase the answer
+        // they are about to read.
+        //
+        // Keyed on the action rather than on the chord: this used to compare
+        // `chord.canonical` against the literal `"ctrl+q"`, which meant
+        // rebinding quit silently broke its own confirmation.
+        if !matches!(bound, Some(Action::Quit) | Some(Action::CloseTab)) {
             self.clear_transient();
         }
 
-        if let Some(action) = self.keymap.lookup(&chord) {
+        if let Some(action) = bound {
             if let Some(events) = self.focused_mut().apply_action(action) {
                 return self.apply(events);
             }
@@ -809,6 +923,13 @@ impl App {
             Action::OpenFilePicker => self.open_picker(),
             Action::OpenProjectSearch => self.open_search(),
             Action::Quit => self.request_quit(),
+            Action::NextTab => self.next_tab(),
+            Action::PrevTab => self.prev_tab(),
+            Action::CloseTab => self.request_close_tab(),
+            // Counted from one, and a digit past the last open file is a
+            // no-op rather than a clamp: landing on the last tab because you
+            // pressed Alt+9 with three open is a jump you did not ask for.
+            Action::GoToTab(n) => self.activate_tab((n as usize).saturating_sub(1)),
             Action::Save => match self.tabs[self.active].panel.save() {
                 Ok(()) => self.status = Some("Saved.".to_string()),
                 // A save that fails silently is how work gets lost. The status

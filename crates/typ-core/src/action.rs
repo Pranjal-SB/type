@@ -90,12 +90,38 @@ pub enum Action {
     OpenFilePicker,
     /// Open the project-search picker over the body.
     OpenProjectSearch,
+    /// The next open file, wrapping at the end.
+    NextTab,
+    /// The previous open file, wrapping at the start.
+    PrevTab,
+    /// Close the active tab, after asking if it holds unsaved work.
+    CloseTab,
+    /// Jump to the nth open file, counting from one — every tabbed application
+    /// counts these from one, including the terminals this runs inside.
+    GoToTab(u8),
     Copy,
     Cut,
     Paste,
     Indent,
     Outdent,
 }
+
+/// The `go_to_tab_N` names, indexed by `n - 1`.
+///
+/// Nine of them, because `Alt+digit` is the universal binding for this and
+/// there are nine non-zero digits. A tenth would need a chord no terminal is
+/// guaranteed to deliver — see `docs/design/controls.md` §1.
+const GO_TO_TAB_NAMES: [&str; 9] = [
+    "go_to_tab_1",
+    "go_to_tab_2",
+    "go_to_tab_3",
+    "go_to_tab_4",
+    "go_to_tab_5",
+    "go_to_tab_6",
+    "go_to_tab_7",
+    "go_to_tab_8",
+    "go_to_tab_9",
+];
 
 impl Action {
     /// Every action a config file may name, in a stable order.
@@ -232,6 +258,18 @@ impl Action {
         Action::ReplaceOpen,
         Action::OpenFilePicker,
         Action::OpenProjectSearch,
+        Action::NextTab,
+        Action::PrevTab,
+        Action::CloseTab,
+        Action::GoToTab(1),
+        Action::GoToTab(2),
+        Action::GoToTab(3),
+        Action::GoToTab(4),
+        Action::GoToTab(5),
+        Action::GoToTab(6),
+        Action::GoToTab(7),
+        Action::GoToTab(8),
+        Action::GoToTab(9),
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -308,6 +346,16 @@ impl Action {
             Action::ReplaceOpen => "replace_open",
             Action::OpenFilePicker => "open_file_picker",
             Action::OpenProjectSearch => "open_project_search",
+            Action::NextTab => "next_tab",
+            Action::PrevTab => "prev_tab",
+            Action::CloseTab => "close_tab",
+            Action::GoToTab(n) => GO_TO_TAB_NAMES
+                .get((*n as usize).saturating_sub(1))
+                .copied()
+                // Unreachable through `ALL` or the keymap, which build 1..=9
+                // and nothing else. A name that round-trips to nothing is
+                // better than one that round-trips to the wrong tab.
+                .unwrap_or("go_to_tab_none"),
             Action::Copy => "copy",
             Action::Cut => "cut",
             Action::Paste => "paste",
