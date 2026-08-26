@@ -55,6 +55,29 @@ pub fn picker_area(frame: Rect) -> Rect {
 pub const PICKER_WIDTH: u16 = 72;
 pub const PICKER_HEIGHT: u16 = 18;
 
+/// Split the editor's rect into `(tab_bar, editor)`.
+///
+/// **One function, because render and hit-testing both need the answer.** A bar
+/// row moves every screen coordinate inside the editor down by one, and two
+/// places computing that independently is the drift `picker_area` and
+/// `chrome::inner` both exist to prevent.
+///
+/// A single tab gets no bar: a strip naming the only open file says nothing its
+/// own border does not, and charges a row for it. Helix ships the same rule as
+/// `bufferline = "multiple"`, though it defaults to showing no bar at all —
+/// having a picker over the open files, it treats the list as the feature and
+/// the bar as chrome.
+pub fn split_tabs(editor: Rect, tab_count: usize) -> (Rect, Rect) {
+    // Two rows is a border and nothing else, so spending one on tabs leaves a
+    // panel that cannot show a line of the file it is naming.
+    if tab_count < 2 || editor.height < 3 {
+        return (Rect::new(editor.x, editor.y, editor.width, 0), editor);
+    }
+    let bar = Rect::new(editor.x, editor.y, editor.width, 1);
+    let rest = Rect::new(editor.x, editor.y + 1, editor.width, editor.height - 1);
+    (bar, rest)
+}
+
 /// Split the body into `(tree_area, editor_area)`.
 ///
 /// A fixed sidebar matches what people arriving from GUI editors expect. On

@@ -876,7 +876,8 @@ impl App {
 
     pub fn render(&mut self, frame: &mut ratatui::Frame) {
         let (body, status_area) = crate::layout::split_frame(frame.area());
-        let (tree_area, editor_area) = crate::layout::split(body);
+        let (tree_area, pane) = crate::layout::split(body);
+        let (bar_area, editor_area) = crate::layout::split_tabs(pane, self.tabs.len());
         let (w, h) = (frame.area().width, frame.area().height);
 
         let tree_ctx = RenderContext {
@@ -916,6 +917,17 @@ impl App {
                     .render(editor_area, frame.buffer_mut(), &editor_ctx);
                 self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
             }
+        }
+
+        if bar_area.height > 0 {
+            let labels: Vec<String> = self.tabs.iter().map(|tab| tab.panel.title()).collect();
+            crate::tabbar::draw(
+                frame.buffer_mut(),
+                bar_area,
+                &labels,
+                self.active,
+                &self.theme,
+            );
         }
 
         self.render_status(status_area, frame.buffer_mut());
@@ -1007,9 +1019,23 @@ impl App {
 
     /// Areas for hit-testing mouse events, in the same order as `render`.
     /// Excludes the status bar row, so a click on it hits neither panel.
+    ///
+    /// The editor's rect is the one *below* the tab bar. It has to come from
+    /// `split_tabs` rather than from `split`, because the bar moves every
+    /// coordinate inside the editor down a row and a hit-test that missed that
+    /// would land every click one line above the pointer.
     pub fn areas(&self, area: Rect) -> (Rect, Rect) {
         let (body, _) = crate::layout::split_frame(area);
-        crate::layout::split(body)
+        let (tree, pane) = crate::layout::split(body);
+        let (_, editor) = crate::layout::split_tabs(pane, self.tabs.len());
+        (tree, editor)
+    }
+
+    /// Where the tab bar is, or a zero-height rect when there is not one.
+    pub fn tab_bar_area(&self, area: Rect) -> Rect {
+        let (body, _) = crate::layout::split_frame(area);
+        let (_, pane) = crate::layout::split(body);
+        crate::layout::split_tabs(pane, self.tabs.len()).0
     }
 
     pub fn tree_mut(&mut self) -> &mut TreePanel {
