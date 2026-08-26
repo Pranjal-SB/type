@@ -297,18 +297,26 @@ impl App {
     ///
     /// **The override is the point.** A search that reports what is on disk
     /// while the user is looking at unsaved edits is answering a question
-    /// nobody asked. One editor panel today makes this a one-element vector;
-    /// M4's tabs make it a list.
+    /// nobody asked — and with tabs, "looking at" includes the two files behind
+    /// this one. Every dirty buffer is sent, not only the active one: an edit
+    /// in a background tab is exactly as unsaved as the one on screen, and it
+    /// is the one the user has stopped thinking about.
+    ///
+    /// Clean tabs are left out. The override is a copy of the whole buffer over
+    /// a channel, the walk already reads the identical bytes off disk, and with
+    /// twenty tabs open that is twenty needless copies per keystroke.
     fn request_grep(&mut self, query: String) -> u64 {
-        let overrides = match self.tabs[self.active].panel.path() {
-            Some(path) if self.tabs[self.active].panel.buffer().is_dirty() => {
-                vec![(
-                    path.to_path_buf(),
-                    self.tabs[self.active].panel.buffer().text(),
-                )]
-            }
-            _ => Vec::new(),
-        };
+        let overrides: Vec<(std::path::PathBuf, String)> = self
+            .tabs
+            .iter()
+            .filter_map(|tab| {
+                let path = tab.panel.path()?;
+                tab.panel
+                    .buffer()
+                    .is_dirty()
+                    .then(|| (path.to_path_buf(), tab.panel.buffer().text()))
+            })
+            .collect();
         let root = self.root.clone();
         let Some(worker) = &mut self.find_worker else {
             self.awaited_filter = Some(self.awaited_filter.unwrap_or(0) + 1);
