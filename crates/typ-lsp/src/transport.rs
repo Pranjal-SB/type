@@ -64,7 +64,7 @@ pub enum Incoming {
 /// grow the editor's memory without limit.
 const STDERR_LINES: usize = 32;
 
-/// How many unparseable frames in a row before the connection is given up.
+/// How many unparsable frames in a row before the connection is given up.
 ///
 /// Small on purpose. One is a server bug worth surviving; a run of them means
 /// the stream is desynchronised and nothing after it can be trusted.
