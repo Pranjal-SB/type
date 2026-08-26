@@ -12,8 +12,15 @@ use typ_buffer::display_width;
 use typ_core::ThemeColors;
 use unicode_segmentation::UnicodeSegmentation;
 
-/// One space either side of the name, so adjacent tabs do not read as one word.
-const PADDING: u16 = 2;
+/// A space either side of the name, so adjacent tabs do not read as one word,
+/// plus the column the close box sits in.
+const PADDING: u16 = 3;
+
+/// The close box. On every tab rather than only the active one: a terminal has
+/// no hover, so the GUI trick of revealing it under the pointer has nothing to
+/// reveal it with, and sizing only the active cell for it makes the whole bar
+/// jiggle every time the active tab changes.
+const CLOSE: &str = "×";
 
 /// Where one tab sits in the bar.
 ///
@@ -34,6 +41,15 @@ pub struct TabCell {
 fn cell_width(label: &str) -> u16 {
     let text = u16::try_from(display_width(label)).unwrap_or(u16::MAX);
     text.saturating_add(PADDING)
+}
+
+/// The column holding this cell's close box, if it has one.
+///
+/// `None` when the bar's edge clipped the cell, because then that column is
+/// part of the filename. Closing a file by clicking the last letter of a name
+/// that happened to run long is not an accident anyone should be able to have.
+pub fn close_box_x(cell: &TabCell, label: &str) -> Option<u16> {
+    (cell.width == cell_width(label)).then(|| cell.x + cell.width - 1)
 }
 
 /// The visible cells, scrolled so `active` is one of them.
@@ -140,10 +156,13 @@ fn write_cell(buf: &mut Buffer, area: Rect, cell: TabCell, label: &str, style: S
 
     put(&mut x, " ");
     for grapheme in label.graphemes(true) {
-        if x >= end {
+        // Leave room for the trailing space and the close box, so a long name
+        // is clipped rather than growing over them.
+        if x + 2 >= end {
             break;
         }
         put(&mut x, grapheme);
     }
     put(&mut x, " ");
+    put(&mut x, CLOSE);
 }

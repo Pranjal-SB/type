@@ -1159,6 +1159,52 @@ impl App {
         crate::layout::split_tabs(pane, self.tabs.len()).0
     }
 
+    /// Give a mouse event to the tab bar. Returns whether the bar took it.
+    ///
+    /// **The bar is opaque.** A click on its empty right-hand end is consumed
+    /// rather than passed down, because what is underneath is the editor's
+    /// first line and moving the caret there is not what anyone aiming at a
+    /// tab strip meant to do.
+    ///
+    /// Cells come from `tabbar::cells`, the same call the renderer makes, so
+    /// "the tab under the pointer" is true by construction rather than by two
+    /// pieces of arithmetic agreeing about the scroll offset.
+    pub fn route_tab_bar_mouse(&mut self, event: crossterm::event::MouseEvent, area: Rect) -> bool {
+        use crossterm::event::{MouseButton, MouseEventKind};
+
+        let bar = self.tab_bar_area(area);
+        if bar.height == 0
+            || event.row != bar.y
+            || event.column < bar.x
+            || event.column >= bar.right()
+        {
+            return false;
+        }
+
+        let labels: Vec<String> = self.tabs.iter().map(|tab| tab.panel.title()).collect();
+        let x = event.column - bar.x;
+        let Some(cell) = crate::tabbar::cells(&labels, self.active, bar.width)
+            .into_iter()
+            .find(|cell| x >= cell.x && x < cell.x + cell.width)
+        else {
+            return true;
+        };
+
+        match event.kind {
+            // The convention every browser and terminal already carries.
+            MouseEventKind::Down(MouseButton::Middle) => self.close_tab(cell.index),
+            MouseEventKind::Down(MouseButton::Left) => {
+                if crate::tabbar::close_box_x(&cell, &labels[cell.index]) == Some(x) {
+                    self.close_tab(cell.index);
+                } else {
+                    self.activate_tab(cell.index);
+                }
+            }
+            _ => {}
+        }
+        true
+    }
+
     pub fn tree_mut(&mut self) -> &mut TreePanel {
         &mut self.tree
     }

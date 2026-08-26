@@ -285,6 +285,13 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
                     return finish(app, events, changed);
                 }
 
+                // The tab bar sits inside the editor's columns but above its
+                // rect, so without this a click on it is hit-tested against a
+                // row the editor does not own.
+                if app.route_tab_bar_mouse(m, area) {
+                    return finish(app, events, changed);
+                }
+
                 let (tree_area, editor_area) = app.areas(area);
                 let in_tree = m.column < tree_area.width;
 
