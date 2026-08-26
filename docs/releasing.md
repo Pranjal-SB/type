@@ -91,12 +91,13 @@ first two would each have landed on a permanent tag.
 
 ## 4. Publish to crates.io
 
-Ten crates, and **the order is a dependency order** — cargo will not accept a crate whose
+Eleven crates, and **the order is a dependency order** — cargo will not accept a crate whose
 dependencies are not already on the registry at the version it names:
 
 ```
 cargo publish -p typ-syntax
 cargo publish -p typ-find
+cargo publish -p typ-lsp
 cargo publish -p typ-core
 cargo publish -p typ-buffer
 cargo publish -p typ-registry
@@ -107,9 +108,10 @@ cargo publish -p typ-app
 cargo publish -p typ-editor
 ```
 
-`typ-syntax` and `typ-find` go **first**, ahead of `typ-core`, which is the position that is easy
-to get wrong: both look like leaves, but `typ-core`'s `AppEvent` carries a `typ_syntax::Parsed`
-and a `typ_find::Found`, so they are the bottom of the graph rather than the top. Neither depends
+`typ-syntax`, `typ-find` and `typ-lsp` go **first**, ahead of `typ-core`, which is the position
+that is easy to get wrong: all three look like leaves, but `typ-core`'s `AppEvent` carries a
+`typ_syntax::Parsed` and a `typ_find::Found`, so they are the bottom of the graph rather than the
+top. Neither depends
 on anything of TYPE's in either dependency table — deliberately, because a dev-dependency back
 onto `typ-core` would build locally and fail here. `typ-buffer` has no internal dependencies
 either and can swap with `typ-core`; every line after them depends on something above it.
