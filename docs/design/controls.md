@@ -7,9 +7,14 @@ verified: 2026-08-22
 
 # Controls — the keyboard model
 
-**Status: design, not built.** Nothing here exists in the tree yet. It is written down because
-the decisions constrain M2.6 (kitty protocol), M4 (splits, tabs, palette) and M5 (terminal
-panel), and because two of them were arrived at by measuring the field rather than by taste.
+**Status: half built as of v0.2.9.** The tier analysis in §1 is load-bearing and has been used —
+it is why the command palette is reached by typing `>` into `Ctrl+P` rather than by
+`Ctrl+Shift+P`, and why tab switching is bound to `Alt+,`/`Alt+.` as well as the page keys. The
+*mechanism* in §2 — sequence bindings, `Resolved::Pending`, the generated hint, `Action` carrying
+a description and a group — is not built. Gap analysis 52 and 53 track what that leaves.
+
+The decisions still constrain M2.6 (kitty protocol), M4 (splits) and M5 (terminal panel), and two
+of them were arrived at by measuring the field rather than by taste.
 
 The companion question — what TYPE *looks* like — is deliberately absent. See
 [Open](#open-questions).
@@ -201,8 +206,15 @@ so that adding them is an addition rather than a retrofit.
 
 ## What this buys elsewhere
 
-- `bindings_for`, which exists for help text, becomes the command palette's data source at M4
-  rather than a second list to maintain.
+- `bindings_for`, which existed for help text, **became the command palette's data source at
+  v0.2.9** rather than a second list to maintain — the palette shows what key runs each command
+  and nothing had to be written down twice. It is the one prediction in this document that has
+  been paid out.
+
+  What has not: §2 says that description is "the same string the command palette shows — one
+  source, two surfaces". `Action` has no description, so the palette lists bare `name()`s like
+  `select_next_occurrence`. The hint that was to share it does not exist, so there is no second
+  surface to keep honest yet.
 - The vim layer gets pending-state support for nothing: `d3w` is the same shape of problem as
   `ctrl+k e`.
 - Every binding becomes introspectable, which is what "every action reachable three ways"

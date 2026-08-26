@@ -50,7 +50,10 @@ micro has not converted developers in a decade.
 **The counter-evidence is specific and it is the reason to keep going.** A 2026 micro review
 names why people still leave this niche: *"its mouse support, fuzzy finder, and SSH clipboard
 story didn't quite hit the bar."* Those three are precisely TYPE's stated commitments. The SSH
-clipboard shipped at v0.2.2. Mouse parity is invariant 8. The fuzzy finder does not exist yet.
+clipboard shipped at v0.2.2, mouse parity is invariant 8, and the fuzzy finder shipped at
+v0.2.8 — so as of v0.2.9 all three named weaknesses are answered *in kind*. Whether they are
+answered *decisively* is a different question and this document does not yet have evidence for
+it: nobody outside the project has used them.
 
 So the bet is **contrarian-and-plausible**, not contrarian-and-obviously-right, and it pays only
 if those three are decisively better rather than merely present. Parity with Croft's feature

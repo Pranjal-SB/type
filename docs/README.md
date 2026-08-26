@@ -1,7 +1,7 @@
 ---
 type: index
 status: living
-verified: 2026-08-22
+verified: 2026-08-26
 ---
 
 # TYPE documentation
@@ -15,8 +15,9 @@ fixed. Each carries a `verified` date saying when that was last checked.
 | [`design/gap-analysis.md`](design/gap-analysis.md) | Known defects, and how TYPE measures against other editors. Re-run at each milestone. |
 | [`design/themes.md`](design/themes.md) | The theme format, the 25 slots, and the contrast rubric every palette is measured against. |
 | [`design/visual.md`](design/visual.md) | **Draft, not built.** What TYPE looks like: one rule instead of boxes, and how focus is shown without one. |
-| [`design/controls.md`](design/controls.md) | **Draft, not built.** The keyboard model: two chord tiers, prefix resolution and its hint, layered keymaps. |
-| [`releasing.md`](releasing.md) | Cutting a release: the close-out, the tag, and the order the seven crates publish in. |
+| [`design/controls.md`](design/controls.md) | **Half built.** The keyboard model: two chord tiers, prefix resolution and its hint, layered keymaps. The tier analysis decided how the palette and tab switching are bound; the prefix mechanism is not built. |
+| [`design/landscape.md`](design/landscape.md) | Who else is in this niche and whether the bet is a good one. Asks a harder question than the gap analysis: not what is missing, but whether it matters. |
+| [`releasing.md`](releasing.md) | Cutting a release: the close-out, the tag, and the order the ten crates publish in. |
 
 The roadmap lives in the [README](../README.md). Per-milestone task lists are working documents
 and are not published.

@@ -15,14 +15,21 @@ cargo install typ-editor
 typ .
 ```
 
-## Status: pre-alpha, v0.2.1
+## Status: pre-alpha, v0.2.10
 
 Genuinely working: multiple cursors, selections, word-wise motion, drag to select, horizontal
-scrolling, literal search and replace, undo that takes back a run of typing in one press, a
-file tree, rebindable keys via `keys.toml`, and atomic saves.
+scrolling, search and replace, undo that takes back a run of typing in one press, a file tree,
+rebindable keys via `keys.toml`, and atomic saves that keep your line endings, symlinks and mode
+bits.
 
-Not there yet: syntax highlighting, clipboard, LSP, splits and tabs, integrated terminal, git.
-See the [roadmap](https://github.com/Pranjal-SB/type#roadmap) — and the
+Syntax highlighting is tree-sitter, for Rust, TOML, JSON, YAML and Markdown, with the grammars
+compiled in — no runtime directory, no C compiler. Themes are TOML files and six ship. `Ctrl+P`
+fuzzy-finds any file, `Ctrl+Shift+F` searches the project's text, and typing `>` in the finder
+turns it into a command palette over every named action. Files open into tabs. The clipboard
+works over SSH.
+
+Not there yet: LSP, splits, integrated terminal, git. See the
+[roadmap](https://github.com/Pranjal-SB/type#roadmap) — and the
 [gap analysis](https://github.com/Pranjal-SB/type/blob/main/docs/design/gap-analysis.md), which
 lists the known defects honestly rather than waiting for you to find them.
 

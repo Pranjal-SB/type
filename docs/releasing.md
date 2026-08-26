@@ -3,7 +3,7 @@ type: process
 status: living
 area: release
 verified: 2026-08-25
-verified-against: v0.2.8
+verified-against: v0.2.9
 ---
 
 # Releasing
