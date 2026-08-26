@@ -52,10 +52,15 @@ pub struct App {
     /// A quit was refused because a panel had something to confirm. The next
     /// quit goes through.
     quit_pending: bool,
-    /// A close was refused because the tab held unsaved work. The next close
-    /// goes through; any other key in between abandons it, because a
-    /// confirmation answered forty keystrokes later is not an answer.
-    close_pending: bool,
+    /// A close was refused because that tab held unsaved work, and **which
+    /// tab** it was. Repeating the close on the same one goes through; anything
+    /// else in between abandons it, because a confirmation answered forty
+    /// keystrokes later is not an answer.
+    ///
+    /// The index rather than a bare flag: with a close box on every tab, an
+    /// answer about one tab must not discard a different one. That is the trap
+    /// the old open guard carried a whole path to avoid.
+    close_pending: Option<usize>,
     /// Stamps `Tab::last_used`. Monotonic, so the highest stamp is always the
     /// most recently active tab however many have been opened and closed.
     next_use: u64,
@@ -201,7 +206,7 @@ impl App {
             quit: false,
             status: None,
             quit_pending: false,
-            close_pending: false,
+            close_pending: None,
             next_use: 0,
             prompt: None,
             last_query: None,
@@ -499,7 +504,7 @@ impl App {
     pub fn clear_transient(&mut self) {
         self.status = None;
         self.quit_pending = false;
-        self.close_pending = false;
+        self.close_pending = None;
     }
 
     /// Quit, unless a panel has something to confirm first.
@@ -688,21 +693,30 @@ impl App {
             .unwrap_or(0)
     }
 
-    /// Close the active tab, asking first if it holds unsaved work.
+    /// Close the tab at `index`, asking first if it holds unsaved work.
     ///
     /// The same shape `request_quit` uses, and for the same reason: the only
     /// thing that answers "you will lose this" is doing it again.
-    fn request_close_tab(&mut self) {
-        if !self.close_pending
-            && let Some(message) = self.tabs[self.active].panel.needs_close_confirmation()
-        {
-            self.status = Some(format!(
-                "{message}  Close again to discard, Ctrl+S to save."
-            ));
-            self.close_pending = true;
+    ///
+    /// **Every close gesture goes through here** — Ctrl+W, the close box and a
+    /// middle click. Invariant 8 makes the mouse and the keyboard peers, and a
+    /// close box that skipped the question would be the one path in the editor
+    /// that loses work in a single click without saying anything.
+    pub(crate) fn request_close_tab(&mut self, index: usize) {
+        if index >= self.tabs.len() {
             return;
         }
-        self.close_tab(self.active);
+        if self.close_pending != Some(index)
+            && let Some(message) = self.tabs[index].panel.needs_close_confirmation()
+        {
+            self.status = Some(format!(
+                "{message}  Close {} again to discard, Ctrl+S to save.",
+                self.tabs[index].panel.file_name()
+            ));
+            self.close_pending = Some(index);
+            return;
+        }
+        self.close_tab(index);
     }
 
     /// Build the panel for a path, whether or not there is a file behind it.
@@ -926,7 +940,7 @@ impl App {
             Action::Quit => self.request_quit(),
             Action::NextTab => self.next_tab(),
             Action::PrevTab => self.prev_tab(),
-            Action::CloseTab => self.request_close_tab(),
+            Action::CloseTab => self.request_close_tab(self.active),
             // Counted from one, and a digit past the last open file is a
             // no-op rather than a clamp: landing on the last tab because you
             // pressed Alt+9 with three open is a jump you did not ask for.
@@ -1193,11 +1207,14 @@ impl App {
 
         match event.kind {
             // The convention every browser and terminal already carries.
-            MouseEventKind::Down(MouseButton::Middle) => self.close_tab(cell.index),
+            MouseEventKind::Down(MouseButton::Middle) => self.request_close_tab(cell.index),
             MouseEventKind::Down(MouseButton::Left) => {
                 if crate::tabbar::close_box_x(&cell, &labels[cell.index]) == Some(x) {
-                    self.close_tab(cell.index);
+                    self.request_close_tab(cell.index);
                 } else {
+                    // Anything that is not a close retires the status, and any
+                    // confirmation it was carrying with it.
+                    self.clear_transient();
                     self.activate_tab(cell.index);
                 }
             }

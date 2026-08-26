@@ -6,11 +6,11 @@
 
 use std::path::PathBuf;
 
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use typ_app::App;
 use typ_app::tabbar;
-use typ_core::Panel;
+use typ_core::{KeyChord, Panel};
 
 /// Deliberately not the whole terminal: a hit test that forgets the bar's own
 /// origin passes every test anchored at column zero.
@@ -107,6 +107,116 @@ fn a_middle_click_closes_the_tab_under_the_pointer() {
 
     assert_eq!(app.tab_count(), 2);
     assert_eq!(app.editor_title(), "c.rs", "the active tab moved");
+}
+
+#[test]
+fn clicking_the_close_box_on_a_dirty_tab_asks_first() {
+    // Invariant 8 says the mouse and the keyboard are peers, and Ctrl+W asks
+    // before discarding unsaved work. A close box that does not is not a
+    // difference in style — it is the one path in the editor that loses work
+    // without saying anything, which is what the open guard used to be.
+    let (mut app, _dir) = open("dirty-close-box", &["a.rs", "b.rs"]);
+    app.handle_chord(KeyChord::from_event(KeyEvent::new(
+        KeyCode::Char('X'),
+        KeyModifiers::NONE,
+    )))
+    .unwrap();
+    assert_eq!(app.editor_title(), "b.rs *", "the fixture must be dirty");
+
+    let bar = app.tab_bar_area(FRAME);
+    let names = labels(&app);
+    let cells = tabbar::cells(&names, app.active_tab(), bar.width);
+    let dirty = cells[1];
+    let close_x = tabbar::close_box_x(&dirty, &names[dirty.index]).expect("a full cell has one");
+
+    app.route_tab_bar_mouse(press(MouseButton::Left, bar.x + close_x, bar.y), FRAME);
+
+    assert_eq!(
+        app.tab_count(),
+        2,
+        "unsaved work was discarded by one click"
+    );
+    assert!(
+        app.status().unwrap_or_default().contains("Unsaved changes"),
+        "a refusal nobody can see is indistinguishable from a broken click"
+    );
+}
+
+#[test]
+fn clicking_the_close_box_again_goes_through() {
+    let (mut app, _dir) = open("dirty-close-twice", &["a.rs", "b.rs"]);
+    app.handle_chord(KeyChord::from_event(KeyEvent::new(
+        KeyCode::Char('X'),
+        KeyModifiers::NONE,
+    )))
+    .unwrap();
+
+    let bar = app.tab_bar_area(FRAME);
+    let names = labels(&app);
+    let cells = tabbar::cells(&names, app.active_tab(), bar.width);
+    let dirty = cells[1];
+    let close_x = tabbar::close_box_x(&dirty, &names[dirty.index]).expect("a full cell has one");
+    let at = press(MouseButton::Left, bar.x + close_x, bar.y);
+
+    app.route_tab_bar_mouse(at, FRAME);
+    app.route_tab_bar_mouse(at, FRAME);
+
+    assert_eq!(app.tab_count(), 1, "the second click did not go through");
+}
+
+#[test]
+fn a_middle_click_on_a_dirty_tab_asks_too() {
+    let (mut app, _dir) = open("dirty-middle", &["a.rs", "b.rs"]);
+    app.handle_chord(KeyChord::from_event(KeyEvent::new(
+        KeyCode::Char('X'),
+        KeyModifiers::NONE,
+    )))
+    .unwrap();
+
+    let bar = app.tab_bar_area(FRAME);
+    let cells = tabbar::cells(&labels(&app), app.active_tab(), bar.width);
+    let dirty = cells[1];
+
+    app.route_tab_bar_mouse(
+        press(MouseButton::Middle, bar.x + dirty.x + 1, bar.y),
+        FRAME,
+    );
+
+    assert_eq!(
+        app.tab_count(),
+        2,
+        "unsaved work was discarded by one click"
+    );
+}
+
+#[test]
+fn confirming_one_tab_does_not_arm_the_close_box_of_another() {
+    // The trap the old open guard carried a path *and* an event counter to
+    // avoid: an answer to one question must not answer a different one.
+    let (mut app, _dir) = open("wrong-tab", &["a.rs", "b.rs", "c.rs"]);
+    app.handle_chord(KeyChord::from_event(KeyEvent::new(
+        KeyCode::Char('X'),
+        KeyModifiers::NONE,
+    )))
+    .unwrap();
+
+    let bar = app.tab_bar_area(FRAME);
+    let names = labels(&app);
+    let cells = tabbar::cells(&names, app.active_tab(), bar.width);
+    let dirty = cells[2];
+    let clean = cells[0];
+    let dirty_x = tabbar::close_box_x(&dirty, &names[dirty.index]).expect("full");
+    let clean_x = tabbar::close_box_x(&clean, &names[clean.index]).expect("full");
+
+    // Ask about the dirty tab, then click a different tab's close box.
+    app.route_tab_bar_mouse(press(MouseButton::Left, bar.x + dirty_x, bar.y), FRAME);
+    app.route_tab_bar_mouse(press(MouseButton::Left, bar.x + clean_x, bar.y), FRAME);
+
+    assert_eq!(app.tab_count(), 2, "the clean tab should have closed");
+    assert!(
+        labels(&app).iter().any(|t| t == "c.rs *"),
+        "the dirty tab was closed by an answer meant for another question"
+    );
 }
 
 #[test]

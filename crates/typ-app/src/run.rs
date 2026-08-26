@@ -268,9 +268,6 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
             Event::Key(_) => changed = false,
             Event::Paste(text) => app.handle_paste(text)?,
             Event::Mouse(m) => {
-                if matches!(m.kind, MouseEventKind::Down(_)) {
-                    app.clear_transient();
-                }
                 // Motion with no button held changes nothing and arrives on
                 // every cell the pointer crosses. At M0 these were being
                 // counted as frames, which quietly flattered both p50 and p99.
@@ -281,6 +278,9 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
                 // over them: a click that lands on the picker must not also
                 // reach whatever it is floating above.
                 if app.picker().is_some() {
+                    if matches!(m.kind, MouseEventKind::Down(_)) {
+                        app.clear_transient();
+                    }
                     events = app.route_picker_mouse(m, area);
                     return finish(app, events, changed);
                 }
@@ -288,8 +288,18 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
                 // The tab bar sits inside the editor's columns but above its
                 // rect, so without this a click on it is hit-tested against a
                 // row the editor does not own.
+                //
+                // **Ahead of `clear_transient`, unlike every other click.** A
+                // close box on a dirty tab arms a confirmation that the next
+                // click has to be able to see, and clearing on the way in would
+                // erase the very thing that click is answering. The bar retires
+                // the status itself for the gestures that are not an answer.
                 if app.route_tab_bar_mouse(m, area) {
                     return finish(app, events, changed);
+                }
+
+                if matches!(m.kind, MouseEventKind::Down(_)) {
+                    app.clear_transient();
                 }
 
                 let (tree_area, editor_area) = app.areas(area);
