@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.2.9, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.2.10, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -317,7 +317,8 @@ one that plainly did nothing.
 | v0.2.6 | M2.6 | Ship: static musl and aarch64 Linux builds, one-line installers, self-verifying releases | shipped |
 | v0.2.7 | M2.7 | Parse: tree-sitter highlighting for five languages, grammars compiled in, syntax themes | shipped |
 | v0.2.8 | M2.8 | Find: fuzzy file picker and project search | shipped |
-| v0.2.9 | M2.9 | Workspace-lite: tabs, tab bar, command palette | **current** |
+| v0.2.9 | M2.9 | Workspace-lite: tabs, tab bar, command palette | shipped |
+| v0.2.10 | — | Loose ends: `typ a.rs b.rs` opens both, documentation corrected | **current** |
 | v0.3.0 | M3 | Code intelligence: LSP client | next |
 | v0.4.0 | M4 | Workspace: splits, sessions, workspace-wide file watching | |
 | v0.5.0 | M5 | Terminal panel and git integration | |

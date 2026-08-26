@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use typ_app::App;
-use typ_core::{KeyChord, PanelEvent};
+use typ_core::{KeyChord, Panel, PanelEvent};
 
 /// One directory per test — see the tree panel fixture for why sharing races.
 fn fixture(name: &str) -> PathBuf {
@@ -152,6 +152,78 @@ fn the_tree_opens_into_a_tab_too() {
 
     assert_eq!(app.tab_count(), 2);
     assert_eq!(app.editor_title(), "second.rs");
+}
+
+#[test]
+fn several_paths_open_as_several_tabs_with_the_first_active() {
+    // `typ a.rs b.rs` dropped everything after the first path without a word.
+    // The gap analysis called it "honest until tabs exist, a real bug the
+    // moment they do" — and then tabs shipped without it.
+    //
+    // The first stays active because that is what `vim a b` and `code a b`
+    // both do: the extra paths are context you asked to have open, not the
+    // thing you asked to look at.
+    let dir = fixture("several");
+    let mut app = App::new(&dir).unwrap();
+
+    app.open_all(&[dir.join("first.rs"), dir.join("second.rs")])
+        .unwrap();
+
+    assert_eq!(app.tab_count(), 2);
+    assert_eq!(app.active_tab(), 0);
+    assert_eq!(app.editor_title(), "first.rs");
+}
+
+#[test]
+fn one_path_opens_one_tab_and_reuses_the_scratch_buffer() {
+    let dir = fixture("several-one");
+    let mut app = App::new(&dir).unwrap();
+
+    app.open_all(&[dir.join("first.rs")]).unwrap();
+
+    assert_eq!(app.tab_count(), 1);
+    assert_eq!(app.editor_title(), "first.rs");
+}
+
+#[test]
+fn no_paths_leaves_the_scratch_buffer_alone() {
+    // `typ .` resolves to a workspace and no file, so this is the ordinary
+    // no-argument start rather than an edge case.
+    let dir = fixture("several-none");
+    let mut app = App::new(&dir).unwrap();
+
+    app.open_all(&[]).unwrap();
+
+    assert_eq!(app.tab_count(), 1);
+    assert_eq!(app.editor_title(), "untitled");
+}
+
+#[test]
+fn the_same_path_twice_on_the_command_line_is_one_tab() {
+    let dir = fixture("several-dup");
+    let mut app = App::new(&dir).unwrap();
+
+    app.open_all(&[dir.join("first.rs"), dir.join("first.rs")])
+        .unwrap();
+
+    assert_eq!(app.tab_count(), 1);
+}
+
+#[test]
+fn a_name_with_no_file_behind_it_still_gets_a_tab() {
+    // `typ a.rs new.md` opens an empty buffer for the second, the same way
+    // `typ new.md` alone does. Whether the *directory* exists is a
+    // command-line question and `main.rs` answers it before this is called —
+    // see `resolve`.
+    let dir = fixture("several-new");
+    let new = dir.join("not-yet.rs");
+
+    let mut app = App::new(&dir).unwrap();
+    app.open_all(&[dir.join("first.rs"), new.clone()]).unwrap();
+
+    assert_eq!(app.tab_count(), 2);
+    assert_eq!(app.tab(1).title(), "not-yet.rs");
+    assert!(!new.exists(), "opening must not create the file");
 }
 
 #[test]

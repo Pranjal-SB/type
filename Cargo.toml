@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.9"
+version = "0.2.10"
 edition = "2024"
 # Matches rust-toolchain.toml. Without it, someone on an older compiler gets a
 # wall of syntax errors from edition-2024 code and let-chains instead of cargo
@@ -74,15 +74,15 @@ mimalloc = { version = "0.1", default-features = false }
 
 # Version alongside path: cargo resolves the path locally and publishes the
 # version, and refuses to publish a crate whose dependencies carry only a path.
-typ-core = { path = "crates/typ-core", version = "0.2.9" }
-typ-buffer = { path = "crates/typ-buffer", version = "0.2.9" }
-typ-registry = { path = "crates/typ-registry", version = "0.2.9" }
-typ-panel-editor = { path = "crates/typ-panel-editor", version = "0.2.9" }
-typ-panel-tree = { path = "crates/typ-panel-tree", version = "0.2.9" }
-typ-app = { path = "crates/typ-app", version = "0.2.9" }
-typ-syntax = { path = "crates/typ-syntax", version = "0.2.9" }
-typ-find = { path = "crates/typ-find", version = "0.2.9" }
-typ-picker = { path = "crates/typ-picker", version = "0.2.9" }
+typ-core = { path = "crates/typ-core", version = "0.2.10" }
+typ-buffer = { path = "crates/typ-buffer", version = "0.2.10" }
+typ-registry = { path = "crates/typ-registry", version = "0.2.10" }
+typ-panel-editor = { path = "crates/typ-panel-editor", version = "0.2.10" }
+typ-panel-tree = { path = "crates/typ-panel-tree", version = "0.2.10" }
+typ-app = { path = "crates/typ-app", version = "0.2.10" }
+typ-syntax = { path = "crates/typ-syntax", version = "0.2.10" }
+typ-find = { path = "crates/typ-find", version = "0.2.10" }
+typ-picker = { path = "crates/typ-picker", version = "0.2.10" }
 
 [profile.release]
 opt-level = 3
