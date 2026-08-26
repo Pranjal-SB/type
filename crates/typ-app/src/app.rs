@@ -822,9 +822,15 @@ impl App {
     ///
     /// ponytail: the honest fix is naming the tree's primitives as actions the
     /// way the editor's are — "activate the selected entry" has no name today.
-    /// That is a command-surface question and it lands with the palette at M4;
-    /// until then the raw-key fallback is four lines and invents no vocabulary
-    /// that would have to be guessed at now and lived with later.
+    ///
+    /// **This comment used to say that lands with the palette. The palette
+    /// landed and it did not.** The two turned out to be independent: the
+    /// palette lists whatever is in `Action::ALL`, and the tree's primitives
+    /// are not in it, so the palette covers the editor and the app and the
+    /// raw-key fallback stays exactly as it was. Naming five tree primitives is
+    /// a vocabulary decision with no second consumer asking for it yet, which
+    /// is the only thing invariant 2 actually requires. It moves to the
+    /// milestone that gives the tree a keymap of its own.
     pub fn handle_chord(&mut self, chord: KeyChord) -> Result<()> {
         // The picker owns the keyboard while it is up, ahead of the prompt and
         // ahead of the keymap — otherwise typing a filename fires every editing
