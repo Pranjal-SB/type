@@ -2,7 +2,8 @@
 type: design
 status: draft
 area: spec
-verified: 2026-08-22
+verified: 2026-08-27
+verified-against: v0.2.10
 ---
 
 # Visual direction
@@ -110,6 +111,48 @@ whether focus is visible at all.
 milestone owes themes, capability detection, indent detection, whitespace and guides. Boxes and
 focus receding are a separate body of work and want their own tasks, written down before they are
 built. **This document is the input to that, not a licence to start.**
+
+## Is ratatui the ceiling?
+
+Asked at v0.2.10, because the terminal applications that currently look best — opencode,
+lavalamp, oh-my-pi — do not use it. Checked rather than argued, and the answer is no.
+
+**The three of them are one renderer.** `lavalamp` depends on `@opentui/core` and
+`@opentui/react`; opencode's TUI is `opentui`, from the same organisation. OpenTUI is a
+TypeScript API over a **Zig** native renderer, and it ships a `three` package, so it composites
+rather than filling a cell grid. It was never a choice TYPE declined — it is not a Rust library,
+and no Rust project could have picked it. opencode's `packages/app`, separately, is SolidJS and
+Vite: a browser UI, not a terminal one.
+
+Nor is there a Rust alternative to weigh. `tui-realm`, `widgetui`, `soft_ratatui` and
+`raclettui` are all built **on** ratatui. The real second option is what Helix and TermIDE did,
+hand-roll on crossterm, and Helix does not look better for it.
+
+**ratatui does not cap what can be drawn**, which was checked directly:
+
+| Wanted | Available |
+|---|---|
+| Undercurl, styled underlines | `Modifier` is a `u16` with 9 of 16 bits used; `bitflags` 2 has `from_bits_retain`, so a custom bit survives the buffer and the diff |
+| Arbitrary escapes per cell | `Cell::symbol` is a string, and ratatui's own tests set an OSC 8 hyperlink into one (`buffer.rs:1220`) |
+| Synchronized output (CSI 2026) | already built — `run.rs` writes `?2026h`/`?2026l` around every frame by hand, and a backend would own it instead |
+| Full control of the bytes emitted | `Backend` is fourteen methods and `draw()` yields `(x, y, &Cell)` |
+
+What produces the interchangeable ratatui look is `Block::bordered()` and the default widget set,
+which this document already rejected on its first page.
+
+**So the constraint is this document being a draft, not the renderer.** Ten milestones have gone
+to correctness and none to visual design. That is the gap, and it is a milestone rather than a
+task.
+
+**The one structural tension is motion, and it is TYPE's own.** The loop repaints on dirty state
+and never on a timer. Easing, transitions and a spinner while a language server indexes all need
+frames on a clock. M2.4 made the loop wakeable so a timed wake is possible, but nothing has asked
+for one, and "damage-driven" as written forecloses movement. Beauty in 2026 is substantially
+movement. Deciding that is part of the milestone this document is the input to.
+
+**Acted on now, and only this:** a custom `Backend` in `typ-app`, roughly 250 lines wrapping
+crossterm. M3 needs it for the diagnostics underline regardless, and building it there means the
+visual milestone starts with the capability already present instead of blocked behind it.
 
 ## Open
 
