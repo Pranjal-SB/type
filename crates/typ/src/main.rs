@@ -128,14 +128,28 @@ fn real_main() -> Result<()> {
         }
     }
 
-    let target: PathBuf = args
-        .first()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let paths: Vec<PathBuf> = args.iter().map(PathBuf::from).collect();
+    let target: PathBuf = paths.first().cloned().unwrap_or_else(|| PathBuf::from("."));
 
     let Target { root, file } = resolve(&target).inspect_err(|e| {
         typ_app::log_error!("{} could not be opened: {e:#}", target.display());
     })?;
+
+    // **Every path gets `resolve`'s check, not just the first.** The rest are
+    // opened as tabs below, and arg 1 and arg 2 disagreeing about what counts
+    // as a valid path is worse than either answer on its own. Checked here,
+    // before the alternate screen is entered, while stderr is still visible.
+    let mut extras: Vec<PathBuf> = Vec::new();
+    for path in paths.iter().skip(1) {
+        let Target { file, .. } = resolve(path).inspect_err(|e| {
+            typ_app::log_error!("{} could not be opened: {e:#}", path.display());
+        })?;
+        // A directory named after the first argument is not a second
+        // workspace and there is nothing to open for it.
+        if let Some(file) = file {
+            extras.push(file);
+        }
+    }
 
     // The clipboard only reaches outside this process once a binary says so.
     // Defaulting it off means a test suite linking typ-buffer never spawns
@@ -196,9 +210,10 @@ fn real_main() -> Result<()> {
         app.notify(complaints.join("  ·  "));
     }
 
-    if let Some(f) = file {
-        app.open_path(&f)?;
-    }
+    // `open_all` leaves the first path active, which is what `vim a b` and
+    // `code a b` both do.
+    let to_open: Vec<PathBuf> = file.into_iter().chain(extras).collect();
+    app.open_all(&to_open)?;
 
     // Blocks until the user exits. No daemon detach — a caller waiting on
     // $EDITOR must see this process end when editing ends.

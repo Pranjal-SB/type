@@ -591,6 +591,30 @@ impl App {
         self.open_in_new_tab(path)
     }
 
+    /// Open every path, and leave the first one on screen.
+    ///
+    /// **What `typ a.rs b.rs` means.** Before tabs it meant `typ a.rs`, with
+    /// everything after the first path dropped silently; the gap analysis
+    /// called that "honest until tabs exist, a real bug the moment they do".
+    ///
+    /// The first stays active because that is what `vim a b` and `code a b`
+    /// both do: the rest are context you asked to have open, not the thing you
+    /// asked to look at. A path that cannot be opened stops the whole thing
+    /// rather than being skipped — `$EDITOR`'s caller needs the non-zero exit,
+    /// and quietly opening the other three is how a typo costs an afternoon.
+    pub fn open_all(&mut self, paths: &[std::path::PathBuf]) -> Result<()> {
+        for path in paths {
+            self.open_path(path)?;
+        }
+        // Not `activate_tab(0)` unconditionally: with one path it is already
+        // active, and `activate_tab` would be a no-op that still reads as a
+        // decision.
+        if paths.len() > 1 {
+            self.activate_tab(0);
+        }
+        Ok(())
+    }
+
     /// The tab already holding `path`, if there is one.
     ///
     /// Compared canonically: a picker produces `src/main.rs`, a tree produces an
