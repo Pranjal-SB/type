@@ -18,9 +18,39 @@ ropey.workspace = true
 serde_json.workspace = true
 url.workspace = true
 
+# Both are already in the tree via other crates, so the process-tree kill costs
+# no new dependency. Nothing else in typ-lsp needs platform code.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
+[target.'cfg(windows)'.dependencies]
+# Four features, not two: CreateJobObjectW is gated on Win32_Security for its
+# SECURITY_ATTRIBUTES argument, and JOBOBJECT_EXTENDED_LIMIT_INFORMATION on
+# Win32_System_Threading for the IO_COUNTERS it embeds.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
+# A test double, not a product. It lives here rather than in its own crate so
+# `CARGO_BIN_EXE_typ-lsp-fake-server` resolves it for the integration tests --
+# that variable is only set for bin targets of the same package.
+[[bin]]
+name = "typ-lsp-fake-server"
+path = "src/bin/fake_server.rs"
 
 [dev-dependencies]
 lsp-types.workspace = true
 serde_json.workspace = true
 
+# The tests ask whether a pid is still alive, which no std API answers.
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+] }

@@ -13,7 +13,9 @@
 //! obvious ones, is in `docs/design/lsp.md`.
 
 pub mod position;
+pub mod transport;
 pub mod uri;
 
 pub use position::{Encoding, from_lsp, to_lsp};
+pub use transport::{Incoming, SpawnError, Transport};
 pub use uri::{path_to_uri, uri_to_path};
