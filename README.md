@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.2.8, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.2.9, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -83,14 +83,28 @@ editor, ranks paths as you type, and shows which characters matched. The walk re
 `.gitignore` and runs in parallel — 37,586 files in 95 ms, against 2.6 seconds serial — on a
 worker thread, so nothing walks at startup and the previous results stay on screen while it
 refreshes. Project search is ripgrep's searcher: binary files are skipped, and **the file you
-have open is searched from memory**, so unsaved edits are found rather than missed. Both work
-with the mouse, and Enter on a search result opens the file at that line and column.
+have open is searched from memory**, so unsaved edits are found rather than missed — every
+unsaved buffer, not only the visible one. Both work with the mouse, and Enter on a search result
+opens the file at that line and column.
 
-No LSP, no tabs or splits yet; see the roadmap. Full history in
-[CHANGELOG.md](CHANGELOG.md).
+**More than one file is open at a time.** Opening a file adds a tab instead of replacing the
+buffer, so finding a file no longer costs you the one you were reading, and the confirmation
+that used to guard an open is gone with the reason for it. Each tab keeps its own syntax tree.
+`Ctrl+PageUp`/`Ctrl+PageDown` and `Alt+,`/`Alt+.` move, `Alt+1`..`Alt+9` jump, `Ctrl+W` closes,
+and closing lands on the tab you last worked in rather than a neighbour. The bar appears at two
+files and stays out of the way at one; clicking a tab selects it and its × closes it, asking
+first if there is unsaved work in it.
 
-Every editing primitive is a named action and every key binding is a table row, so a command
-palette and an opt-in vim layer are configuration rather than a rewrite.
+**Every named action is reachable by name.** Type `>` in `Ctrl+P` and the picker becomes a
+command palette, listing each command with the key that runs it. The prefix rather than a chord
+because `Ctrl+Shift+letter` needs the kitty keyboard protocol to arrive at all — `Ctrl+Shift+P`
+is bound too, for terminals that deliver it.
+
+No LSP and no splits yet; see the roadmap. Full history in [CHANGELOG.md](CHANGELOG.md).
+
+Every editing primitive is a named action and every key binding is a table row, which is why the
+palette was a mode on an existing widget rather than a feature, and why an opt-in vim layer is
+configuration rather than a rewrite.
 
 - [Architecture and design rationale](docs/design/architecture.md)
 - [Gap analysis: known defects, and how TYPE measures against the field](docs/design/gap-analysis.md)
@@ -302,9 +316,10 @@ one that plainly did nothing.
 | v0.2.5 | M2.5 | Colour: themes as files, contrast rubric, capability detection, indent detection, whitespace and indent guides | shipped |
 | v0.2.6 | M2.6 | Ship: static musl and aarch64 Linux builds, one-line installers, self-verifying releases | shipped |
 | v0.2.7 | M2.7 | Parse: tree-sitter highlighting for five languages, grammars compiled in, syntax themes | shipped |
-| v0.2.8 | M2.8 | Find: fuzzy file picker and project search | **current** |
+| v0.2.8 | M2.8 | Find: fuzzy file picker and project search | shipped |
+| v0.2.9 | M2.9 | Workspace-lite: tabs, tab bar, command palette | **current** |
 | v0.3.0 | M3 | Code intelligence: LSP client | next |
-| v0.4.0 | M4 | Workspace: splits, tabs, sessions, command palette | |
+| v0.4.0 | M4 | Workspace: splits, sessions, workspace-wide file watching | |
 | v0.5.0 | M5 | Terminal panel and git integration | |
 | v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |
 
