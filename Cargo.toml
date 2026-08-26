@@ -72,6 +72,31 @@ nucleo-matcher = { version = "0.3", features = ["unicode-segmentation"] }
 # docs/design/distribution.md §4.
 mimalloc = { version = "0.1", default-features = false }
 
+# The LSP types, generated from the official metamodel rather than transcribed
+# by hand. `lsp-types` 0.97 has had no release since June 2024; Helix vendors a
+# fork and Zed pins one by git rev, and neither route is open to a workspace
+# that publishes — cargo refuses a git dependency in a published crate.
+# rust-analyzer moved here in June 2026 after naming eight defects in the old
+# crate, every one of them a transcription error, which is the class codegen
+# removes. Aliased so the code reads `lsp_types::` and a future swap is one
+# line. See docs/design/lsp.md §2.
+#
+# `url` rather than owning the conversion: percent-encoding a non-ASCII path is
+# a correctness table, not logic, and decoding it wrong opens a different file
+# without saying so.
+lsp-types = { version = "=0.11.0", package = "gen-lsp-types", features = ["url"] }
+# rust-analyzer's own transport. Described as a server scaffold, but
+# `Message::read`/`write` are generic over `BufRead`/`Write`, so they frame over
+# a child process's pipes just as well. `ReqQueue` correlates request ids in
+# both directions, which is the half that gets forgotten: servers send requests
+# to the client too — rust-analyzer sends `workspace/configuration`,
+# `client/registerCapability` and `window/workDoneProgress/create`.
+# Pinned exactly: it went 0.7.9 to 0.10.0 in two months, including two breaking
+# commits realigning `Response` to JSON-RPC.
+lsp-server = "=0.10.0"
+serde_json = "1"
+url = "2"
+
 # Version alongside path: cargo resolves the path locally and publishes the
 # version, and refuses to publish a crate whose dependencies carry only a path.
 typ-core = { path = "crates/typ-core", version = "0.2.10" }
@@ -83,6 +108,7 @@ typ-app = { path = "crates/typ-app", version = "0.2.10" }
 typ-syntax = { path = "crates/typ-syntax", version = "0.2.10" }
 typ-find = { path = "crates/typ-find", version = "0.2.10" }
 typ-picker = { path = "crates/typ-picker", version = "0.2.10" }
+typ-lsp = { path = "crates/typ-lsp", version = "0.2.10" }
 
 [profile.release]
 opt-level = 3
