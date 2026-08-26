@@ -3,6 +3,31 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.2.10] - 2026-08-26 (M2.9 loose ends)
+
+A patch release for the bug tabs created and the documentation eight releases left behind.
+
+### Fixed
+- `typ a.rs b.rs` opens both. Everything after the first path was dropped without a word; the
+  gap analysis had called it "honest until tabs exist, a real bug the moment they do" and tabs
+  shipped without it. The first path stays active, the way `vim a b` does, and every path gets
+  the same missing-parent check the first one always got.
+
+### Documentation
+- The crates.io front page said v0.2.1 and listed syntax highlighting, the clipboard and tabs
+  as absent. All three had shipped.
+- `controls.md` said "design, not built". Its tier analysis is why the command palette is
+  reached by typing `>` rather than `Ctrl+Shift+P`; the prefix *mechanism* is still unbuilt, and
+  it now says which half is which.
+- `landscape.md` said the fuzzy finder does not exist. It shipped at v0.2.8.
+- The docs index was missing `landscape.md` and undercounted the published crates.
+
+### Known and deliberately not fixed
+- A startup warning for Enhanced-tier bindings the terminal cannot deliver, which `controls.md`
+  §1 requires, needs either a terminal query against a 100 ms cold-start budget or the raw input
+  layer that does not exist yet. An environment heuristic would be wrong in both directions, and
+  a warning that is wrong is worse than none. Gap analysis 52 and 53.
+
 ## [0.2.9] - 2026-08-26 (M2.9, workspace-lite)
 
 M2.8 made moving between files the primary interaction and `App` held exactly one buffer, so
