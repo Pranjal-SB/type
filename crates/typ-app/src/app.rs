@@ -12,7 +12,7 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
 use typ_buffer::SearchQuery;
 use typ_core::{Action, Direction, KeyChord, Keymap, Panel, PanelEvent, ThemeColors};
-use typ_find::{FileHit, FindWorker, Found, LineHit};
+use typ_find::{FileHit, FindWorker, LineHit};
 use typ_panel_editor::EditorPanel;
 use typ_panel_editor::render::Whitespace;
 use typ_panel_tree::TreePanel;
@@ -304,80 +304,6 @@ impl App {
         tab.panel.set_syntax(parsed.generation, parsed.syntax);
         // Only a tree for the buffer on screen changes what is painted.
         index == self.active
-    }
-
-    /// Walk the project and make it the picker's corpus.
-    ///
-    /// **Never called at startup.** Cold start is budgeted at 100 ms and a
-    /// parallel walk of a mid-size projects directory measured 94.7 ms, which
-    /// would spend the entire budget on a list nobody has asked to see yet. The
-    /// picker calls this when it opens.
-    pub fn request_index(&mut self) {
-        if let Some(worker) = &mut self.find_worker {
-            worker.index(self.root.clone());
-        }
-    }
-
-    /// Ask for the best `limit` matches, and return the generation to await.
-    pub fn request_filter(&mut self, query: String, limit: usize) -> u64 {
-        let Some(worker) = &mut self.find_worker else {
-            // No sender wired up, which is most tests. Advance the counter
-            // anyway so a caller comparing two generations still sees them
-            // differ — returning 0 twice would make a staleness test pass by
-            // accident.
-            self.awaited_filter = Some(self.awaited_filter.unwrap_or(0) + 1);
-            return self.awaited_filter.expect("just set");
-        };
-        let generation = worker.filter(query, limit);
-        self.awaited_filter = Some(generation);
-        generation
-    }
-
-    /// A find result arrived. Returns whether anything changed on screen.
-    pub fn handle_found(&mut self, found: Found) -> bool {
-        match found {
-            // Answers no query, so it carries no generation to check against.
-            // Filtering it through the staleness test below would drop every
-            // walk that landed while a filter was outstanding.
-            Found::Indexed { .. } => true,
-            Found::Lines {
-                generation,
-                hits,
-                complete,
-            } => {
-                if self.awaited_filter != Some(generation) {
-                    return false;
-                }
-                self.grep_hits = hits;
-                self.grep_complete = complete;
-                self.push_hits_to_picker();
-                true
-            }
-            Found::Files { generation, hits } => {
-                if self.awaited_filter != Some(generation) {
-                    // A ranking for a query the user has already typed past.
-                    return false;
-                }
-                self.find_hits = hits;
-                self.push_hits_to_picker();
-                true
-            }
-        }
-    }
-
-    /// The visible page of find results.
-    pub fn find_hits(&self) -> &[FileHit] {
-        &self.find_hits
-    }
-
-    /// The visible page of project-search results.
-    pub fn grep_hits(&self) -> &[LineHit] {
-        &self.grep_hits
-    }
-
-    /// Whether the last project search ran to completion.
-    pub fn grep_complete(&self) -> bool {
-        self.grep_complete
     }
 
     /// Watch whatever file is open now, and stop watching the last one.
