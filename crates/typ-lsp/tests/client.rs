@@ -179,3 +179,27 @@ fn shutdown_lets_the_server_stop_on_its_own() {
     pump_until_initialized(&mut client, &rx);
     client.shutdown(Duration::from_secs(10));
 }
+
+#[test]
+fn pull_diagnostics_are_not_claimed_until_they_are_built() {
+    // Declaring `textDocument.diagnostic` turns rust-analyzer's *native*
+    // diagnostics -- the ones that appear as you type -- from push to pull:
+    // `main_loop.rs` guards `update_diagnostics` on
+    // `!config.text_document_diagnostic()`. So claiming the capability without
+    // a working pull path costs the fast diagnostics TYPE already gets by
+    // push. The day someone declares it, they build the other half too.
+    let told = what_the_server_was_told(&[]);
+    assert_eq!(told.pointer("/capabilities/textDocument/diagnostic"), None);
+}
+
+#[test]
+fn the_client_says_it_reads_the_version_on_a_publish() {
+    // It does: a publish describing a version older than the one already sent
+    // is dropped. Reading the field without declaring `versionSupport` is as
+    // dishonest as declaring it and ignoring the field.
+    let told = what_the_server_was_told(&[]);
+    assert_eq!(
+        told.pointer("/capabilities/textDocument/publishDiagnostics/versionSupport"),
+        Some(&serde_json::Value::Bool(true)),
+    );
+}

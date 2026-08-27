@@ -204,78 +204,19 @@ impl Client {
     }
 
     /// How much of a document this server wants on each change.
-    ///
-    /// **A server that says nothing is treated as wanting the whole document.**
-    /// The specification's own default for an absent `textDocumentSync` is to
-    /// send nothing, and that is the wrong way round for a client: a server
-    /// that genuinely wants no sync says so, while a server that forgot to
-    /// declare it and gets nothing is a server with no documents and no way to
-    /// answer anything. Sending to the first costs a notification it ignores;
-    /// not sending to the second breaks it completely.
     pub fn sync_kind(&self) -> SyncKind {
-        let Some(sync) = self
-            .capabilities
-            .as_ref()
-            .and_then(|c| c.get("textDocumentSync"))
-        else {
-            return SyncKind::Full;
-        };
-        let kind = match sync {
-            // The short form: the number *is* the kind.
-            serde_json::Value::Number(n) => n.as_i64(),
-            // The long form. An object with no `change` means no changes.
-            _ => Some(sync.get("change").and_then(|c| c.as_i64()).unwrap_or(0)),
-        };
-        match kind {
-            Some(1) => SyncKind::Full,
-            Some(2) => SyncKind::Incremental,
-            _ => SyncKind::None,
-        }
+        sync_kind_of(self.capabilities.as_ref())
     }
 
     /// Whether this server wants to be told about documents opening and
-    /// closing. Absent means yes, for the reason [`sync_kind`](Self::sync_kind)
-    /// gives.
+    /// closing.
     pub fn wants_open_close(&self) -> bool {
-        let Some(sync) = self
-            .capabilities
-            .as_ref()
-            .and_then(|c| c.get("textDocumentSync"))
-        else {
-            return true;
-        };
-        match sync {
-            serde_json::Value::Number(n) => n.as_i64() != Some(0),
-            _ => sync
-                .get("openClose")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false),
-        }
+        open_close_of(self.capabilities.as_ref())
     }
 
-    /// Whether this server wants `didSave`, and whether it wants the text with
-    /// it.
-    ///
-    /// `save` is either a bool or a `SaveOptions`, and the text goes only to a
-    /// server that asked for it — it is the whole document, and sending it
-    /// unasked doubles the cost of every save for nothing.
+    /// Whether this server wants `didSave`, and whether it wants the text.
     fn save_wanted(&self) -> Option<bool> {
-        let sync = self.capabilities.as_ref()?.get("textDocumentSync")?;
-        match sync {
-            // The short form cannot express save options. A server that syncs
-            // at all is told about saves.
-            serde_json::Value::Number(n) => (n.as_i64() != Some(0)).then_some(false),
-            _ => match sync.get("save")? {
-                serde_json::Value::Bool(false) => None,
-                serde_json::Value::Bool(true) => Some(false),
-                options => Some(
-                    options
-                        .get("includeText")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false),
-                ),
-            },
-        }
+        save_of(self.capabilities.as_ref())
     }
 
     /// Tell the server about a document it has not seen. Whether it was sent.
@@ -468,11 +409,181 @@ fn initialize_params(root: &Path) -> serde_json::Value {
                     "didSave": true,
                     "dynamicRegistration": false,
                 },
-                "publishDiagnostics": { "relatedInformation": true },
+                // `versionSupport` is not decoration: it says the client reads
+                // the `version` on a publish, which TYPE does — one describing
+                // a version older than the one already sent is dropped rather
+                // than shown. Reading the field without declaring it is as
+                // dishonest as declaring it and ignoring it.
+                //
+                // **`textDocument.diagnostic` is deliberately absent.**
+                // Declaring it turns rust-analyzer's *native* diagnostics — the
+                // ones that appear as you type — from push to pull:
+                // `main_loop.rs` guards `update_diagnostics` on
+                // `!config.text_document_diagnostic()`. A client that declares
+                // the capability without a working pull path loses the fast
+                // half it already had, so the declaration and the
+                // implementation land together or neither does.
+                "publishDiagnostics": {
+                    "relatedInformation": true,
+                    "versionSupport": true,
+                },
                 "definition": { "dynamicRegistration": false },
                 "hover": { "contentFormat": ["markdown", "plaintext"] },
             },
             "window": { "workDoneProgress": true },
         },
     })
+}
+
+/// How much of a document a server wants, from its capabilities.
+///
+/// **An absent `textDocumentSync` means nothing is sent.** That is the
+/// specification's default, and it is what both mature clients do:
+/// vscode-languageclient leaves `resolvedTextDocumentSync` undefined and
+/// registers no sync feature, and Helix's `text_document_did_change` returns
+/// early on `None`. A server that wants documents says so; one that does not is
+/// already broken against every editor in the field, and a default invented
+/// here would only hide that.
+fn sync_kind_of(capabilities: Option<&serde_json::Value>) -> SyncKind {
+    let Some(sync) = capabilities.and_then(|c| c.get("textDocumentSync")) else {
+        return SyncKind::None;
+    };
+    let kind = match sync {
+        // The short form: the number *is* the kind.
+        serde_json::Value::Number(n) => n.as_i64(),
+        // The long form. An object with no `change` means no changes.
+        _ => sync.get("change").and_then(|c| c.as_i64()),
+    };
+    match kind {
+        Some(1) => SyncKind::Full,
+        Some(2) => SyncKind::Incremental,
+        _ => SyncKind::None,
+    }
+}
+
+/// Whether a server wants `didOpen` and `didClose`.
+///
+/// The number form carries no `openClose` field, and vscode-languageclient
+/// resolves any non-zero kind to `openClose: true` — the reading that makes the
+/// short form coherent at all, since syncing changes to a document the server
+/// was never told about is not a state anything can be in.
+fn open_close_of(capabilities: Option<&serde_json::Value>) -> bool {
+    let Some(sync) = capabilities.and_then(|c| c.get("textDocumentSync")) else {
+        return false;
+    };
+    match sync {
+        serde_json::Value::Number(n) => n.as_i64().is_some_and(|kind| kind != 0),
+        _ => sync
+            .get("openClose")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+    }
+}
+
+/// Whether a server wants `didSave`, and whether it wants the text with it.
+///
+/// The table is the specification maintainer's own, confirmed in
+/// microsoft/language-server-protocol#288: absent capabilities and an object
+/// with no `save` send nothing, the number form sends the notification without
+/// text, `save: {}` and `save: true` the same, and only `includeText: true`
+/// carries the document. Sending the whole file unasked doubles the cost of
+/// every save for nothing.
+fn save_of(capabilities: Option<&serde_json::Value>) -> Option<bool> {
+    let sync = capabilities?.get("textDocumentSync")?;
+    match sync {
+        serde_json::Value::Number(n) => (n.as_i64() != Some(0)).then_some(false),
+        _ => match sync.get("save")? {
+            serde_json::Value::Bool(false) => None,
+            serde_json::Value::Bool(true) => Some(false),
+            options => Some(
+                options
+                    .get("includeText")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+            ),
+        },
+    }
+}
+
+#[cfg(test)]
+mod capability_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_server_that_said_nothing_at_all_gets_nothing() {
+        assert_eq!(sync_kind_of(None), SyncKind::None);
+        assert!(!open_close_of(None));
+        assert_eq!(save_of(None), None);
+    }
+
+    #[test]
+    fn no_sync_capability_means_no_traffic() {
+        let none = json!({ "hoverProvider": true });
+        assert_eq!(sync_kind_of(Some(&none)), SyncKind::None);
+        assert!(!open_close_of(Some(&none)));
+        assert_eq!(save_of(Some(&none)), None);
+    }
+
+    #[test]
+    fn the_number_form_carries_open_close_and_a_textless_save() {
+        let full = json!({ "textDocumentSync": 1 });
+        assert_eq!(sync_kind_of(Some(&full)), SyncKind::Full);
+        assert!(open_close_of(Some(&full)));
+        assert_eq!(save_of(Some(&full)), Some(false));
+    }
+
+    #[test]
+    fn the_number_zero_is_a_server_asking_for_silence() {
+        let none = json!({ "textDocumentSync": 0 });
+        assert_eq!(sync_kind_of(Some(&none)), SyncKind::None);
+        assert!(!open_close_of(Some(&none)));
+        assert_eq!(save_of(Some(&none)), None);
+    }
+
+    #[test]
+    fn incremental_is_recognised_even_though_type_sends_full() {
+        // Legal: the client capability says FULL, and a server that asked for
+        // incremental still has to accept whole documents.
+        let inc = json!({ "textDocumentSync": 2 });
+        assert_eq!(sync_kind_of(Some(&inc)), SyncKind::Incremental);
+    }
+
+    #[test]
+    fn the_object_form_defaults_every_field_off() {
+        let object = json!({ "textDocumentSync": {} });
+        assert_eq!(sync_kind_of(Some(&object)), SyncKind::None);
+        assert!(!open_close_of(Some(&object)));
+        assert_eq!(save_of(Some(&object)), None);
+    }
+
+    #[test]
+    fn save_options_decide_whether_the_text_travels() {
+        let bare = json!({ "textDocumentSync": { "save": {} } });
+        assert_eq!(save_of(Some(&bare)), Some(false));
+
+        let yes = json!({ "textDocumentSync": { "save": { "includeText": true } } });
+        assert_eq!(save_of(Some(&yes)), Some(true));
+
+        let flag = json!({ "textDocumentSync": { "save": true } });
+        assert_eq!(save_of(Some(&flag)), Some(false));
+
+        let refused = json!({ "textDocumentSync": { "save": false } });
+        assert_eq!(save_of(Some(&refused)), None);
+    }
+
+    #[test]
+    fn the_full_object_form_is_read_field_by_field() {
+        // What rust-analyzer sends.
+        let ra = json!({
+            "textDocumentSync": {
+                "openClose": true,
+                "change": 2,
+                "save": { "includeText": false },
+            }
+        });
+        assert_eq!(sync_kind_of(Some(&ra)), SyncKind::Incremental);
+        assert!(open_close_of(Some(&ra)));
+        assert_eq!(save_of(Some(&ra)), Some(false));
+    }
 }
