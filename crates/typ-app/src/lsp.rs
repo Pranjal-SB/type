@@ -21,7 +21,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use ropey::Rope;
-use typ_lsp::{Client, Incoming, LspEvent, ServerId, SpawnError};
+use typ_buffer::EditSpan;
+use typ_core::Diagnostic;
+use typ_lsp::{Client, Encoding, Incoming, LspEvent, ServerId, SpawnError};
 
 /// One language server, and what it is for.
 ///
@@ -71,6 +73,14 @@ struct Doc {
     /// The buffer revision the server was last sent. `None` while the document
     /// is known but closed.
     synced: Option<u64>,
+    /// What the server has pushed about this document.
+    ///
+    /// Named `pushed` rather than `diagnostics` because the pulled set is a
+    /// second store beside it — they share a namespace, so a client that merges
+    /// them has each source clearing the other on every update, which is
+    /// neovim#37936. The server's `diagnosticProvider.identifier` exists to
+    /// keep them apart.
+    pushed: Vec<Diagnostic>,
 }
 
 /// One tab, as the sync pass needs to see it.
@@ -82,6 +92,9 @@ pub(crate) struct DocSnapshot {
     pub path: PathBuf,
     pub revision: u64,
     pub rope: Rope,
+    /// What the buffer did since the last pass, so anything held against the
+    /// older text can be moved to where it now belongs.
+    pub edits: Vec<EditSpan>,
 }
 
 /// Every server, every document, and the tally of what has been sent.
@@ -185,9 +198,60 @@ impl Lsp {
     /// call from the end of every pass.
     pub(crate) fn sync(&mut self, docs: &[DocSnapshot]) {
         for doc in docs {
+            self.shift(doc);
             self.sync_one(doc);
         }
         self.close_absent(docs);
+    }
+
+    /// Move this document's diagnostics through the edits just applied.
+    ///
+    /// The server described the file as it was some milliseconds ago and the
+    /// user has kept typing since. Without this the squiggles sit under the
+    /// wrong words until the next publish, which on a slow server is a long
+    /// time to look broken.
+    fn shift(&mut self, snapshot: &DocSnapshot) {
+        if snapshot.edits.is_empty() {
+            return;
+        }
+        let Some(doc) = self.docs.get_mut(&snapshot.path) else {
+            return;
+        };
+        for diagnostic in &mut doc.pushed {
+            diagnostic.range = (
+                typ_buffer::shift_through(diagnostic.range.0, &snapshot.edits),
+                typ_buffer::shift_through(diagnostic.range.1, &snapshot.edits),
+            );
+        }
+    }
+
+    /// Which unit a server counts positions in, if it is running.
+    pub(crate) fn encoding(&self, id: ServerId) -> Encoding {
+        match self.servers.get(id.0 as usize) {
+            Some(Server::Running(client)) => client.encoding(),
+            _ => Encoding::Utf16,
+        }
+    }
+
+    /// The version a server last heard about a document.
+    pub(crate) fn synced_version(&self, path: &Path) -> Option<i32> {
+        self.docs.get(path).map(|doc| doc.version)
+    }
+
+    /// Replace what a server has pushed about a document.
+    ///
+    /// A publish naming a document nothing has open is dropped: the server was
+    /// told `didClose` and this crossed it on the wire, and there is nowhere on
+    /// screen for it to go.
+    pub(crate) fn set_pushed(&mut self, path: &Path, diagnostics: Vec<Diagnostic>) {
+        if let Some(doc) = self.docs.get_mut(path) {
+            doc.pushed = diagnostics;
+        }
+    }
+
+    /// What is known about a document, for the frame that draws it.
+    pub(crate) fn diagnostics(&self, path: &Path) -> &[Diagnostic] {
+        self.docs.get(path).map_or(&[], |doc| &doc.pushed)
     }
 
     fn sync_one(&mut self, snapshot: &DocSnapshot) {
@@ -237,6 +301,7 @@ impl Lsp {
                         uri,
                         version: 0,
                         synced: Some(snapshot.revision),
+                        pushed: Vec::new(),
                     },
                 );
             }
@@ -257,6 +322,10 @@ impl Lsp {
                 continue;
             };
             doc.synced = None;
+            // A file that is not open has nowhere to show a diagnostic, and
+            // keeping them would mean reopening it showed a stale set before
+            // the server had said anything.
+            doc.pushed.clear();
             let (id, uri) = (doc.server, doc.uri.clone());
             let Some(client) = self.client(id) else {
                 continue;
@@ -352,3 +421,58 @@ impl Lsp {
 
 /// How long a server gets to exit on its own before the tree kill takes it.
 const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// One LSP diagnostic, in TYPE's coordinates.
+///
+/// Two conversions, in this order and no other: the server's encoding to a char
+/// offset, which `typ-lsp` owns because char is ropey's native unit; then the
+/// char offset to a grapheme position, which `typ-buffer` owns because that is
+/// where grapheme logic lives. A server may legitimately name a position inside
+/// a cluster and `TextBuffer::position` snaps down to its start, because there
+/// is no `Position` for the middle of one and `Selections` could not hold it.
+pub(crate) fn to_diagnostic(
+    buffer: &typ_buffer::TextBuffer,
+    encoding: Encoding,
+    diagnostic: &typ_lsp::lsp_types::Diagnostic,
+) -> Diagnostic {
+    let rope = buffer.rope().slice(..);
+    let at = |pos| buffer.position(typ_lsp::from_lsp(encoding, rope, pos));
+    Diagnostic {
+        range: (at(diagnostic.range.start), at(diagnostic.range.end)),
+        severity: severity(diagnostic.severity),
+        message: message(&diagnostic.message),
+        source: diagnostic.source.clone(),
+    }
+}
+
+/// A diagnostic's message, whichever of the two shapes it arrived in.
+///
+/// 3.18 lets a message be `MarkupContent` rather than a string. Painting the
+/// markup's backticks is worse than painting nothing, so the value is taken and
+/// the kind is dropped — rendering markdown is Task 12's problem, and it has a
+/// box to do it in.
+fn message(message: &typ_lsp::lsp_types::Message) -> String {
+    match message {
+        typ_lsp::lsp_types::Message::String(text) => text.clone(),
+        typ_lsp::lsp_types::Message::MarkupContent(markup) => markup.value.clone(),
+    }
+}
+
+/// The protocol's number as one of TYPE's four.
+///
+/// **Anything unrecognised is a warning, not a discard.** `DiagnosticSeverity`
+/// has a `Custom(u32)` variant for numbers the protocol does not define, and
+/// one of those is still the server saying something is wrong with that range.
+/// Dropping it loses information to make a match tidy.
+fn severity(severity: Option<typ_lsp::lsp_types::DiagnosticSeverity>) -> typ_core::Severity {
+    use typ_core::Severity;
+    use typ_lsp::lsp_types::DiagnosticSeverity as Lsp;
+    match severity {
+        Some(Lsp::Error) => Severity::Error,
+        Some(Lsp::Information) => Severity::Information,
+        Some(Lsp::Hint) => Severity::Hint,
+        // `Warning`, an absent severity, and `Custom(n)` for an `n` the
+        // protocol does not define.
+        _ => Severity::Warning,
+    }
+}

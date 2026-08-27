@@ -2191,6 +2191,7 @@ dependencies = [
  "crossterm",
  "ratatui",
  "toml",
+ "typ-buffer",
  "typ-find",
  "typ-lsp",
  "typ-syntax",

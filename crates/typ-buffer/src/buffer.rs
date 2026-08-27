@@ -31,6 +31,11 @@ pub struct TextBuffer {
     /// exactly when there is something new to parse, rather than hooking every
     /// call site that might have edited something and missing one.
     revision: u64,
+    /// Edits applied since a consumer last drained them.
+    ///
+    /// Empty in the ordinary case: `take_edits` is called once per event batch,
+    /// so this holds one batch's worth and nothing accumulates.
+    edits: Vec<crate::EditSpan>,
 }
 
 impl TextBuffer {
@@ -46,6 +51,7 @@ impl TextBuffer {
             group_depth: 0,
             line_ending: LineEnding::detect(s),
             revision: 0,
+            edits: Vec::new(),
         }
     }
 
@@ -67,6 +73,7 @@ impl TextBuffer {
             // existing convention to honour.
             line_ending: LineEnding::default(),
             revision: 0,
+            edits: Vec::new(),
         }
     }
 
@@ -90,6 +97,7 @@ impl TextBuffer {
         Ok(Self {
             line_ending,
             revision: 0,
+            edits: Vec::new(),
             rope: Rope::from_str(&text),
             path: Some(path.to_path_buf()),
             dirty: false,
@@ -438,6 +446,26 @@ impl TextBuffer {
             self.rope.insert(from, text);
         }
         self.touch();
+
+        // Recorded after the mutation, because `new_end` is a position in the
+        // text this edit produced. Bounded by whoever drains it: the app does,
+        // once per batch.
+        let new_end = self.position(from + text.chars().count());
+        self.edits.push(crate::EditSpan {
+            start,
+            old_end: end,
+            new_end,
+        });
+    }
+
+    /// Take the edits applied since this was last called.
+    ///
+    /// For anything holding a position across an edit — diagnostics today,
+    /// search results and git hunks in the module comment's list. Draining is
+    /// what keeps the record bounded, so a consumer that stops draining is a
+    /// consumer that grows a `Vec` for the length of the session.
+    pub fn take_edits(&mut self) -> Vec<crate::EditSpan> {
+        std::mem::take(&mut self.edits)
     }
 
     /// Take an undo snapshot unless an edit group is open.

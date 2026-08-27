@@ -8,6 +8,7 @@ fn render(panel: &mut EditorPanel, area: Rect) -> Buffer {
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: area.width,

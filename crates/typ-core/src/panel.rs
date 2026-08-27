@@ -223,6 +223,13 @@ pub struct RenderContext<'a> {
     /// every render call for the same reason, and Zed reaches both halves
     /// through one accessor.
     pub syntax: &'a crate::SyntaxTheme,
+    /// What the language servers have said about the buffer being drawn.
+    ///
+    /// **Here rather than through a setter**, for the reason the theme's two
+    /// halves taught: a setter is the smaller diff and leaves the other half
+    /// stale on a tab switch. Diagnostics belong to a document, the frame knows
+    /// which document it is drawing, so they travel with the frame.
+    pub diagnostics: &'a [crate::Diagnostic],
     pub is_focused: bool,
     pub panel_index: usize,
     pub terminal_width: u16,

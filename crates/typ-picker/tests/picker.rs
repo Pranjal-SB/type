@@ -209,6 +209,7 @@ fn rendering_fits_inside_its_area() {
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: 80,
@@ -240,6 +241,7 @@ fn rendering_a_narrow_area_does_not_panic() {
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: 8,
@@ -257,6 +259,7 @@ fn a_zero_sized_area_does_not_panic() {
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: 0,
@@ -286,6 +289,7 @@ fn matched_graphemes_are_styled_differently_from_the_rest() {
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: 30,
@@ -325,6 +329,7 @@ fn an_index_past_the_end_of_a_path_does_not_panic() {
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: 20,

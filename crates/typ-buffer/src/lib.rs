@@ -12,7 +12,7 @@ pub mod watch;
 pub mod word;
 
 pub use buffer::TextBuffer;
-pub use change::Shift;
+pub use change::{EditSpan, Shift, shift_through};
 pub use indent::detect_indent_width;
 pub use line_ending::LineEnding;
 pub use position::{

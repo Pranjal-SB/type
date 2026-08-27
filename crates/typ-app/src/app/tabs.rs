@@ -83,7 +83,7 @@ impl App {
     /// three are the same file. `canonicalize` fails on a path with no file
     /// behind it, which is a normal case here — opening a name that does not
     /// exist yet — so it falls back to comparing what it was given.
-    fn tab_for(&self, path: &Path) -> Option<usize> {
+    pub(crate) fn tab_for(&self, path: &Path) -> Option<usize> {
         fn resolve(path: &Path) -> std::path::PathBuf {
             std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
         }

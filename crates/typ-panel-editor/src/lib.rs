@@ -300,6 +300,15 @@ impl EditorPanel {
         &self.buffer
     }
 
+    /// Take the edits applied since this was last called.
+    ///
+    /// Drained by the app once per event batch, which is what keeps the
+    /// buffer's record of them bounded. Anything holding a position across an
+    /// edit — diagnostics today — maps it forward through these.
+    pub fn take_edits(&mut self) -> Vec<typ_buffer::EditSpan> {
+        self.buffer.take_edits()
+    }
+
     /// The grammar this buffer's extension claims, if any.
     pub fn language(&self) -> Option<Language> {
         self.language

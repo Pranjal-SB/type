@@ -15,6 +15,17 @@
 #[doc(hidden)]
 pub mod fake;
 
+/// The protocol's own types, so a consumer can deserialise a payload without
+/// naming the dependency itself.
+///
+/// `gen-lsp-types` under its rust-analyzer alias — the version lives in one
+/// manifest and a future swap is one line, which is exactly why the alias
+/// exists. `typ-app` deserialises `PublishDiagnosticsParams` through this
+/// rather than reading fields out of a `serde_json::Value` by hand, because a
+/// field name typed wrong in a hand-parse is a diagnostic that silently never
+/// appears.
+pub use lsp_types;
+
 pub mod client;
 pub mod position;
 pub mod transport;

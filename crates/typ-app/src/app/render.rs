@@ -24,9 +24,15 @@ impl App {
         let (bar_area, editor_area) = crate::layout::split_tabs(pane, self.tabs.len());
         let (w, h) = (frame.area().width, frame.area().height);
 
+        // Resolved before the panels are borrowed mutably: the result borrows
+        // `self.lsp` alone, so the tab's borrow ends with the call.
+        let diagnostics = crate::app::diagnostics_for(&self.lsp, &self.tabs[self.active]);
+
         let tree_ctx = RenderContext {
             theme: &self.theme,
             syntax: &self.syntax_theme,
+            // The tree draws files, not their contents.
+            diagnostics: &[],
             is_focused: self.focus == Focus::Tree,
             panel_index: 0,
             terminal_width: w,
@@ -35,6 +41,7 @@ impl App {
         let editor_ctx = RenderContext {
             theme: &self.theme,
             syntax: &self.syntax_theme,
+            diagnostics,
             is_focused: self.focus == Focus::Editor,
             panel_index: 1,
             terminal_width: w,
@@ -85,6 +92,7 @@ impl App {
             let ctx = RenderContext {
                 theme: &self.theme,
                 syntax: &self.syntax_theme,
+                diagnostics: &[],
                 // Always focused: it owns the keyboard for as long as it is up,
                 // so a dimmed border would be lying about where keys go.
                 is_focused: true,

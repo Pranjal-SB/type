@@ -24,6 +24,12 @@ struct Flags {
     utf8: bool,
     pull: bool,
     server_request: bool,
+    /// Publish diagnostics on `didOpen` and on `didSave`, the way a server
+    /// whose checker runs on save does.
+    push: bool,
+    /// Publish on `didChange` stamped with version 0, which is stale the
+    /// moment anything has been typed. The client has to drop it.
+    push_stale: bool,
     garbage: bool,
     exit_now: bool,
     sleep: bool,
@@ -39,6 +45,8 @@ impl Flags {
             utf8: !has("--no-utf8"),
             pull: has("--pull"),
             server_request: has("--server-request"),
+            push: has("--push") || has("--push-stale"),
+            push_stale: has("--push-stale"),
             garbage: has("--garbage"),
             exit_now: has("--exit-now"),
             sleep: has("--sleep"),
@@ -65,6 +73,38 @@ fn capabilities(flags: &Flags) -> serde_json::Value {
         });
     }
     caps
+}
+
+/// Send `textDocument/publishDiagnostics` for one document.
+///
+/// Each entry is a line, an LSP severity and a message. The range covers the
+/// first three characters of the line, which is enough for a renderer to have
+/// something to underline.
+fn publish(out: &mut impl Write, uri: &str, version: i64, items: &[(u32, i64, &str)]) {
+    let diagnostics: Vec<serde_json::Value> = items
+        .iter()
+        .map(|(line, severity, message)| {
+            serde_json::json!({
+                "range": {
+                    "start": { "line": line, "character": 0 },
+                    "end":   { "line": line, "character": 3 },
+                },
+                "severity": severity,
+                "message": message,
+                "source": "fake",
+            })
+        })
+        .collect();
+    let _ = Message::Notification(Notification {
+        method: "textDocument/publishDiagnostics".into(),
+        params: serde_json::json!({
+            "uri": uri,
+            "version": version,
+            "diagnostics": diagnostics,
+        }),
+    })
+    .write(out);
+    let _ = out.flush();
 }
 
 /// Read frames from stdin and answer them until told to exit.
@@ -115,6 +155,8 @@ pub fn run() {
 
     let mut input = BufReader::new(stdin());
     let mut seen = 0usize;
+    let mut open_uri = String::new();
+    let mut version = 0i64;
 
     while let Ok(Some(message)) = Message::read(&mut input) {
         seen += 1;
@@ -154,9 +196,37 @@ pub fn run() {
                 .write(&mut out);
                 let _ = out.flush();
             }
-            Message::Notification(Notification { method, .. }) => {
+            Message::Notification(Notification { method, params }) => {
                 if method == "exit" {
                     return;
+                }
+                if let Some(doc) = params.get("textDocument") {
+                    if let Some(uri) = doc.get("uri").and_then(|u| u.as_str()) {
+                        open_uri = uri.to_string();
+                    }
+                    if let Some(v) = doc.get("version").and_then(|v| v.as_i64()) {
+                        version = v;
+                    }
+                }
+                match method.as_str() {
+                    "textDocument/didOpen" if flags.push => {
+                        publish(&mut out, &open_uri, version, &[(5, 1, "fake: on open")]);
+                    }
+                    "textDocument/didSave" if flags.push => {
+                        publish(
+                            &mut out,
+                            &open_uri,
+                            version,
+                            &[(5, 1, "fake: on open"), (1, 2, "fake: on save")],
+                        );
+                    }
+                    "textDocument/didChange" if flags.push_stale => {
+                        // Deliberately the version the document had when it was
+                        // opened. A client that does not compare versions shows
+                        // this and loses what it already had.
+                        publish(&mut out, &open_uri, 0, &[(9, 1, "fake: stale")]);
+                    }
+                    _ => {}
                 }
                 if method == "initialized" && flags.server_request {
                     // The half clients forget. rust-analyzer really does this,

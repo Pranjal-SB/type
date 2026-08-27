@@ -98,8 +98,8 @@ dependencies are not already on the registry at the version it names:
 cargo publish -p typ-syntax
 cargo publish -p typ-find
 cargo publish -p typ-lsp
-cargo publish -p typ-core
 cargo publish -p typ-buffer
+cargo publish -p typ-core
 cargo publish -p typ-registry
 cargo publish -p typ-panel-tree
 cargo publish -p typ-panel-editor
@@ -114,7 +114,9 @@ that is easy to get wrong: all three look like leaves, but `typ-core`'s `AppEven
 top. Neither depends
 on anything of TYPE's in either dependency table — deliberately, because a dev-dependency back
 onto `typ-core` would build locally and fail here. `typ-buffer` has no internal dependencies
-either and can swap with `typ-core`; every line after them depends on something above it.
+either, and since v0.3.0 it goes **before** `typ-core` rather than beside it: `RenderContext`
+carries diagnostics in grapheme coordinates, so `typ-core` names `typ_buffer::Position`. Every
+line after them depends on something above it.
 `typ-picker` needs `typ-core` and `typ-find`, so it sits below `typ-app`. The registry takes a
 moment to index each one, so a failure on the next line usually means "wait and retry", not
 "wrong order".

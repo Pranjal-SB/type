@@ -109,6 +109,7 @@ fn draw_frame(editor: &mut EditorPanel, area: Rect) {
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: area.width,
@@ -208,6 +209,7 @@ fn draw_highlighted_frame(editor: &mut EditorPanel, area: Rect, theme: &typ_core
     let ctx = RenderContext {
         theme: &colors,
         syntax: theme,
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: area.width,

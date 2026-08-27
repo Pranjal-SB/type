@@ -182,6 +182,19 @@ impl Tab {
     }
 }
 
+/// What one tab's frame carries.
+///
+/// A free function rather than a method because `App::render` needs the result
+/// while borrowing `self.tabs` mutably to draw into it: taking the two fields
+/// separately keeps the tab's borrow from outliving the call, which a method on
+/// `&self` could not.
+fn diagnostics_for<'a>(lsp: &'a crate::lsp::Lsp, tab: &Tab) -> &'a [typ_core::Diagnostic] {
+    match tab.panel.path() {
+        Some(path) => lsp.diagnostics(path),
+        None => &[],
+    }
+}
+
 /// Between status segments. Two spaces rather than a glyph separator: a
 /// separator needs a colour decision of its own and a Nerd Font question at
 /// M6, and whitespace has neither.
@@ -278,36 +291,100 @@ impl App {
     /// Called once at the end of a batch rather than once per event: ten keys
     /// in one pass is one `didChange`. Cheap when nothing changed — a revision
     /// comparison per tab and nothing else.
+    ///
+    /// **Every tab is drained, including the ones no server cares about.**
+    /// `take_edits` is what bounds the buffer's record of them, so a tab
+    /// skipped here is a `Vec` that grows for the length of the session.
     pub fn sync_language_servers(&mut self) {
         let docs: Vec<crate::lsp::DocSnapshot> = self
             .tabs
-            .iter()
+            .iter_mut()
             .filter_map(|tab| {
+                let edits = tab.panel.take_edits();
                 let path = tab.panel.path()?;
                 Some(crate::lsp::DocSnapshot {
                     path: path.to_path_buf(),
                     revision: tab.panel.buffer().revision(),
                     rope: tab.panel.buffer().snapshot(),
+                    edits,
                 })
             })
             .collect();
         self.lsp.sync(&docs);
     }
 
+    /// What the servers have said about the buffer on screen.
+    ///
+    /// The same call the frame makes, so what a test reads here is what the
+    /// panel was handed.
+    pub fn diagnostics(&self) -> &[typ_core::Diagnostic] {
+        diagnostics_for(&self.lsp, &self.tabs[self.active])
+    }
+
     /// A server said something. Returns whether the screen changed.
     pub fn handle_lsp(&mut self, incoming: typ_lsp::Incoming) -> bool {
-        let Some((_, event)) = self.lsp.handle(incoming) else {
+        let Some((server, event)) = self.lsp.handle(incoming) else {
             return false;
         };
         match event {
-            // Diagnostics, progress and the rest arrive here. Task 9 gives
-            // them somewhere to go; until then a server talking to itself
-            // changes nothing on screen.
+            typ_lsp::LspEvent::Notification { method, params }
+                if method == "textDocument/publishDiagnostics" =>
+            {
+                self.publish_diagnostics(server, params)
+            }
+            // `$/progress` and `window/logMessage` land here. Task 13 gives
+            // the first one the status bar; until then a server talking about
+            // itself changes nothing on screen.
             typ_lsp::LspEvent::Notification { .. } => false,
             typ_lsp::LspEvent::Response { .. } => false,
             typ_lsp::LspEvent::ServerRequest { .. } => false,
             typ_lsp::LspEvent::Exited => false,
         }
+    }
+
+    /// A server published diagnostics. Returns whether the screen changed.
+    ///
+    /// Three ways this ends without drawing anything, and all three are
+    /// ordinary rather than errors: the payload does not parse, the URI names
+    /// no open document, or it describes a version older than the one the
+    /// server has already been sent.
+    fn publish_diagnostics(
+        &mut self,
+        server: typ_lsp::ServerId,
+        params: serde_json::Value,
+    ) -> bool {
+        let Ok(published) =
+            serde_json::from_value::<typ_lsp::lsp_types::PublishDiagnosticsParams>(params)
+        else {
+            crate::log_warn!("a publishDiagnostics payload did not parse");
+            return false;
+        };
+        let Some(path) = typ_lsp::uri_to_path(&published.uri) else {
+            return false;
+        };
+
+        // Stale. The server was describing the document as it was before an
+        // edit it has already been told about, and showing it would replace
+        // what is on screen with something older.
+        if let (Some(sent), Some(described)) = (self.lsp.synced_version(&path), published.version)
+            && described < sent
+        {
+            return false;
+        }
+
+        let Some(index) = self.tab_for(&path) else {
+            return false;
+        };
+        let encoding = self.lsp.encoding(server);
+        let buffer = self.tabs[index].panel.buffer();
+        let converted: Vec<typ_core::Diagnostic> = published
+            .diagnostics
+            .iter()
+            .map(|d| crate::lsp::to_diagnostic(buffer, encoding, d))
+            .collect();
+
+        self.lsp.set_pushed(&path, converted);
+        index == self.active
     }
 
     /// The active buffer was written to disk.
