@@ -128,6 +128,8 @@ pub struct App {
     /// Whether a walk has ever been asked for. The corpus survives the picker
     /// closing, so reopening shows the previous list while the re-walk runs.
     index_requested: bool,
+    /// Language servers, and what each has been told about the open documents.
+    lsp: crate::lsp::Lsp,
 }
 
 /// One open file, and the parse state that belongs to it rather than to the app.
@@ -221,6 +223,7 @@ impl App {
             root: root.to_path_buf(),
             picker: None,
             index_requested: false,
+            lsp: crate::lsp::Lsp::new(root),
         })
     }
 
@@ -245,10 +248,81 @@ impl App {
     pub fn set_event_sender(&mut self, sender: crate::run::AppSender) {
         self.parse_worker = Some(ParseWorker::spawn(sender.clone()));
         self.find_worker = Some(FindWorker::spawn(sender.clone()));
+        self.lsp.set_sender(sender.clone());
         self.sender = Some(sender);
         self.rewatch();
         // Whatever is already open has never been parsed.
         self.request_parse_if_stale();
+    }
+
+    /// Register a language server. Nothing starts until a file needs it.
+    ///
+    /// Servers are never started on the cold-start path: the 100 ms budget
+    /// cannot wait for rust-analyzer, which takes tens of seconds to be useful.
+    pub fn add_language_server(&mut self, config: crate::lsp::ServerConfig) {
+        self.lsp.add(config);
+    }
+
+    /// How many of a notification have gone to language servers this session.
+    pub fn lsp_notifications_of(&self, method: &str) -> usize {
+        self.lsp.notifications_of(method)
+    }
+
+    /// The document version a server holds for a path, if one does.
+    pub fn lsp_document_version(&self, path: &Path) -> Option<i32> {
+        self.lsp.version(path)
+    }
+
+    /// Bring every server's documents up to date with the tabs.
+    ///
+    /// Called once at the end of a batch rather than once per event: ten keys
+    /// in one pass is one `didChange`. Cheap when nothing changed — a revision
+    /// comparison per tab and nothing else.
+    pub fn sync_language_servers(&mut self) {
+        let docs: Vec<crate::lsp::DocSnapshot> = self
+            .tabs
+            .iter()
+            .filter_map(|tab| {
+                let path = tab.panel.path()?;
+                Some(crate::lsp::DocSnapshot {
+                    path: path.to_path_buf(),
+                    revision: tab.panel.buffer().revision(),
+                    rope: tab.panel.buffer().snapshot(),
+                })
+            })
+            .collect();
+        self.lsp.sync(&docs);
+    }
+
+    /// A server said something. Returns whether the screen changed.
+    pub fn handle_lsp(&mut self, incoming: typ_lsp::Incoming) -> bool {
+        let Some((_, event)) = self.lsp.handle(incoming) else {
+            return false;
+        };
+        match event {
+            // Diagnostics, progress and the rest arrive here. Task 9 gives
+            // them somewhere to go; until then a server talking to itself
+            // changes nothing on screen.
+            typ_lsp::LspEvent::Notification { .. } => false,
+            typ_lsp::LspEvent::Response { .. } => false,
+            typ_lsp::LspEvent::ServerRequest { .. } => false,
+            typ_lsp::LspEvent::Exited => false,
+        }
+    }
+
+    /// The active buffer was written to disk.
+    fn notify_saved(&mut self) {
+        let tab = &self.tabs[self.active];
+        let (Some(path), rope) = (tab.panel.path(), tab.panel.buffer().snapshot()) else {
+            return;
+        };
+        let path = path.to_path_buf();
+        self.lsp.did_save(&path, rope);
+    }
+
+    /// Ask every server to stop, politely, before the process goes.
+    pub fn shutdown_language_servers(&mut self) {
+        self.lsp.shutdown();
     }
 
     /// Ask for a parse if the buffer has changed since the last request.
@@ -678,7 +752,13 @@ impl App {
             // pressed Alt+9 with three open is a jump you did not ask for.
             Action::GoToTab(n) => self.activate_tab((n as usize).saturating_sub(1)),
             Action::Save => match self.tabs[self.active].panel.save() {
-                Ok(()) => self.status = Some("Saved.".to_string()),
+                Ok(()) => {
+                    self.status = Some("Saved.".to_string());
+                    // After the atomic save, never before it: a server told
+                    // about a write that then failed is holding a document
+                    // TYPE does not have.
+                    self.notify_saved();
+                }
                 // A save that fails silently is how work gets lost. The status
                 // bar says so and the log keeps the whole error chain, which is
                 // the part that is actually diagnosable.

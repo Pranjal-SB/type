@@ -12,7 +12,7 @@ use std::sync::mpsc::Sender;
 use lsp_server::{Message, Notification, Request, RequestId, Response, ResponseError};
 
 use crate::position::Encoding;
-use crate::transport::{Incoming, SpawnError, Transport};
+use crate::transport::{Incoming, ServerId, SpawnError, Transport};
 
 /// Everything a server says, once it has been sorted into kinds.
 ///
@@ -57,8 +57,26 @@ pub enum LspEvent {
 /// has to be right as well as the path that is least wanted.
 const PREFERRED: [Encoding; 3] = [Encoding::Utf32, Encoding::Utf8, Encoding::Utf16];
 
+/// How much of a document the server wants on each change.
+///
+/// TYPE's own enum rather than a number, so a server that says nothing and a
+/// server that says none are the same branch and adding incremental sync is a
+/// compiler error at every match rather than a silent third case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncKind {
+    /// Send nothing. `didChange` is not just unnecessary, it is unwanted.
+    None,
+    /// The whole document, every time. What TYPE asks for and what it sends.
+    Full,
+    /// Ranges. TYPE does not offer it, so a server asking for it gets full
+    /// documents — which is legal, and the reason the client capability says
+    /// `FULL`.
+    Incremental,
+}
+
 /// A language server and the state of our conversation with it.
 pub struct Client {
+    id: ServerId,
     transport: Transport,
     next_id: i32,
     encoding: Encoding,
@@ -74,6 +92,7 @@ impl Client {
     /// through [`handle`](Self::handle). Nothing here waits, because the 100 ms
     /// cold-start budget cannot afford to and rust-analyzer takes seconds.
     pub fn start<E>(
+        id: ServerId,
         command: &str,
         args: &[String],
         root: &Path,
@@ -82,8 +101,9 @@ impl Client {
     where
         E: From<Incoming> + Send + 'static,
     {
-        let transport = Transport::spawn(command, args, root, results)?;
+        let transport = Transport::spawn(id, command, args, root, results)?;
         let mut client = Client {
+            id,
             transport,
             next_id: 0,
             // Until the server says otherwise. The specification's default,
@@ -105,8 +125,8 @@ impl Client {
     /// keeps capability negotiation out of the app.
     pub fn handle(&mut self, incoming: Incoming) -> Option<LspEvent> {
         let message = match incoming {
-            Incoming::Closed => return Some(LspEvent::Exited),
-            Incoming::Message(message) => *message,
+            Incoming::Closed(_) => return Some(LspEvent::Exited),
+            Incoming::Message(_, message) => *message,
         };
 
         match message {
@@ -151,6 +171,11 @@ impl Client {
         self.notify("initialized", serde_json::json!({}));
     }
 
+    /// Which server this is.
+    pub fn id(&self) -> ServerId {
+        self.id
+    }
+
     /// Which unit this server counts `Position::character` in.
     pub fn encoding(&self) -> Encoding {
         self.encoding
@@ -176,6 +201,162 @@ impl Client {
             .as_ref()
             .and_then(|caps| caps.get(capability))
             .is_some_and(|value| !value.is_null() && value != &serde_json::Value::Bool(false))
+    }
+
+    /// How much of a document this server wants on each change.
+    ///
+    /// **A server that says nothing is treated as wanting the whole document.**
+    /// The specification's own default for an absent `textDocumentSync` is to
+    /// send nothing, and that is the wrong way round for a client: a server
+    /// that genuinely wants no sync says so, while a server that forgot to
+    /// declare it and gets nothing is a server with no documents and no way to
+    /// answer anything. Sending to the first costs a notification it ignores;
+    /// not sending to the second breaks it completely.
+    pub fn sync_kind(&self) -> SyncKind {
+        let Some(sync) = self
+            .capabilities
+            .as_ref()
+            .and_then(|c| c.get("textDocumentSync"))
+        else {
+            return SyncKind::Full;
+        };
+        let kind = match sync {
+            // The short form: the number *is* the kind.
+            serde_json::Value::Number(n) => n.as_i64(),
+            // The long form. An object with no `change` means no changes.
+            _ => Some(sync.get("change").and_then(|c| c.as_i64()).unwrap_or(0)),
+        };
+        match kind {
+            Some(1) => SyncKind::Full,
+            Some(2) => SyncKind::Incremental,
+            _ => SyncKind::None,
+        }
+    }
+
+    /// Whether this server wants to be told about documents opening and
+    /// closing. Absent means yes, for the reason [`sync_kind`](Self::sync_kind)
+    /// gives.
+    pub fn wants_open_close(&self) -> bool {
+        let Some(sync) = self
+            .capabilities
+            .as_ref()
+            .and_then(|c| c.get("textDocumentSync"))
+        else {
+            return true;
+        };
+        match sync {
+            serde_json::Value::Number(n) => n.as_i64() != Some(0),
+            _ => sync
+                .get("openClose")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+        }
+    }
+
+    /// Whether this server wants `didSave`, and whether it wants the text with
+    /// it.
+    ///
+    /// `save` is either a bool or a `SaveOptions`, and the text goes only to a
+    /// server that asked for it — it is the whole document, and sending it
+    /// unasked doubles the cost of every save for nothing.
+    fn save_wanted(&self) -> Option<bool> {
+        let sync = self.capabilities.as_ref()?.get("textDocumentSync")?;
+        match sync {
+            // The short form cannot express save options. A server that syncs
+            // at all is told about saves.
+            serde_json::Value::Number(n) => (n.as_i64() != Some(0)).then_some(false),
+            _ => match sync.get("save")? {
+                serde_json::Value::Bool(false) => None,
+                serde_json::Value::Bool(true) => Some(false),
+                options => Some(
+                    options
+                        .get("includeText")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                ),
+            },
+        }
+    }
+
+    /// Tell the server about a document it has not seen. Whether it was sent.
+    pub fn did_open(&mut self, uri: &str, language_id: &str, version: i32, text: String) -> bool {
+        if !self.is_initialized() || !self.wants_open_close() {
+            return false;
+        }
+        self.notify(
+            "textDocument/didOpen",
+            serde_json::json!({
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": language_id,
+                    "version": version,
+                    "text": text,
+                },
+            }),
+        );
+        true
+    }
+
+    /// Send the whole document. Whether it was sent.
+    ///
+    /// **The rope is not read here.** It is a snapshot — cloning one is an
+    /// atomic bump, not a copy — and the writer thread turns it into text, so
+    /// the 1.3 ms a 50k-line file costs is paid off the render thread. A server
+    /// that asked for incremental sync still gets the whole document, which is
+    /// legal and is why the client capability says `FULL`.
+    pub fn did_change(&mut self, uri: &str, version: i32, rope: ropey::Rope) -> bool {
+        if !self.is_initialized() || self.sync_kind() == SyncKind::None {
+            return false;
+        }
+        let uri = uri.to_string();
+        self.transport.send_deferred(move || {
+            Message::Notification(Notification {
+                method: "textDocument/didChange".to_string(),
+                params: serde_json::json!({
+                    "textDocument": { "uri": uri, "version": version },
+                    "contentChanges": [ { "text": rope.to_string() } ],
+                }),
+            })
+        });
+        true
+    }
+
+    /// Tell the server the document was written to disk. Whether it was sent.
+    ///
+    /// rust-analyzer runs `cargo check` here, and everything that arrives by
+    /// `publishDiagnostics` arrives because of this notification.
+    pub fn did_save(&mut self, uri: &str, rope: ropey::Rope) -> bool {
+        if !self.is_initialized() {
+            return false;
+        }
+        let Some(include_text) = self.save_wanted() else {
+            return false;
+        };
+        let uri = uri.to_string();
+        self.transport.send_deferred(move || {
+            let mut params = serde_json::json!({ "textDocument": { "uri": uri } });
+            if include_text {
+                params["text"] = serde_json::Value::String(rope.to_string());
+            }
+            Message::Notification(Notification {
+                method: "textDocument/didSave".to_string(),
+                params,
+            })
+        });
+        true
+    }
+
+    /// The document is gone; the server owns its own copy again. Whether it was
+    /// sent.
+    pub fn did_close(&mut self, uri: &str) -> bool {
+        if !self.is_initialized() || !self.wants_open_close() {
+            return false;
+        }
+        self.notify(
+            "textDocument/didClose",
+            serde_json::json!({ "textDocument": { "uri": uri } }),
+        );
+        true
     }
 
     /// Send a request and return the id its answer will carry.

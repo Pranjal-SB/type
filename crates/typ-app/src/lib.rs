@@ -3,6 +3,7 @@ pub mod capability;
 pub mod config;
 pub mod layout;
 pub mod log;
+pub mod lsp;
 pub mod prompt;
 pub mod run;
 pub mod status;

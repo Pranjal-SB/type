@@ -2155,10 +2155,13 @@ dependencies = [
  "anyhow",
  "crossterm",
  "ratatui",
+ "ropey",
+ "serde_json",
  "toml",
  "typ-buffer",
  "typ-core",
  "typ-find",
+ "typ-lsp",
  "typ-panel-editor",
  "typ-panel-tree",
  "typ-picker",
@@ -2189,6 +2192,7 @@ dependencies = [
  "ratatui",
  "toml",
  "typ-find",
+ "typ-lsp",
  "typ-syntax",
 ]
 

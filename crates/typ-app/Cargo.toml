@@ -14,13 +14,23 @@ categories.workspace = true
 anyhow.workspace = true
 crossterm.workspace = true
 ratatui.workspace = true
+ropey.workspace = true
 toml.workspace = true
 typ-buffer.workspace = true
 typ-core.workspace = true
 typ-find.workspace = true
+typ-lsp.workspace = true
 typ-panel-editor.workspace = true
 typ-panel-tree.workspace = true
 typ-picker.workspace = true
 typ-registry.workspace = true
 typ-syntax.workspace = true
 unicode-segmentation.workspace = true
+serde_json.workspace = true
+
+# The same test double `typ-lsp` spawns, over the same `typ_lsp::fake::run`.
+# A bin target here rather than a shared path because `CARGO_BIN_EXE_` is only
+# set for bin targets of the package whose tests are running.
+[[bin]]
+name = "typ-app-fake-server"
+path = "src/bin/fake_server.rs"

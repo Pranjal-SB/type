@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::Duration;
 
-use typ_lsp::{Client, Encoding, Incoming, LspEvent};
+use typ_lsp::{Client, Encoding, Incoming, LspEvent, ServerId};
 
 fn fake() -> &'static str {
     env!("CARGO_BIN_EXE_typ-lsp-fake-server")
@@ -16,7 +16,8 @@ fn args(list: &[&str]) -> Vec<String> {
 
 fn start(flags: &[&str]) -> (Client, Receiver<Incoming>) {
     let (tx, rx) = channel();
-    let client = Client::start(fake(), &args(flags), Path::new("."), tx).expect("it starts");
+    let client =
+        Client::start(ServerId(1), fake(), &args(flags), Path::new("."), tx).expect("it starts");
     (client, rx)
 }
 
@@ -92,7 +93,7 @@ fn what_the_server_was_told(flags: &[&str]) -> serde_json::Value {
         let Ok(incoming) = rx.recv_timeout(Duration::from_secs(10)) else {
             break;
         };
-        if let Incoming::Message(message) = &incoming
+        if let Incoming::Message(_, message) = &incoming
             && let lsp_server::Message::Response(response) = &**message
             && let Ok(result) = &response.response_result
         {

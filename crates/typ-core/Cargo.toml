@@ -16,4 +16,5 @@ crossterm.workspace = true
 ratatui.workspace = true
 toml.workspace = true
 typ-find.workspace = true
+typ-lsp.workspace = true
 typ-syntax.workspace = true

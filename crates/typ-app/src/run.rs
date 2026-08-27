@@ -63,6 +63,11 @@ pub fn run(mut app: App) -> Result<()> {
 
     let result = event_loop(&mut terminal, &mut app);
 
+    // `shutdown` then `exit`, before the tree kill that `Drop` would do anyway.
+    // rust-analyzer writes state on shutdown, and killing it every time is how
+    // a stale lock outlives the editor.
+    app.shutdown_language_servers();
+
     stdout().execute(DisableBracketedPaste)?;
     stdout().execute(DisableMouseCapture)?;
     ratatui::restore();
@@ -173,6 +178,12 @@ pub fn step_batch(app: &mut App, events: Vec<AppEvent>, area: Rect) -> Result<Fl
             return Ok(Flow::Quit);
         }
     }
+
+    // The coalescing point. Once per batch, after everything in it has been
+    // applied, so a ten-key burst is one `didChange` and a document opened
+    // before its server finished the handshake is announced on the pass after
+    // the response lands.
+    app.sync_language_servers();
     Ok(Flow::Continue)
 }
 
@@ -256,6 +267,7 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
         AppEvent::FileChanged(path) => changed = app.handle_external_change(&path)?,
         AppEvent::Parsed(parsed) => changed = app.handle_parsed(parsed),
         AppEvent::Found(found) => changed = app.handle_found(found),
+        AppEvent::Lsp(incoming) => changed = app.handle_lsp(incoming),
         AppEvent::Input(input) => match input {
             // Every binding lives in the keymap now, so there is nothing left
             // here to special-case. The dispatcher owns the order.
