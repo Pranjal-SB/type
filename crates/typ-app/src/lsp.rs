@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use ropey::Rope;
 use typ_buffer::EditSpan;
 use typ_core::Diagnostic;
+use typ_lsp::RequestId;
 use typ_lsp::{Client, Encoding, Incoming, LspEvent, ServerId, SpawnError};
 
 /// One language server, and what it is for.
@@ -112,6 +113,32 @@ pub(crate) struct Lsp {
     sent: HashMap<&'static str, usize>,
     sender: Option<crate::run::AppSender>,
     root: PathBuf,
+    /// Requests sent and not yet answered.
+    ///
+    /// **The app remembers what it asked**, which is why `LspEvent::Response`
+    /// carries raw JSON rather than a variant per feature. Bounded by what is
+    /// in flight, and a superseded entry is removed when it is cancelled.
+    pending: Vec<Pending>,
+}
+
+/// A request waiting for its answer.
+pub(crate) struct Pending {
+    pub id: RequestId,
+    pub server: ServerId,
+    pub kind: Ask,
+    /// Where the cursor was when the question was asked.
+    ///
+    /// The generation lesson from M2.7's parses, applied to requests: an answer
+    /// that arrives after the cursor moved describes somewhere the user is no
+    /// longer asking about, and acting on it is a jump nobody requested.
+    pub asked_at: (PathBuf, typ_buffer::Position),
+}
+
+/// What was asked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Ask {
+    Definition,
+    Hover,
 }
 
 impl Lsp {
@@ -404,6 +431,93 @@ impl Lsp {
         }
     }
 
+    /// Ask the server for `path` a question about a position.
+    ///
+    /// Returns nothing when there is no server, when it has not finished the
+    /// handshake, or when it says it cannot answer: all three are ordinary, and
+    /// all three have to leave the editor exactly as it was.
+    pub(crate) fn ask(
+        &mut self,
+        kind: Ask,
+        path: &Path,
+        char_index: usize,
+        rope: &Rope,
+    ) -> Result<(), NoAnswer> {
+        let Some(doc) = self.docs.get(path) else {
+            return Err(NoAnswer::NoServer);
+        };
+        let (id, uri) = (doc.server, doc.uri.clone());
+        let encoding = self.encoding(id);
+        let capability = match kind {
+            Ask::Definition => "definitionProvider",
+            Ask::Hover => "hoverProvider",
+        };
+        let method = match kind {
+            Ask::Definition => "textDocument/definition",
+            Ask::Hover => "textDocument/hover",
+        };
+
+        let Some(client) = self.client(id) else {
+            return Err(NoAnswer::NoServer);
+        };
+        if !client.is_initialized() {
+            return Err(NoAnswer::NotReady);
+        }
+        if !client.supports(capability) {
+            return Err(NoAnswer::Unsupported);
+        }
+
+        let position = typ_lsp::to_lsp(encoding, rope.slice(..), char_index);
+        let request = client.request(
+            method,
+            serde_json::json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": position.line, "character": position.character },
+            }),
+        );
+        self.pending.push(Pending {
+            id: request,
+            server: id,
+            kind,
+            asked_at: (path.to_path_buf(), typ_buffer::Position::default()),
+        });
+        Ok(())
+    }
+
+    /// Record where the cursor was for the request just sent.
+    pub(crate) fn stamp_last(&mut self, at: typ_buffer::Position) {
+        if let Some(last) = self.pending.last_mut() {
+            last.asked_at.1 = at;
+        }
+    }
+
+    /// Abandon any question of this kind that is still unanswered.
+    ///
+    /// Hover fires on demand today and on cursor movement later, so most
+    /// questions are superseded before they are answered. A server still
+    /// grinding on one nobody wants is burning a core for nothing.
+    pub(crate) fn cancel(&mut self, kind: Ask) {
+        let stale: Vec<(ServerId, RequestId)> = self
+            .pending
+            .iter()
+            .filter(|p| p.kind == kind)
+            .map(|p| (p.server, p.id.clone()))
+            .collect();
+        self.pending.retain(|p| p.kind != kind);
+        for (server, id) in stale {
+            if let Some(client) = self.client(server) {
+                client.cancel(&id);
+            }
+            self.tally("$/cancelRequest", true);
+        }
+    }
+
+    /// Take the question an answer belongs to, if anyone is still waiting.
+    pub(crate) fn take_pending(&mut self, id: &RequestId) -> Option<Pending> {
+        let at = self.pending.iter().position(|p| &p.id == id)?;
+        Some(self.pending.remove(at))
+    }
+
     /// Ask every running server to stop, and wait briefly for it.
     ///
     /// The polite half. Dropping does the rest — the process tree goes with the
@@ -475,4 +589,121 @@ fn severity(severity: Option<typ_lsp::lsp_types::DiagnosticSeverity>) -> typ_cor
         // protocol does not define.
         _ => Severity::Warning,
     }
+}
+
+/// Why a question could not be asked.
+///
+/// Data rather than an error: every one of these is an ordinary state that the
+/// status bar says a sentence about and nothing else happens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NoAnswer {
+    /// Nothing is configured for this file, or it would not start.
+    NoServer,
+    /// It is up and has not finished the handshake.
+    NotReady,
+    /// It answered the handshake and does not offer this.
+    Unsupported,
+}
+
+impl NoAnswer {
+    /// What the status bar says.
+    pub(crate) fn message(self) -> &'static str {
+        match self {
+            NoAnswer::NoServer => "No language server for this file.",
+            NoAnswer::NotReady => "The language server is still starting.",
+            NoAnswer::Unsupported => "This language server does not offer that.",
+        }
+    }
+}
+
+/// The path and position a `textDocument/definition` answer names.
+///
+/// **Four shapes, all legal.** The protocol allows `Location`, `Location[]`,
+/// `LocationLink[]` and null, and a client that handles only the first works
+/// against exactly one server. The first entry of a list wins — a definition
+/// with several answers is a `goto` that has to pick one, and picking the first
+/// is what every editor in the field does before it grows a picker for them.
+pub(crate) fn definition_target(
+    result: &serde_json::Value,
+) -> Option<(PathBuf, typ_lsp::lsp_types::Position)> {
+    let one = match result {
+        serde_json::Value::Array(items) => items.first()?,
+        serde_json::Value::Null => return None,
+        object => object,
+    };
+
+    // `LocationLink` names the target differently, and a server that returns
+    // them returns nothing this would otherwise recognise.
+    let (uri, range) = match one.get("targetUri") {
+        Some(uri) => (
+            uri,
+            one.get("targetSelectionRange").or(one.get("targetRange"))?,
+        ),
+        None => (one.get("uri")?, one.get("range")?),
+    };
+
+    let uri: typ_lsp::lsp_types::Uri = uri.as_str()?.parse().ok()?;
+    let path = typ_lsp::uri_to_path(&uri)?;
+    let start = range.get("start")?;
+    Some((
+        path,
+        typ_lsp::lsp_types::Position {
+            line: start.get("line")?.as_u64()? as u32,
+            character: start.get("character")?.as_u64()? as u32,
+        },
+    ))
+}
+
+/// The text of a `textDocument/hover` answer, as text.
+///
+/// **Three shapes here too**, and the markup is flattened rather than rendered:
+/// painting the backticks of a fenced block is worse than painting nothing, and
+/// a terminal box is not where a markdown renderer belongs. `MarkedString` is
+/// deprecated and still what several servers send.
+pub(crate) fn hover_text(result: &serde_json::Value) -> Option<String> {
+    let contents = result.get("contents")?;
+    let text = match contents {
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .filter_map(marked_string)
+            .collect::<Vec<_>>()
+            .join("\n"),
+        object => marked_string(object)?,
+    };
+    let text = flatten_markdown(&text);
+    (!text.is_empty()).then_some(text)
+}
+
+/// One `MarkedString` or `MarkupContent`, as its text.
+fn marked_string(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => Some(text.clone()),
+        object => object.get("value")?.as_str().map(str::to_string),
+    }
+}
+
+/// Markdown as the words in it.
+///
+/// Deliberately not a renderer. Fences, inline code and emphasis are the three
+/// things every server's hover uses and the three whose punctuation reads as
+/// noise in a one-line box; anything else markdown can do arrives as its own
+/// text, which is the honest floor.
+fn flatten_markdown(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        if line.trim_start().starts_with("```") {
+            continue;
+        }
+        let line = line.replace("**", "").replace('`', "");
+        if line.trim().is_empty() {
+            if !out.ends_with('\n') && !out.is_empty() {
+                out.push('\n');
+            }
+            continue;
+        }
+        out.push_str(line.trim_end());
+        out.push('\n');
+    }
+    out.trim().to_string()
 }

@@ -282,6 +282,17 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("alt+7", Action::GoToTab(7)),
     ("alt+8", Action::GoToTab(8)),
     ("alt+9", Action::GoToTab(9)),
+    // F-keys with one modifier are Universal tier, and F12 is what every
+    // non-modal editor in the field uses for this. `gd` belongs to the vim
+    // layer, which does not exist.
+    ("f12", Action::GotoDefinition),
+    // **Deliberately not a chord anyone expects**, because the one everyone
+    // expects is a prefix. VS Code puts hover on `Ctrl+K Ctrl+I`, and
+    // `controls.md` §1 says a prefix is the only way to reach the rest of an
+    // IDE's surface — the sequence keymap is gap 53 and unbuilt. `Alt+H` is
+    // Universal, free, and rebindable; the palette reaches it by name either
+    // way, which is what makes this a default rather than the only door.
+    ("alt+h", Action::Hover),
     ("f3", Action::SearchNext),
     ("shift+f3", Action::SearchPrevious),
     ("ctrl+h", Action::ReplaceOpen),

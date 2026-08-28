@@ -31,6 +31,10 @@ pub mod position;
 pub mod transport;
 pub mod uri;
 
+/// `LspEvent` names it, so a consumer correlating an answer with the question
+/// it belongs to needs it without naming `lsp-server` itself.
+pub use lsp_server::{RequestId, ResponseError};
+
 pub use client::{Client, LspEvent, SyncKind};
 pub use position::{Encoding, from_lsp, to_lsp};
 pub use transport::{Incoming, ServerId, SpawnError, Transport};

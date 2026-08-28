@@ -83,6 +83,11 @@ impl App {
 
         self.render_status(status_area, frame.buffer_mut());
 
+        // Over the body, under the picker. A hover and the overlay are never up
+        // together — opening the picker clears the transient state the hover is
+        // part of — but the order says which would win if they were.
+        self.render_hover(frame, editor_area);
+
         // The overlay draws last, over the body — after the status bar too, so a
         // tall picker on a short terminal covers the bar rather than being
         // clipped by it. `chrome::frame` fills every cell of its rect, which is
@@ -181,5 +186,51 @@ impl App {
         let (tree, pane) = crate::layout::split(body);
         let (_, editor) = crate::layout::split_tabs(pane, self.tabs.len());
         (tree, editor)
+    }
+}
+
+impl App {
+    /// Draw the hover box, if a server has said something about the cursor.
+    ///
+    /// Anchored to the cursor rather than to the frame: it is about the thing
+    /// under it, and a centred box would make the reader look away from the
+    /// word they asked about.
+    fn render_hover(&mut self, frame: &mut ratatui::Frame, editor_area: Rect) {
+        let Some(text) = self.hover.clone() else {
+            return;
+        };
+        let Some(cursor) = self.tabs[self.active].panel.cursor_position(editor_area) else {
+            return;
+        };
+
+        let lines: Vec<&str> = text.lines().collect();
+        let longest = lines
+            .iter()
+            .map(|line| line.chars().count())
+            .max()
+            .unwrap_or(0);
+        let area = crate::layout::hover_area(frame.area(), cursor, lines.len(), longest);
+
+        let ctx = RenderContext {
+            theme: &self.theme,
+            syntax: &self.syntax_theme,
+            diagnostics: &[],
+            // Never focused: it takes no keys, and a bright border would say it
+            // does.
+            is_focused: false,
+            panel_index: 3,
+            terminal_width: frame.area().width,
+            terminal_height: frame.area().height,
+        };
+        typ_core::chrome::frame(area, frame.buffer_mut(), "", &ctx, self.theme.chrome_bg);
+
+        let inner = typ_core::chrome::inner(area);
+        let body: Vec<Line> = lines
+            .iter()
+            .map(|line| Line::from(Span::raw(line.to_string())))
+            .collect();
+        Paragraph::new(body)
+            .style(Style::default().fg(self.theme.fg).bg(self.theme.chrome_bg))
+            .render(inner, frame.buffer_mut());
     }
 }

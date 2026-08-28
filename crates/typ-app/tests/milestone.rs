@@ -157,6 +157,11 @@ fn every_default_binding_resolves_to_something_that_handles_it() {
         typ_core::Action::OpenFilePicker,
         typ_core::Action::OpenProjectSearch,
         typ_core::Action::OpenCommandPalette,
+        // App-owned for the same reason the tab actions are: goto-definition
+        // can open a file, and a panel that could open one would have to know
+        // it sits in a list of them.
+        typ_core::Action::GotoDefinition,
+        typ_core::Action::Hover,
         // Tabs are the app's, not the panel's: a panel that could close itself
         // would need to know it sits in a list, and invariant 5 says it does
         // not get to know anything about the app at all.

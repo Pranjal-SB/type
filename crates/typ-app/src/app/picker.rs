@@ -157,12 +157,7 @@ impl App {
             return Ok(());
         };
         self.close_picker();
-
-        if let Some(events) = self.focused_mut().apply_action(action) {
-            return self.apply(events);
-        }
-        self.perform_app_action(action);
-        Ok(())
+        self.apply_named_action(action)
     }
 
     pub fn close_picker(&mut self) {

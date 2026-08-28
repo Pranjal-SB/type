@@ -54,8 +54,11 @@ fn ctrl_arrows_move_by_word() {
 #[test]
 fn an_unbound_chord_returns_nothing() {
     let keymap = Keymap::default_bindings();
+    // F12 was the unbound key this reached for until M3 gave it
+    // goto-definition. F9 is what is left: nothing claims it, and a test that
+    // asserts a miss has to name a key nothing hits.
     assert_eq!(
-        keymap.lookup(&chord(KeyCode::F(12), KeyModifiers::NONE)),
+        keymap.lookup(&chord(KeyCode::F(9), KeyModifiers::NONE)),
         None
     );
 }

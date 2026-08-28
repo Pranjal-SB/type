@@ -106,6 +106,13 @@ pub enum Action {
     Paste,
     Indent,
     Outdent,
+    /// Jump to where the thing under the cursor is defined.
+    ///
+    /// App-owned, like the tab actions: it can open a file, and a panel that
+    /// could open a file would need to know it sits in a list of them.
+    GotoDefinition,
+    /// Show what the server knows about the thing under the cursor.
+    Hover,
 }
 
 /// The `go_to_tab_N` names, indexed by `n - 1`.
@@ -278,6 +285,8 @@ impl Action {
         Action::Paste,
         Action::Indent,
         Action::Outdent,
+        Action::GotoDefinition,
+        Action::Hover,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -353,6 +362,8 @@ impl Action {
             Action::NextTab => "next_tab",
             Action::PrevTab => "prev_tab",
             Action::CloseTab => "close_tab",
+            Action::GotoDefinition => "goto_definition",
+            Action::Hover => "hover",
             Action::GoToTab(n) => GO_TO_TAB_NAMES
                 .get((*n as usize).saturating_sub(1))
                 .copied()

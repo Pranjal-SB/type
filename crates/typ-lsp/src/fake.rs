@@ -30,6 +30,17 @@ struct Flags {
     /// Publish on `didChange` stamped with version 0, which is stale the
     /// moment anything has been typed. The client has to drop it.
     push_stale: bool,
+    /// Answer `textDocument/definition` with a sibling file rather than with
+    /// the document itself, so a test can tell "jumped within the file" from
+    /// "opened another one".
+    definition_elsewhere: bool,
+    /// Answer `textDocument/definition` with a file that is not there.
+    definition_missing: bool,
+    /// Answer `textDocument/hover` with a plain string rather than markup.
+    hover_plain: bool,
+    /// Answer nothing at all to a definition request. Servers do this when
+    /// they have not finished indexing.
+    no_definition: bool,
     garbage: bool,
     exit_now: bool,
     sleep: bool,
@@ -47,6 +58,10 @@ impl Flags {
             server_request: has("--server-request"),
             push: has("--push") || has("--push-stale"),
             push_stale: has("--push-stale"),
+            definition_elsewhere: has("--definition-elsewhere"),
+            definition_missing: has("--definition-missing"),
+            hover_plain: has("--hover-plain"),
+            no_definition: has("--no-definition"),
             garbage: has("--garbage"),
             exit_now: has("--exit-now"),
             sleep: has("--sleep"),
@@ -73,6 +88,14 @@ fn capabilities(flags: &Flags) -> serde_json::Value {
         });
     }
     caps
+}
+
+/// A URI naming `name` in the same directory as `uri`.
+fn sibling(uri: &str, name: &str) -> String {
+    match uri.rfind('/') {
+        Some(cut) => format!("{}/{name}", &uri[..cut]),
+        None => uri.to_string(),
+    }
 }
 
 /// Send `textDocument/publishDiagnostics` for one document.
@@ -177,15 +200,38 @@ pub fn run() {
                         "clientSaw": params,
                     }),
                     "shutdown" => serde_json::Value::Null,
-                    "textDocument/definition" => serde_json::json!({
-                        "uri": "file:///fake/target.rs",
-                        "range": {
-                            "start": { "line": 4, "character": 0 },
-                            "end":   { "line": 4, "character": 3 },
-                        },
+                    // The URI it was *asked* about, so a client can be tested
+                    // for jumping inside one file. A fixed made-up path would
+                    // only ever exercise the failure branch.
+                    "textDocument/definition" if flags.no_definition => serde_json::Value::Null,
+                    "textDocument/definition" => {
+                        let asked = params
+                            .pointer("/textDocument/uri")
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("file:///fake/target.rs");
+                        let uri = if flags.definition_missing {
+                            sibling(asked, "not-there.rs")
+                        } else if flags.definition_elsewhere {
+                            sibling(asked, "target.rs")
+                        } else {
+                            asked.to_string()
+                        };
+                        serde_json::json!({
+                            "uri": uri,
+                            "range": {
+                                "start": { "line": 4, "character": 2 },
+                                "end":   { "line": 4, "character": 5 },
+                            },
+                        })
+                    }
+                    "textDocument/hover" if flags.hover_plain => serde_json::json!({
+                        "contents": "plain words",
                     }),
                     "textDocument/hover" => serde_json::json!({
-                        "contents": { "kind": "markdown", "value": "`fn fake()`" },
+                        "contents": {
+                            "kind": "markdown",
+                            "value": "```rust\nfn fake()\n```\n\nDoes **nothing**.",
+                        },
                     }),
                     _ => serde_json::Value::Null,
                 };

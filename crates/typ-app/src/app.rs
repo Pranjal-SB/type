@@ -130,6 +130,12 @@ pub struct App {
     index_requested: bool,
     /// Language servers, and what each has been told about the open documents.
     lsp: crate::lsp::Lsp,
+    /// What a server said about the position the cursor was on.
+    ///
+    /// **Dismissed by the next cursor movement**, because it described a
+    /// position: a box left standing over a different one is saying something
+    /// true about somewhere else.
+    hover: Option<String>,
 }
 
 /// One open file, and the parse state that belongs to it rather than to the app.
@@ -237,6 +243,7 @@ impl App {
             picker: None,
             index_requested: false,
             lsp: crate::lsp::Lsp::new(root),
+            hover: None,
         })
     }
 
@@ -266,6 +273,11 @@ impl App {
         self.rewatch();
         // Whatever is already open has never been parsed.
         self.request_parse_if_stale();
+    }
+
+    /// What a server last said about the cursor's position, if anything.
+    pub fn hover(&self) -> Option<&str> {
+        self.hover.as_deref()
     }
 
     /// Register a language server. Nothing starts until a file needs it.
@@ -336,7 +348,7 @@ impl App {
             // the first one the status bar; until then a server talking about
             // itself changes nothing on screen.
             typ_lsp::LspEvent::Notification { .. } => false,
-            typ_lsp::LspEvent::Response { .. } => false,
+            typ_lsp::LspEvent::Response { id, result } => self.handle_answer(id, result),
             typ_lsp::LspEvent::ServerRequest { .. } => false,
             typ_lsp::LspEvent::Exited => false,
         }
@@ -385,6 +397,94 @@ impl App {
 
         self.lsp.set_pushed(&path, converted);
         index == self.active
+    }
+
+    /// Ask the active file's server about the cursor's position.
+    ///
+    /// The one place both requests are made, so cancellation, staleness and the
+    /// four ways there is no answer are decided once rather than twice.
+    fn ask_server(&mut self, kind: crate::lsp::Ask) {
+        // A second question of the same kind abandons the first. Most are
+        // superseded before they are answered.
+        self.lsp.cancel(kind);
+
+        let tab = &self.tabs[self.active];
+        let Some(path) = tab.panel.path().map(|p| p.to_path_buf()) else {
+            self.status = Some(crate::lsp::NoAnswer::NoServer.message().to_string());
+            return;
+        };
+        let cursor = tab.panel.cursor();
+        let char_index = tab.panel.buffer().char_index(cursor);
+        let rope = tab.panel.buffer().snapshot();
+
+        match self.lsp.ask(kind, &path, char_index, &rope) {
+            Ok(()) => self.lsp.stamp_last(cursor),
+            Err(reason) => self.status = Some(reason.message().to_string()),
+        }
+    }
+
+    /// An answer arrived. Returns whether the screen changed.
+    fn handle_answer(
+        &mut self,
+        id: typ_lsp::RequestId,
+        result: Result<serde_json::Value, typ_lsp::ResponseError>,
+    ) -> bool {
+        // Nobody is waiting: it was cancelled, or its tab closed under it.
+        let Some(pending) = self.lsp.take_pending(&id) else {
+            return false;
+        };
+        let Ok(result) = result else {
+            crate::log_warn!("the language server refused a request");
+            return false;
+        };
+
+        // **Stale.** The question was about a position the cursor has left, and
+        // a jump to where the user used to be is a jump nobody asked for.
+        let moved = self.tabs[self.active].panel.path() != Some(&pending.asked_at.0)
+            || self.tabs[self.active].panel.cursor() != pending.asked_at.1;
+        if moved {
+            return false;
+        }
+
+        match pending.kind {
+            crate::lsp::Ask::Definition => self.jump_to_definition(pending.server, result),
+            crate::lsp::Ask::Hover => {
+                self.hover = crate::lsp::hover_text(&result);
+                self.hover.is_some()
+            }
+        }
+    }
+
+    /// Open where a definition lives and put the cursor on it.
+    fn jump_to_definition(&mut self, server: typ_lsp::ServerId, result: serde_json::Value) -> bool {
+        let Some((path, position)) = crate::lsp::definition_target(&result) else {
+            // A server with nothing to say is the ordinary state for the first
+            // minute of any real project.
+            return false;
+        };
+        if !path.exists() {
+            // The index is older than the tree. Saying so beats opening an
+            // empty buffer at a path nothing will ever write.
+            self.status = Some(format!("{} is gone.", path.display()));
+            return true;
+        }
+
+        if let Err(e) = self.open_path(&path) {
+            self.status = Some(format!("Could not open {}: {e:#}", path.display()));
+            return true;
+        }
+
+        // Converted against the buffer that is now open, in the encoding of the
+        // server that named it: the two conversions of invariant 4, in the
+        // order `to_diagnostic` uses them.
+        let encoding = self.lsp.encoding(server);
+        let buffer = self.tabs[self.active].panel.buffer();
+        let char_index = typ_lsp::from_lsp(encoding, buffer.rope().slice(..), position);
+        let target = buffer.position(char_index);
+        self.tabs[self.active]
+            .panel
+            .select_range(typ_buffer::Selection::caret(target));
+        true
     }
 
     /// The active buffer was written to disk.
@@ -592,6 +692,25 @@ impl App {
         self.status = None;
         self.quit_pending = false;
         self.close_pending = None;
+        // The hover described a position. Any key at all may have left it, and
+        // a box standing over somewhere the cursor no longer is says something
+        // true about the wrong thing. `handle_chord` calls this before running
+        // the action, so `Hover` still gets to set it afterwards.
+        self.hover = None;
+    }
+
+    /// Run an action by name, the way the command palette does.
+    ///
+    /// Panel first, then the app — the same order `handle_chord` uses, because
+    /// an action reachable one way and not the other is exactly the split the
+    /// palette exists to close.
+    pub fn apply_named_action(&mut self, action: Action) -> Result<()> {
+        self.clear_transient();
+        if let Some(events) = self.focused_mut().apply_action(action) {
+            return self.apply(events);
+        }
+        self.perform_app_action(action);
+        Ok(())
     }
 
     /// Quit, unless a panel has something to confirm first.
@@ -842,6 +961,8 @@ impl App {
             // no-op rather than a clamp: landing on the last tab because you
             // pressed Alt+9 with three open is a jump you did not ask for.
             Action::GoToTab(n) => self.activate_tab((n as usize).saturating_sub(1)),
+            Action::GotoDefinition => self.ask_server(crate::lsp::Ask::Definition),
+            Action::Hover => self.ask_server(crate::lsp::Ask::Hover),
             Action::Save => match self.tabs[self.active].panel.save() {
                 Ok(()) => {
                     self.status = Some("Saved.".to_string());
