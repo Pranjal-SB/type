@@ -13,7 +13,7 @@
 
 use ratatui::style::Style;
 use ratatui::text::Span;
-use typ_core::ThemeColors;
+use typ_core::{Severity, ThemeColors};
 
 /// Digits needed to write the largest line number in a buffer of `line_count`
 /// lines. Never zero: an empty buffer still shows line 1.
@@ -39,7 +39,7 @@ pub enum GutterComponent {
     LineNumbers { relative: bool },
     /// Blank separation, so digits do not sit flush against the text.
     Spacer,
-    /// Error and warning markers. **M3.** Reserves its cell and draws nothing.
+    /// Error and warning markers. One cell, the worst severity on the line.
     Diagnostics,
     /// Added/removed/changed markers from git. **M5.** Same.
     Diff,
@@ -61,6 +61,7 @@ impl GutterComponent {
         line: usize,
         cursor_line: usize,
         line_count: usize,
+        worst: Option<Severity>,
         theme: &ThemeColors,
     ) -> Span<'static> {
         match self {
@@ -84,16 +85,43 @@ impl GutterComponent {
                 // grow a digit.
                 Span::styled(format!("{number:>width$}"), style)
             }
-            // Reserved and empty until M3 and M5. They carry `gutter_fg` now so
-            // that filling them in is writing a glyph, not also deciding what
+            // **One cell, and the glyph never changes with severity** — only
+            // its colour does. A shape per severity would be a second encoding
+            // of the thing the colour already says, and it would have to
+            // survive a monochrome terminal, a colour-blind reader and a font
+            // without the glyph. Helix draws the same dot for all four.
+            //
+            // `●` is East Asian Ambiguous, which `unicode-width` resolves to
+            // one cell — the column is one cell wide and a two-cell glyph
+            // would push every line of text right of where the mouse thinks it
+            // is. `the_gutter_sign_is_one_cell_wide` is the guard.
+            GutterComponent::Diagnostics => match worst {
+                Some(severity) => Span::styled(
+                    DIAGNOSTIC_SIGN.to_string(),
+                    Style::default().fg(match severity {
+                        Severity::Error => theme.diagnostic_error,
+                        Severity::Warning => theme.diagnostic_warning,
+                        Severity::Information => theme.diagnostic_info,
+                        Severity::Hint => theme.diagnostic_hint,
+                    }),
+                ),
+                None => Span::styled(" ", Style::default().fg(theme.gutter_fg)),
+            },
+            // Reserved and empty until M5, and carrying `gutter_fg` so that
+            // filling it in is writing a glyph rather than also deciding what
             // colour the column was supposed to be.
-            GutterComponent::Diagnostics | GutterComponent::Diff => {
-                Span::styled(" ", Style::default().fg(theme.gutter_fg))
-            }
+            GutterComponent::Diff => Span::styled(" ", Style::default().fg(theme.gutter_fg)),
             GutterComponent::Spacer => Span::raw(" "),
         }
     }
 }
+
+/// What a line with a diagnostic on it shows.
+///
+/// A dot rather than a letter or an arrow: it is one cell, it reads at a
+/// glance, and it does not have to be a different shape per severity because
+/// the colour already carries that.
+const DIAGNOSTIC_SIGN: char = '\u{25CF}';
 
 /// The gutter: components in draw order.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,7 +131,12 @@ pub struct Gutter {
 
 impl Default for Gutter {
     fn default() -> Self {
+        // Diagnostics on the far left, then the numbers, the way Helix orders
+        // its own default. The sign wants the edge: it is scanned down rather
+        // than read across, and putting it between the numbers and the text
+        // would make the code's left edge move as diagnostics come and go.
         Self::new(vec![
+            GutterComponent::Diagnostics,
             GutterComponent::LineNumbers { relative: false },
             GutterComponent::Spacer,
         ])
@@ -122,16 +155,22 @@ impl Gutter {
     }
 
     /// The spans for one buffer line.
+    ///
+    /// `worst` is the most severe diagnostic anywhere on it, or `None`. The
+    /// caller resolves it once for the whole viewport — see
+    /// `diagnostic::for_viewport` — because doing it here would mean walking
+    /// every diagnostic in the file once per visible row.
     pub fn render_line(
         &self,
         line: usize,
         cursor_line: usize,
         line_count: usize,
+        worst: Option<Severity>,
         theme: &ThemeColors,
     ) -> Vec<Span<'static>> {
         self.components
             .iter()
-            .map(|c| c.render_line(line, cursor_line, line_count, theme))
+            .map(|c| c.render_line(line, cursor_line, line_count, worst, theme))
             .collect()
     }
 }

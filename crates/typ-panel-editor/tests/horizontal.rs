@@ -42,7 +42,7 @@ fn a_short_line_is_not_scrolled() {
     let mut p = EditorPanel::from_str("abc\n");
     let buf = render(&mut p, AREA);
     assert_eq!(p.left_col(), 0);
-    assert_eq!(row(&buf, 1), "│1 abc     │");
+    assert_eq!(row(&buf, 1), "│ 1 abc    │");
 }
 
 #[test]
@@ -96,10 +96,10 @@ fn a_wide_character_is_not_split_across_the_left_edge() {
     //
     // This used to read `!text.starts_with("│ ")`, which could not fail —
     // column 1 is the line number, never a blank — and once the frame stopped
-    // drawing a vertical it could not even be reached. Column 3 is where the
-    // text actually begins: one margin cell, then the two-cell gutter.
+    // drawing a vertical it could not even be reached. Column 4 is where the
+    // text actually begins: one margin cell, then the three-cell gutter.
     assert_ne!(
-        text.chars().nth(3),
+        text.chars().nth(4),
         Some(' '),
         "a wide grapheme was cut in half: {text}"
     );

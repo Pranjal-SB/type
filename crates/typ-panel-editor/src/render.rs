@@ -183,6 +183,16 @@ pub struct LineStyle<'a> {
     /// Styles rather than scope names, because resolving a name against the
     /// theme is a `BTreeMap` walk and this runs once per cell.
     pub syntax: &'a [(Range<usize>, Style)],
+    /// Ranges to underline, ascending and non-overlapping, in the same
+    /// **grapheme columns of the whole line** the syntax spans use.
+    ///
+    /// A third axis rather than a `Paint` or an `Overlay`. Those two set a
+    /// foreground and a background; a diagnostic sets neither, which is what
+    /// lets a selected token stay selected while it is also wrong. Folding it
+    /// into either would multiply every severity by every selection state and
+    /// break the case that already worked — the same mistake `Paint`'s own
+    /// comment records syntax highlighting nearly making.
+    pub diagnostics: &'a [(Range<usize>, typ_core::Severity)],
     pub theme: &'a ThemeColors,
 }
 
@@ -212,6 +222,14 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
 
     let mut runs = Runs::default();
     let mut column = start;
+    // Walked forward with the loop, exactly like `span` below and for the same
+    // reason: the ranges are ascending and non-overlapping — `for_viewport`
+    // guarantees it — so this is one pass over both sequences instead of a scan
+    // of the line's diagnostics for every grapheme.
+    let mut mark = 0usize;
+    // The grapheme column one past the last one drawn. A diagnostic can point
+    // there — see the trailing cell below.
+    let mut past_end = skipped;
     // Walks forward with the loop rather than searching per cell: the spans
     // are ascending and non-overlapping, so this is one pass over both
     // sequences instead of a scan of the line's spans for every grapheme.
@@ -226,6 +244,13 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
         while span < ctx.syntax.len() && ctx.syntax[span].0.end <= position.col {
             span += 1;
         }
+        while mark < ctx.diagnostics.len() && ctx.diagnostics[mark].0.end <= position.col {
+            mark += 1;
+        }
+        let severity = match ctx.diagnostics.get(mark) {
+            Some((range, severity)) if range.contains(&position.col) => Some(*severity),
+            _ => None,
+        };
         let scope = match ctx.syntax.get(span) {
             Some((range, _)) if range.contains(&position.col) => Overlay::Syntax(span as u32),
             _ => Overlay::None,
@@ -242,10 +267,10 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
             // to see that character; a guide is ambient, and the one that can
             // be switched off is not the one to overdraw.
             Some(glyph) => {
-                runs.push(glyph, (paint, Overlay::Mark), ctx);
+                runs.push(glyph, (paint, Overlay::Mark, severity), ctx);
                 // Then blank to the end of what the grapheme occupied.
                 for cell in 1..width {
-                    runs.blank(column + cell, guides_end, paint, ctx);
+                    runs.blank(column + cell, guides_end, paint, severity, ctx);
                 }
             }
             // Indentation is where guides live, so its cells are emitted one at
@@ -254,28 +279,45 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
             // on, and selecting a line would shift its text three columns left.
             None if grapheme == " " || grapheme == "\t" => {
                 for cell in 0..width {
-                    runs.blank(column + cell, guides_end, paint, ctx);
+                    runs.blank(column + cell, guides_end, paint, severity, ctx);
                 }
             }
             // Text. The only branch a capture can reach: the two above are a
             // mark and indentation, which is the whole of "mark > guide >
             // syntax" — no grammar captures a space, and a guide stands only
             // where indentation is.
-            None => runs.push_str(grapheme, (paint, scope), ctx),
+            None => runs.push_str(grapheme, (paint, scope, severity), ctx),
         }
         column += width;
+        past_end = position.col + 1;
     }
 
-    // A blank line has no cells of its own for its guides to stand in, and it
-    // is the line that most needs them: without this, every empty line inside a
-    // block punches a hole through the run.
     let ground = if ctx.cursor_line {
         Paint::CursorLine
     } else {
         Paint::Plain
     };
+
+    // **A diagnostic can point one past the end of the line.** A missing
+    // semicolon is after the last character, not on it, and servers say so with
+    // a range starting at the line's length. There is no grapheme there, so one
+    // blank cell stands in — without it the most common diagnostic in any
+    // language with statement terminators draws nothing at all.
+    if column - start < ctx.width
+        && let Some((_, severity)) = ctx
+            .diagnostics
+            .iter()
+            .find(|(range, _)| range.contains(&past_end))
+    {
+        runs.push(' ', (ground, Overlay::None, Some(*severity)), ctx);
+        column += 1;
+    }
+
+    // A blank line has no cells of its own for its guides to stand in, and it
+    // is the line that most needs them: without this, every empty line inside a
+    // block punches a hole through the run.
     while column < guides_end && column - start < ctx.width {
-        runs.blank(column, guides_end, ground, ctx);
+        runs.blank(column, guides_end, ground, None, ctx);
         column += 1;
     }
 
@@ -295,7 +337,15 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Spans under construction, cut wherever the paint or the overlay changes.
+/// One cell's three style axes: what it is painted as, what is laid over the
+/// foreground, and whether a diagnostic underlines it.
+///
+/// A run breaks whenever any of the three changes, which is what makes a span
+/// stop at a diagnostic's edge rather than carrying the underline to the end of
+/// the token.
+type Run = (Paint, Overlay, Option<typ_core::Severity>);
+
+/// Spans under construction, cut wherever any of the three axes changes.
 ///
 /// A type rather than three locals, because the loop above emits at two
 /// granularities — a whole grapheme for text, one cell at a time for the
@@ -304,45 +354,76 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
 struct Runs {
     spans: Vec<Span<'static>>,
     current: String,
-    run: Option<(Paint, Overlay)>,
+    run: Option<Run>,
 }
 
 impl Runs {
-    fn open(&mut self, run: (Paint, Overlay), ctx: &LineStyle) {
+    fn open(&mut self, run: Run, ctx: &LineStyle) {
         if self.run != Some(run) && !self.current.is_empty() {
-            let style = style_of(self.run.unwrap_or((Paint::Plain, Overlay::None)), ctx);
+            let style = style_of(self.run.unwrap_or((Paint::Plain, Overlay::None, None)), ctx);
             self.spans
                 .push(Span::styled(std::mem::take(&mut self.current), style));
         }
         self.run = Some(run);
     }
 
-    fn push(&mut self, ch: char, run: (Paint, Overlay), ctx: &LineStyle) {
+    fn push(&mut self, ch: char, run: Run, ctx: &LineStyle) {
         self.open(run, ctx);
         self.current.push(ch);
     }
 
-    fn push_str(&mut self, s: &str, run: (Paint, Overlay), ctx: &LineStyle) {
+    fn push_str(&mut self, s: &str, run: Run, ctx: &LineStyle) {
         self.open(run, ctx);
         self.current.push_str(s);
     }
 
     /// One blank cell, or the guide standing in it.
-    fn blank(&mut self, column: usize, guides_end: usize, paint: Paint, ctx: &LineStyle) {
+    ///
+    /// Takes a severity because a diagnostic can cover indentation — a range
+    /// starting at column 0 of a continuation line does, which is most of what
+    /// a multi-line diagnostic is.
+    fn blank(
+        &mut self,
+        column: usize,
+        guides_end: usize,
+        paint: Paint,
+        severity: Option<typ_core::Severity>,
+        ctx: &LineStyle,
+    ) {
         if column < guides_end && column.is_multiple_of(ctx.tab_width) {
-            self.push('│', (paint, Overlay::Guide), ctx);
+            self.push('│', (paint, Overlay::Guide, severity), ctx);
         } else {
-            self.push(' ', (paint, Overlay::None), ctx);
+            self.push(' ', (paint, Overlay::None, severity), ctx);
         }
     }
 
     fn finish(mut self, ctx: &LineStyle) -> Vec<Span<'static>> {
         if !self.current.is_empty() {
-            let style = style_of(self.run.unwrap_or((Paint::Plain, Overlay::None)), ctx);
+            let style = style_of(self.run.unwrap_or((Paint::Plain, Overlay::None, None)), ctx);
             self.spans.push(Span::styled(self.current, style));
         }
         self.spans
     }
+}
+
+/// Add a diagnostic's underline to a style, leaving its colours alone.
+///
+/// **`undercurl`, not `underlined`.** The backend draws them differently and a
+/// terminal that cannot do the first can still do the second, so they are
+/// separate bits and this one is never the plain underline. The colour goes on
+/// regardless: `CSI 58` is older and better supported than the shape.
+fn underlined(style: Style, severity: Option<typ_core::Severity>, theme: &ThemeColors) -> Style {
+    use typ_core::Severity;
+    let Some(severity) = severity else {
+        return style;
+    };
+    let colour = match severity {
+        Severity::Error => theme.diagnostic_error,
+        Severity::Warning => theme.diagnostic_warning,
+        Severity::Information => theme.diagnostic_info,
+        Severity::Hint => theme.diagnostic_hint,
+    };
+    typ_core::Undercurl::undercurl(style).underline_color(colour)
 }
 
 /// A run's style: its paint, with any overlay laid over the foreground.
@@ -350,8 +431,8 @@ impl Runs {
 /// Takes the whole `LineStyle` rather than just the theme because a syntax
 /// overlay carries an index into this line's resolved spans, and only the
 /// caller's context can turn that back into a colour.
-fn style_of((paint, overlay): (Paint, Overlay), ctx: &LineStyle) -> Style {
-    let style = paint.style(ctx.theme);
+fn style_of((paint, overlay, severity): Run, ctx: &LineStyle) -> Style {
+    let style = underlined(paint.style(ctx.theme), severity, ctx.theme);
     match overlay {
         Overlay::None => style,
         Overlay::Mark => style.fg(ctx.theme.whitespace),

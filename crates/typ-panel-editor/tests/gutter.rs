@@ -45,16 +45,23 @@ const AREA: Rect = Rect {
 #[test]
 fn the_gutter_is_as_wide_as_the_longest_line_number() {
     let gutter = Gutter::default();
-    // One digit plus the spacer that keeps the digits off the text.
-    assert_eq!(gutter.width(9), 2);
-    assert_eq!(gutter.width(10), 3);
-    assert_eq!(gutter.width(100_000), 7);
+    // The diagnostic sign, the digits, and the spacer that keeps the digits
+    // off the text. The sign's column is there whether or not anything is
+    // wrong: a width that changed with the diagnostics would shift every line
+    // of code sideways as a server caught up.
+    assert_eq!(gutter.width(9), 3);
+    assert_eq!(gutter.width(10), 4);
+    assert_eq!(gutter.width(100_000), 8);
 }
 
 #[test]
 fn a_single_line_file_still_gets_a_column() {
     let gutter = Gutter::default();
-    assert_eq!(gutter.width(1), 2, "line 1 needs one digit and a space");
+    assert_eq!(
+        gutter.width(1),
+        3,
+        "line 1 needs a sign column, one digit and a space"
+    );
 }
 
 #[test]
@@ -63,7 +70,7 @@ fn width_comes_from_the_whole_buffer_not_the_visible_lines() {
     // but the column must already be three wide, or the text shifts sideways
     // the moment the view reaches line 100.
     let gutter = Gutter::default();
-    assert_eq!(gutter.width(200), 4);
+    assert_eq!(gutter.width(200), 5);
 }
 
 #[test]
@@ -74,9 +81,9 @@ fn an_empty_gutter_takes_no_cells() {
 
 #[test]
 fn components_that_ship_empty_still_reserve_their_column() {
-    // Diagnostics arrive at M3 and diff markers at M5. Both draw nothing today
-    // and both hold a cell, so filling them in later is writing a function
-    // rather than re-laying-out the editor.
+    // Diagnostics were filled in at M3 and diff markers arrive at M5. Both hold
+    // exactly one cell whether or not they draw anything, which is what made
+    // the first of them a function to write rather than a re-layout.
     let gutter = Gutter::new(vec![GutterComponent::Diagnostics, GutterComponent::Diff]);
     assert_eq!(gutter.width(9), 2);
 }
@@ -88,12 +95,12 @@ fn line_numbers_start_at_one() {
     let mut panel = EditorPanel::from_str("alpha\nbeta\n");
     let buf = render(&mut panel, AREA);
     assert!(
-        row(&buf, 1).starts_with("│1 alpha"),
+        row(&buf, 1).starts_with("│ 1 alpha"),
         "row 1 was: {}",
         row(&buf, 1)
     );
     assert!(
-        row(&buf, 2).starts_with("│2 beta"),
+        row(&buf, 2).starts_with("│ 2 beta"),
         "row 2 was: {}",
         row(&buf, 2)
     );
@@ -106,7 +113,7 @@ fn numbers_are_right_aligned_so_the_text_edge_stays_straight() {
     let buf = render(&mut panel, AREA);
     // Two-digit file: line 1 pads to " 1", line 10 does not pad.
     assert!(
-        row(&buf, 1).starts_with("│ 1 line 1"),
+        row(&buf, 1).starts_with("│  1 line 1"),
         "row 1 was: {}",
         row(&buf, 1)
     );
@@ -117,9 +124,10 @@ fn the_cursors_line_is_styled_differently_from_the_rest() {
     let theme = ThemeColors::default();
     let mut panel = EditorPanel::from_str("alpha\nbeta\n");
     let buf = render(&mut panel, AREA);
-    // The cursor starts on line 0, drawn at row 1 inside the border.
-    let current = buf[(1, 1)].style().fg;
-    let other = buf[(1, 2)].style().fg;
+    // The cursor starts on line 0, drawn at row 1 inside the border. x=1 is the
+    // diagnostic sign's column, so the digits are at x=2.
+    let current = buf[(2, 1)].style().fg;
+    let other = buf[(2, 2)].style().fg;
     assert_ne!(
         current, other,
         "the cursor's line number must stand out from the others"
@@ -139,7 +147,7 @@ fn the_number_column_does_not_scroll_sideways_with_the_text() {
     let buf = render(&mut panel, AREA);
     assert!(panel.left_col() > 0, "the text must have scrolled");
     assert!(
-        row(&buf, 1).starts_with("│1 "),
+        row(&buf, 1).starts_with("│ 1 "),
         "the gutter is fixed furniture, not part of the scrolled text: {}",
         row(&buf, 1)
     );
@@ -152,12 +160,13 @@ fn a_click_lands_on_the_grapheme_under_the_pointer_not_gutter_width_to_its_left(
     let mut panel = EditorPanel::from_str("hello\nworld\n");
     render(&mut panel, AREA);
 
-    // Border at x=0, gutter "1 " at x=1..3, so the text starts at x=3 and the
-    // third grapheme of "hello" is drawn at x=5.
+    // Border at x=0, gutter " 1 " at x=1..4 — a sign column, a digit, a spacer
+    // — so the text starts at x=4 and the third grapheme of "hello" is drawn
+    // at x=6.
     panel.handle_mouse(
         MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
-            column: 5,
+            column: 6,
             row: 1,
             modifiers: KeyModifiers::NONE,
         },
@@ -177,8 +186,8 @@ fn the_terminal_cursor_is_drawn_past_the_gutter() {
     let (x, y) = panel
         .cursor_position(AREA)
         .expect("the cursor is on screen");
-    // One border, two gutter cells, one grapheme in.
-    assert_eq!((x, y), (4, 1));
+    // One border, three gutter cells, one grapheme in.
+    assert_eq!((x, y), (5, 1));
 }
 
 #[test]
@@ -203,9 +212,9 @@ fn a_click_in_the_gutter_lands_at_the_start_of_that_line() {
 
 #[test]
 fn the_text_area_loses_exactly_the_gutters_width() {
-    // 24 wide, two borders, two gutter cells: 20 columns of text. A line one
+    // 24 wide, two borders, three gutter cells: 19 columns of text. A line one
     // grapheme longer than that must scroll, and one exactly that long must not.
-    let mut panel = EditorPanel::from_str(&format!("{}\n", "x".repeat(20)));
+    let mut panel = EditorPanel::from_str(&format!("{}\n", "x".repeat(19)));
     render(&mut panel, AREA);
     panel.apply_action(typ_core::Action::Move {
         motion: typ_core::Motion::LineEnd,
@@ -226,7 +235,7 @@ fn relative_numbering_counts_distance_from_the_cursor() {
     let theme = ThemeColors::default();
     let gutter = Gutter::new(vec![GutterComponent::LineNumbers { relative: true }]);
     let content = |line| {
-        gutter.render_line(line, 5, 20, &theme)[0]
+        gutter.render_line(line, 5, 20, None, &theme)[0]
             .content
             .to_string()
     };
@@ -247,7 +256,8 @@ fn relative_numbering_is_off_by_default() {
     // field exists so the vim layer flips a bool rather than replacing the
     // component; the default stays absolute.
     let theme = ThemeColors::default();
-    let absolute = Gutter::default().render_line(3, 5, 20, &theme)[0]
+    // `[1]`, not `[0]`: the default gutter leads with the diagnostic sign.
+    let absolute = Gutter::default().render_line(3, 5, 20, None, &theme)[1]
         .content
         .to_string();
     assert_eq!(absolute.trim(), "4");

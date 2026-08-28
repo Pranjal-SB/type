@@ -42,7 +42,9 @@ fn render(panel: &mut EditorPanel) -> Buffer {
 /// Screen x for a display column of text: the frame, then a two-cell gutter for
 /// the small fixtures here.
 fn tx(col: u16) -> u16 {
-    3 + col
+    // Asked rather than hardcoded -- the default gutter grew a diagnostic sign
+    // at M3, and a constant here would have made that land as a selection bug.
+    1 + typ_panel_editor::gutter::Gutter::default().width(1) as u16 + col
 }
 
 /// Screen y for a buffer line at the top of the viewport.

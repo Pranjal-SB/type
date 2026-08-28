@@ -564,7 +564,21 @@ impl App {
             line: cursor.line,
             col: cursor.col,
             total_lines: self.tabs[self.active].panel.line_count(),
+            errors: self.count_diagnostics(typ_core::Severity::Error),
+            warnings: self.count_diagnostics(typ_core::Severity::Warning),
         })
+    }
+
+    /// How many diagnostics of one severity the open file has.
+    ///
+    /// Counted rather than cached: the set changes only when a server publishes
+    /// and it is bounded by what is wrong with one file, so a count per frame
+    /// is cheaper than the invalidation a cache would need.
+    fn count_diagnostics(&self, severity: typ_core::Severity) -> usize {
+        self.diagnostics()
+            .iter()
+            .filter(|d| d.severity == severity)
+            .count()
     }
 
     /// Drop anything that should not outlive the next keypress.

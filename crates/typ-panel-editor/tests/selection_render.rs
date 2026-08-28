@@ -15,9 +15,9 @@ fn pos(line: usize, col: usize) -> Position {
 /// *which text* is highlighted, and a raw column literal makes every one of
 /// them wrong together the next time the furniture to their left changes.
 fn tx(col: u16) -> u16 {
-    const BORDER: u16 = 1;
-    const GUTTER: u16 = 2;
-    BORDER + GUTTER + col
+    // Asked rather than hardcoded -- the default gutter grew a diagnostic sign
+    // at M3, and a constant here would have made that land as a selection bug.
+    1 + typ_panel_editor::gutter::Gutter::default().width(1) as u16 + col
 }
 
 fn render(panel: &mut EditorPanel, area: Rect) -> Buffer {

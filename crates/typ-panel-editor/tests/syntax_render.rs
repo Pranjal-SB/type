@@ -19,6 +19,7 @@ fn string() -> Style {
 /// A `LineStyle` with nothing switched on, to spread with `..`.
 fn plain(theme: &ThemeColors) -> LineStyle<'_> {
     LineStyle {
+        diagnostics: &[],
         line: 0,
         left_col: 0,
         width: 40,
