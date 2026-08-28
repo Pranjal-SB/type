@@ -317,7 +317,7 @@ with the fuzzy finder and project search second. Those shipped at v0.2.8.
 
 | Question | Decision |
 |---|---|
-| Milestone shape | Three releases: v0.3.0 client and diagnostics, v0.3.1 completion, v0.3.2 edits |
+| Milestone shape | Three releases: v0.3.0 client and pushed diagnostics, v0.3.1 completion and pulled diagnostics, v0.3.2 edits |
 | Types | `gen-lsp-types` 0.11, `features = ["url"]`, pinned exactly |
 | Transport | `lsp-server` 0.10, one reader and one writer thread per server, no runtime |
 | Crate position | `typ-lsp` at the bottom beside `typ-syntax` and `typ-find`, depending on nothing of TYPE's |
@@ -328,7 +328,7 @@ with the fuzzy finder and project search second. Those shipped at v0.2.8.
 | Undercurl | coloured underline is already free — ratatui 0.30 ships `underline-color` by default; the curl needs the custom backend |
 | Line breaks | ropey without `unicode_lines`: a line feed and a CRLF pair, matching rust-analyzer, ripgrep and git |
 | Sync capability | absent `textDocumentSync` means send nothing, matching vscode-languageclient and Helix |
-| Pull diagnostics | deferred past v0.3.0 — declaring `textDocument.diagnostic` turns rust-analyzer's native push off |
+| Pull diagnostics | **v0.3.1**, with the client capability — declaring `textDocument.diagnostic` turns rust-analyzer's native push off, so the two land together |
 
 ## Sources
 
