@@ -8,6 +8,7 @@ use typ_app::status::{Emphasis, SegmentId, StatusFacts, segments};
 
 fn facts(errors: usize, warnings: usize) -> StatusFacts<'static> {
     StatusFacts {
+        progress: &[],
         file_name: "main.rs",
         modified: false,
         file_type: Some("rs"),

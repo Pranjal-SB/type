@@ -41,6 +41,12 @@ struct Flags {
     /// Answer nothing at all to a definition request. Servers do this when
     /// they have not finished indexing.
     no_definition: bool,
+    /// Report indexing progress after `initialized`, the way a server with
+    /// real work to do at startup does.
+    progress: bool,
+    /// Ask the client to create the progress token first, which is a *request*
+    /// and hangs the server if nobody answers it.
+    progress_create: bool,
     garbage: bool,
     exit_now: bool,
     sleep: bool,
@@ -62,6 +68,8 @@ impl Flags {
             definition_missing: has("--definition-missing"),
             hover_plain: has("--hover-plain"),
             no_definition: has("--no-definition"),
+            progress: has("--progress") || has("--progress-create"),
+            progress_create: has("--progress-create"),
             garbage: has("--garbage"),
             exit_now: has("--exit-now"),
             sleep: has("--sleep"),
@@ -88,6 +96,16 @@ fn capabilities(flags: &Flags) -> serde_json::Value {
         });
     }
     caps
+}
+
+/// Send one `$/progress` notification.
+fn progress(out: &mut impl Write, token: &str, value: serde_json::Value) {
+    let _ = Message::Notification(Notification {
+        method: "$/progress".into(),
+        params: serde_json::json!({ "token": token, "value": value }),
+    })
+    .write(out);
+    let _ = out.flush();
 }
 
 /// A URI naming `name` in the same directory as `uri`.
@@ -255,6 +273,11 @@ pub fn run() {
                     }
                 }
                 match method.as_str() {
+                    // Not LSP. Lets a test end a progress token at a moment it
+                    // chooses rather than racing the server.
+                    "fake/endProgress" if flags.progress => {
+                        progress(&mut out, "indexing", serde_json::json!({ "kind": "end" }));
+                    }
                     "textDocument/didOpen" if flags.push => {
                         publish(&mut out, &open_uri, version, &[(5, 1, "fake: on open")]);
                     }
@@ -273,6 +296,43 @@ pub fn run() {
                         publish(&mut out, &open_uri, 0, &[(9, 1, "fake: stale")]);
                     }
                     _ => {}
+                }
+                if method == "initialized" && flags.progress {
+                    if flags.progress_create {
+                        let _ = Message::Request(Request {
+                            id: 7.into(),
+                            method: "window/workDoneProgress/create".into(),
+                            params: serde_json::json!({ "token": "indexing" }),
+                        })
+                        .write(&mut out);
+                        let _ = out.flush();
+                    }
+                    progress(
+                        &mut out,
+                        "indexing",
+                        serde_json::json!({
+                            "kind": "begin",
+                            "title": "Indexing",
+                        }),
+                    );
+                    progress(
+                        &mut out,
+                        "indexing",
+                        serde_json::json!({
+                            "kind": "report",
+                            "percentage": 40,
+                        }),
+                    );
+                    // A second token at once. Two pieces of work is the
+                    // ordinary case for rust-analyzer, not the strange one.
+                    progress(
+                        &mut out,
+                        "fetching",
+                        serde_json::json!({
+                            "kind": "begin",
+                            "title": "Fetching",
+                        }),
+                    );
                 }
                 if method == "initialized" && flags.server_request {
                     // The half clients forget. rust-analyzer really does this,

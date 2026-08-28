@@ -275,6 +275,24 @@ impl App {
         self.request_parse_if_stale();
     }
 
+    /// How many pieces of work the servers have said they are doing.
+    ///
+    /// The bar shows one of them; this is what says a second was not displaced
+    /// by the first.
+    pub fn progress_count(&self) -> usize {
+        self.lsp.progress().len()
+    }
+
+    /// Send a bare notification to the active file's server.
+    ///
+    /// For tests: it lets one end a piece of work at a moment it chooses rather
+    /// than racing whatever the server would have done on its own.
+    pub fn notify_server_for_test(&mut self, method: &str) {
+        if let Some(path) = self.tabs[self.active].panel.path().map(|p| p.to_path_buf()) {
+            self.lsp.notify(&path, method, serde_json::Value::Null);
+        }
+    }
+
     /// What a server last said about the cursor's position, if anything.
     pub fn hover(&self) -> Option<&str> {
         self.hover.as_deref()
@@ -343,6 +361,9 @@ impl App {
                 if method == "textDocument/publishDiagnostics" =>
             {
                 self.publish_diagnostics(server, params)
+            }
+            typ_lsp::LspEvent::Notification { method, params } if method == "$/progress" => {
+                self.lsp.note_progress(server, &params)
             }
             // `$/progress` and `window/logMessage` land here. Task 13 gives
             // the first one the status bar; until then a server talking about
@@ -666,6 +687,7 @@ impl App {
             total_lines: self.tabs[self.active].panel.line_count(),
             errors: self.count_diagnostics(typ_core::Severity::Error),
             warnings: self.count_diagnostics(typ_core::Severity::Warning),
+            progress: &self.lsp.progress(),
         })
     }
 

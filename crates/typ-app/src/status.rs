@@ -28,6 +28,8 @@ pub enum SegmentId {
     LineEnding,
     Indent,
     Diagnostics,
+    /// What a language server is busy with.
+    Progress,
     Selections,
     Position,
     Percentage,
@@ -89,6 +91,8 @@ pub struct StatusFacts<'a> {
     /// the diagnostics would make it walk them once per frame to find one.
     pub errors: usize,
     pub warnings: usize,
+    /// Work the servers have said they are doing, oldest first.
+    pub progress: &'a [&'a str],
 }
 
 /// The right-hand segments, in order.
@@ -166,6 +170,19 @@ pub fn segments(facts: &StatusFacts) -> Vec<Segment> {
             } else {
                 Emphasis::Quiet
             },
+        });
+    }
+
+    // **The first one, not all of them.** rust-analyzer runs several at once
+    // and the bar is one strip: naming them all would push the position off the
+    // right-hand end, which is the thing on it a user actually looks at.
+    if let Some(work) = facts.progress.first() {
+        out.push(Segment {
+            id: SegmentId::Progress,
+            text: (*work).to_string(),
+            // Quiet: it is temporary, it is not an error, and it must not read
+            // as one. A server indexing is the editor working, not failing.
+            emphasis: Emphasis::Quiet,
         });
     }
 
