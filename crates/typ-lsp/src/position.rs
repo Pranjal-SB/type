@@ -49,11 +49,15 @@ impl Encoding {
 
 /// Chars in `line` before its line break, if it has one.
 ///
-/// A cursor cannot sit between the `\r` and the `\n` of a CRLF pair, so the end
-/// of a line is the start of its break rather than any offset inside it. Every
-/// break ropey recognises is handled, not just `\n`, because ropey's line
-/// indexing already counts them all and disagreeing with it here would put the
-/// two out of step on exactly the files that are hardest to debug.
+/// A cursor cannot sit between the CR and the LF of a CRLF pair, so the end
+/// of a line is the start of its break rather than any offset inside it.
+///
+/// **Two breaks, not seven.** The workspace builds ropey without
+/// `unicode_lines`, so `U+000B`, `U+000C`, `U+0085`, `U+2028` and `U+2029`
+/// are ordinary characters here, and a bare CR is content — which is what
+/// rust-analyzer's line index, ripgrep and git all already believed.
+/// Recognising more breaks than the rope does would put this function out of
+/// step with `char_to_line` on exactly the files that are hardest to debug.
 fn content_len(line: RopeSlice) -> usize {
     let n = line.len_chars();
     if n == 0 {
@@ -61,7 +65,7 @@ fn content_len(line: RopeSlice) -> usize {
     }
     match line.char(n - 1) {
         '\n' if n >= 2 && line.char(n - 2) == '\r' => n - 2,
-        '\n' | '\r' | '\u{0b}' | '\u{0c}' | '\u{85}' | '\u{2028}' | '\u{2029}' => n - 1,
+        '\n' => n - 1,
         _ => n,
     }
 }

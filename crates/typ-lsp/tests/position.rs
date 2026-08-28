@@ -133,3 +133,23 @@ fn a_crlf_break_is_one_break_not_two() {
     assert_eq!(to_lsp(Encoding::Utf8, rope.slice(..), 4), pos(1, 0));
     assert_eq!(from_lsp(Encoding::Utf8, rope.slice(..), pos(1, 0)), 4);
 }
+
+#[test]
+fn a_form_feed_is_not_a_line_break_here_either() {
+    // The buffer's line count and the server's have to be the same number.
+    // rust-analyzer's line index breaks on a line feed and nothing else, so a
+    // rope that also broke on `U+000C` would report every position below one
+    // a line too far down. `line_breaks.rs` in `typ-buffer` is the other half.
+    let rope = Rope::from_str("fn a() {}\n\u{000C}fn b() {}\n");
+    let idx = rope.len_chars() - 2; // the closing brace of `fn b`
+    assert_eq!(to_lsp(Encoding::Utf8, rope.slice(..), idx).line, 1);
+}
+
+#[test]
+fn a_lone_carriage_return_is_not_a_terminator() {
+    // Not a line break either, now that `cr_lines` is off. A line ending in a
+    // bare `\r` is a line whose last character is content.
+    let rope = Rope::from_str("ab\r");
+    let end = to_lsp(Encoding::Utf8, rope.slice(..), rope.len_chars());
+    assert_eq!((end.line, end.character), (0, 3));
+}
