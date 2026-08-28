@@ -1,4 +1,4 @@
-use std::io::{Write, stdout};
+use std::io::{Stdout, stdout};
 use std::sync::mpsc;
 
 use anyhow::Result;
@@ -7,10 +7,13 @@ use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
     Event, KeyEventKind, MouseEvent, MouseEventKind,
 };
+use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
+use ratatui::Terminal;
 use ratatui::layout::Rect;
 use typ_core::{AppEvent, KeyChord, Panel, PanelEvent};
 
 use crate::app::{App, Focus};
+use crate::backend::TypBackend;
 
 /// The end of the channel a worker holds. Cloneable, and the only way a worker
 /// talks to the app — no worker is ever handed a reference to `App`.
@@ -30,34 +33,31 @@ pub enum Flow {
     Quit,
 }
 
-/// Enter/leave synchronized output (CSI 2026) around a frame so partial
-/// repaints are presented atomically. Terminals without support ignore it.
-fn begin_frame() {
-    let _ = write!(stdout(), "\x1b[?2026h");
-}
-
-fn end_frame() {
-    let mut out = stdout();
-    let _ = write!(out, "\x1b[?2026l");
-    let _ = out.flush();
-}
-
 pub fn run(mut app: App) -> Result<()> {
-    let mut terminal = ratatui::init();
+    // **Not `ratatui::init()`.** It builds `Terminal<CrosstermBackend<Stdout>>`
+    // for you, and the whole point of `backend.rs` is that the backend is
+    // TYPE's. So the three things `try_init` does happen here instead: raw
+    // mode, the alternate screen, and a `Terminal` over the writer.
+    enable_raw_mode()?;
+    stdout().execute(EnterAlternateScreen)?;
+    let backend = TypBackend::new(stdout(), crate::capability::detect_underlines());
+    let mut terminal = Terminal::new(backend)?;
     stdout().execute(EnableMouseCapture)?;
     // Without this a paste arrives as N keypresses, and any chord inside the
     // pasted text runs as a command rather than being inserted.
     stdout().execute(EnableBracketedPaste)?;
 
-    // ratatui's own panic hook leaves raw mode and the alternate screen, but it
-    // knows nothing about mouse capture or bracketed paste — which this function
-    // turned on. Without this, a panic drops the user back to a shell that keeps
-    // emitting mouse escape sequences and wrapping every paste in markers.
-    // FINDINGS §6.
+    // **Everything this function turned on, turned off.** `ratatui::init` used
+    // to install a hook that left raw mode and the alternate screen, and this
+    // one added mouse capture and bracketed paste on top. Building the terminal
+    // by hand means the whole job lands here: without it a panic drops the user
+    // back to a shell in raw mode, on the alternate screen, still emitting
+    // mouse escape sequences and wrapping every paste in markers. FINDINGS §6.
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = stdout().execute(DisableBracketedPaste);
         let _ = stdout().execute(DisableMouseCapture);
+        ratatui::restore();
         previous(info);
     }));
 
@@ -93,7 +93,7 @@ fn spawn_input_pump(tx: AppSender) {
     });
 }
 
-fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<()> {
+fn event_loop(terminal: &mut Terminal<TypBackend<Stdout>>, app: &mut App) -> Result<()> {
     let (tx, rx) = channel();
     spawn_input_pump(tx);
 
@@ -103,9 +103,10 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
         // but it still costs the whole render pass, which is 439 µs deep in a
         // 50k-line file. That is what the flag is for.
         if app.take_dirty() {
-            begin_frame();
+            // No bracketing here any more: `TypBackend` opens the frame on its
+            // first `draw` and closes it on `flush`, so the boundary is in one
+            // place rather than two that have to agree.
             terminal.draw(|frame| app.render(frame))?;
-            end_frame();
         }
 
         if app.should_quit() {

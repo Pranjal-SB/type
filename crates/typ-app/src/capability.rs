@@ -7,6 +7,7 @@
 /// Re-exported so callers detecting a depth and callers degrading a palette
 /// name the same type. The enum lives in `typ-core` beside the degradation that
 /// consumes it, because `typ-core` cannot depend on this crate.
+pub use crate::backend::Underlines;
 pub use typ_core::Depth;
 
 /// Decide from the three variables that carry the answer.
@@ -76,4 +77,103 @@ pub fn detect() -> Depth {
     let term = std::env::var("TERM").ok();
     let wt_session = std::env::var("WT_SESSION").ok();
     depth_from(colorterm.as_deref(), term.as_deref(), wt_session.as_deref())
+}
+
+/// Whether this terminal draws a curly underline, from the variables that hint
+/// at it.
+///
+/// Pure for the same reason `depth_from` is: environment is global, cargo runs
+/// tests in threads of one process, and a test that sets `TERM` is a test that
+/// changes what its siblings see.
+///
+/// **This is an allowlist and it will be wrong for somebody.** The right signal
+/// is terminfo's `Smulx`, TYPE has no terminfo reader, and adding one for a
+/// single capability whose failure mode is a straight underline is not a trade
+/// worth making. The list comes from checking each terminal's own source or
+/// release notes rather than from one aggregator: kitty invented the sequence,
+/// and VTE, WezTerm, foot, Ghostty, iTerm2, Konsole, Alacritty, contour,
+/// mintty, Windows Terminal and xterm.js have each since implemented it. xterm,
+/// PuTTY, rxvt-unicode, st and GNU screen have not.
+///
+/// **A multiplexer answers no**, which is the opposite of what `depth_from`
+/// does with `COLORTERM`, and deliberately. tmux 2.9 and Zellij 0.39 both pass
+/// `4:3` through, but only if the terminal underneath draws it — and inside a
+/// multiplexer nothing in the environment names that terminal. A truecolor
+/// claim inherited into tmux is usually still true; a *shape* claim is not
+/// something tmux inherits at all, so there is nothing to believe. The cost of
+/// answering no is a straight underline; the cost of answering yes wrongly is
+/// a literal `4:3m` printed into the buffer on a terminal that does not parse
+/// subparameters.
+///
+/// Known misses, listed rather than hidden: Konsole sets no variable naming
+/// itself that is safe to key on, and a terminal reached through `ssh` carries
+/// only `TERM`. Both get a plain underline, which is the point of the fallback.
+pub fn underlines_from(
+    term: Option<&str>,
+    term_program: Option<&str>,
+    wt_session: Option<&str>,
+    vte_version: Option<&str>,
+) -> Underlines {
+    let term = term.unwrap_or_default();
+
+    // Inside tmux or screen, `TERM` describes the multiplexer and every other
+    // variable describes whatever started it, which may be two terminals ago.
+    if term.starts_with("tmux") || term.starts_with("screen") {
+        return Underlines::Plain;
+    }
+
+    // Windows Terminal, which draws it and has since 2024. It is also the one
+    // terminal that made the *colour* sequence a compatibility question —
+    // see `backend::underline_colour`.
+    if wt_session.is_some_and(|value| !value.is_empty()) {
+        return Underlines::Styled;
+    }
+
+    // GNOME Terminal and the rest of the VTE family set this to a build
+    // number. Styled underlines landed in 0.52; anything setting the variable
+    // at all is far past that by now, so its presence is the claim.
+    if vte_version.is_some_and(|value| !value.is_empty()) {
+        return Underlines::Styled;
+    }
+
+    let program_says_yes = term_program.is_some_and(|value| {
+        matches!(
+            value.to_ascii_lowercase().as_str(),
+            "wezterm" | "iterm.app" | "ghostty" | "mintty" | "contour" | "rio" | "vscode"
+        )
+    });
+    if program_says_yes {
+        return Underlines::Styled;
+    }
+
+    // `TERM` last, because it is the least trustworthy of the four — but these
+    // four values are set by the terminal itself and name it exactly.
+    let term_says_yes = term.starts_with("xterm-kitty")
+        || term.starts_with("foot")
+        || term.starts_with("wezterm")
+        || term.starts_with("alacritty")
+        || term.starts_with("xterm-ghostty")
+        || term.starts_with("contour");
+
+    if term_says_yes {
+        Underlines::Styled
+    } else {
+        Underlines::Plain
+    }
+}
+
+/// The only thing here that reads the environment for underlines.
+///
+/// No test covers it, and none should — see `detect`.
+pub fn detect_underlines() -> Underlines {
+    let term = std::env::var("TERM").ok();
+    let term_program = std::env::var("TERM_PROGRAM").ok();
+    let wt_session = std::env::var("WT_SESSION").ok();
+    let vte_version = std::env::var("VTE_VERSION").ok();
+    underlines_from(
+        term.as_deref(),
+        term_program.as_deref(),
+        wt_session.as_deref(),
+        vte_version.as_deref(),
+    )
 }

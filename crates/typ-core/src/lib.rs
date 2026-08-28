@@ -7,6 +7,7 @@ pub mod event;
 pub mod key;
 pub mod keymap;
 pub mod panel;
+pub mod style;
 pub mod theme;
 
 pub use action::{Action, Direction, Motion};
@@ -17,4 +18,5 @@ pub use event::{AppEvent, HandlerId, NotifyLevel, PanelEvent, PanelId};
 pub use key::KeyChord;
 pub use keymap::Keymap;
 pub use panel::{Panel, RenderContext, ThemeColors};
+pub use style::{UNDERCURL, Undercurl};
 pub use theme::{Kind, SyntaxTheme, Theme};
