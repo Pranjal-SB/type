@@ -45,3 +45,38 @@ jobs:
 
       - name: Editor budgets, edit and paint
         run: cargo test --release -p typ-panel-editor --test perf -- --ignored --nocapture
+
+      # Everything below was missing until M3, which is gap-analysis defect
+      # #54: this workflow ran two of the seven perf files that existed, and
+      # the five it skipped included the one holding
+      # `cold_start_stays_under_a_tenth_of_a_second` — the budget this file's
+      # own header names as the reason it exists. A file added since was
+      # invisible to the tripwire by default rather than by decision.
+      #
+      # One step per file rather than one `cargo test --workspace`, because a
+      # step name is what a failing run shows first and "Find budgets, the
+      # walk" says more than a crate name does.
+      - name: Editor budgets, first frame
+        run: cargo test --release -p typ-panel-editor --test perf_startup -- --ignored --nocapture
+
+      - name: App budgets, including the tab switch
+        run: cargo test --release -p typ-app --test perf -- --ignored --nocapture
+
+      - name: App budgets, the sub-100 ms cold start
+        run: cargo test --release -p typ-app --test perf_startup -- --ignored --nocapture
+
+      - name: Find budgets, ranking
+        run: cargo test --release -p typ-find --test perf -- --ignored --nocapture
+
+      # Its own binary on purpose: M2.8 measured ranking at 3.7 ms alone and
+      # 11.9 ms after a sibling in the same binary had touched ten thousand
+      # files. The mutex serialises execution and does not reset the page
+      # cache, so the split has to survive into CI too.
+      - name: Find budgets, the walk
+        run: cargo test --release -p typ-find --test perf_fs -- --ignored --nocapture
+
+      - name: LSP budgets, conversion and sync
+        run: cargo test --release -p typ-lsp --test perf -- --ignored --nocapture
+
+      - name: LSP budgets, spawning a server
+        run: cargo test --release -p typ-lsp --test perf_proc -- --ignored --nocapture
