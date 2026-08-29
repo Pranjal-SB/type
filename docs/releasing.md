@@ -20,7 +20,7 @@ needs a token this repository deliberately does not hold.
 
 Part of the milestone's last commit, not a separate chore:
 
-- `version` in `[workspace.package]`, and the nine `typ-*` path dependencies beside it.
+- `version` in `[workspace.package]`, and the ten `typ-*` path dependencies beside it.
   `crates/typ/tests/manifests.rs` checks both this and the metadata crates.io requires, because
   the checklist below is what failed at v0.2.7 and again at v0.2.8. They
   carry an explicit version because cargo refuses to publish a crate whose dependencies are

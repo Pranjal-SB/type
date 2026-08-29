@@ -2,8 +2,8 @@
 type: design
 status: living
 area: code-intelligence
-verified: 2026-08-28
-verified-against: v0.3.0-dev (M3 tasks 8, 9)
+verified: 2026-08-29
+verified-against: v0.3.0
 ---
 
 # LSP — what the research found, and what it decided
@@ -370,7 +370,7 @@ download and dependency data for every crate named above.
 
 ---
 
-## Actual — what building tasks 8 and 9 changed
+## Actual — what building v0.3.0 changed
 
 Four of this document's conclusions moved. Each was checked in a source tree rather than
 reasoned about, because three of the four are places the earlier reasoning was wrong.
