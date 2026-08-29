@@ -75,7 +75,13 @@ rm -rf "$t"
 # decides whether a tampered or truncated download reaches the filesystem.
 t=$(mktemp -d)
 archive=$(make_fixture "$t")
-sed 's/^[0-9a-f]/0/' "$archive.sha256" > "$archive.sha256.bad"
+# **Not `s/^[0-9a-f]/0/`.** That rewrote the first hex digit to `0`, which is a
+# no-op one time in sixteen — and `tar czf` stamps an mtime into the gzip
+# header, so the digest is different on every run and the dice are rolled
+# every time. The result was a security-relevant test going red at random on
+# unrelated pull requests, which is how a check gets ignored. `t` branches out
+# once the first substitution has fired, so exactly one of the two applies.
+sed 's/^0/1/;t;s/^[0-9a-f]/0/' "$archive.sha256" > "$archive.sha256.bad"
 bin="$t/bin"
 if verify_and_install "$archive" "$archive.sha256.bad" "$bin" >/dev/null 2>&1; then
     no "a mismatched checksum aborts" "install reported success"
