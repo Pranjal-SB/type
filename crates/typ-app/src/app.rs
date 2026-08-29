@@ -298,6 +298,16 @@ impl App {
         self.hover.as_deref()
     }
 
+    /// Replace every server configuration, as `config.toml` does at startup.
+    pub fn set_language_servers(&mut self, configs: Vec<crate::lsp::ServerConfig>) {
+        self.lsp.set_configs(configs);
+    }
+
+    /// How many language servers are running.
+    pub fn language_servers_running(&self) -> usize {
+        self.lsp.running()
+    }
+
     /// Register a language server. Nothing starts until a file needs it.
     ///
     /// Servers are never started on the cold-start path: the 100 ms budget
@@ -371,7 +381,17 @@ impl App {
             typ_lsp::LspEvent::Notification { .. } => false,
             typ_lsp::LspEvent::Response { id, result } => self.handle_answer(id, result),
             typ_lsp::LspEvent::ServerRequest { .. } => false,
-            typ_lsp::LspEvent::Exited => false,
+            // **Say why, in the server's own words.** A rustup shim for a
+            // component that is not installed is on `PATH`, spawns fine, and
+            // dies seconds later with one line on stderr saying exactly that —
+            // measured on this machine. Composing a sentence here instead
+            // would throw away the only thing that explains it.
+            typ_lsp::LspEvent::Exited => {
+                if self.lsp.is_stopped(server) {
+                    self.status = self.lsp.exit_reason(server);
+                }
+                true
+            }
         }
     }
 
@@ -983,6 +1003,14 @@ impl App {
             // no-op rather than a clamp: landing on the last tab because you
             // pressed Alt+9 with three open is a jump you did not ask for.
             Action::GoToTab(n) => self.activate_tab((n as usize).saturating_sub(1)),
+            Action::RestartLanguageServers => {
+                let started = self.lsp.restart_all();
+                self.status = Some(match started {
+                    0 => "No language server to restart.".to_string(),
+                    1 => "Restarted the language server.".to_string(),
+                    n => format!("Restarted {n} language servers."),
+                });
+            }
             Action::GotoDefinition => self.ask_server(crate::lsp::Ask::Definition),
             Action::Hover => self.ask_server(crate::lsp::Ask::Hover),
             Action::Save => match self.tabs[self.active].panel.save() {

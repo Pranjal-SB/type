@@ -19,6 +19,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use ropey::Rope;
 use typ_buffer::EditSpan;
@@ -26,42 +27,48 @@ use typ_core::Diagnostic;
 use typ_lsp::RequestId;
 use typ_lsp::{Client, Encoding, Incoming, LspEvent, ServerId, SpawnError};
 
-/// One language server, and what it is for.
+pub mod config;
+
+pub use config::ServerConfig;
+
+/// One running server, and everything decided about it.
 ///
-/// Keyed by extension rather than by TYPE's `Language` enum: TYPE highlights
-/// five languages and can talk to a server for any file at all, so the set of
-/// things that can have a server is not the set of things that have a grammar.
-#[derive(Debug, Clone)]
-pub struct ServerConfig {
-    /// The `languageId` sent in `didOpen`. `rust`, `toml`, `python`.
-    pub language_id: String,
-    /// Extensions this server handles, without the dot.
-    pub extensions: Vec<String>,
-    /// The binary. Not found on `PATH` is the ordinary case, not an error.
-    pub command: String,
-    pub args: Vec<String>,
+/// Keyed by `(command, args, root)` rather than by language: two languages
+/// configured to the same binary in the same project are one process, which is
+/// what `taplo` for `.toml` beside a Rust project would otherwise duplicate.
+struct Server {
+    config: usize,
+    root: PathBuf,
+    client: Option<Box<Client>>,
+    /// When this server has exited, oldest first.
+    ///
+    /// **VS Code's sliding window, and it needs no clock.** The restart is
+    /// triggered by the exit itself, so the only thing measured is the span
+    /// between the exits already recorded — `DefaultErrorHandler` in
+    /// `vscode-languageclient` keeps exactly this list and stops when the
+    /// window fills. The plan's "restart once, after a delay" wanted a timer
+    /// the event loop does not have, and the delay was never the part that
+    /// prevented the loop.
+    exits: Vec<Instant>,
+    /// Whether it ever finished a handshake.
+    ///
+    /// A server that dies before one is not installed rather than crashed, and
+    /// the two want different words on the status bar.
+    ever_ready: bool,
+    /// Given up on. Restarting is then a thing the user asks for.
+    stopped: bool,
+    /// The server's last words, kept because the client is dropped with it.
+    last_stderr: Vec<String>,
 }
 
-impl ServerConfig {
-    fn handles(&self, path: &Path) -> bool {
-        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
-            return false;
-        };
-        self.extensions.iter().any(|e| e.eq_ignore_ascii_case(ext))
-    }
-}
+/// How many times a server is restarted before the window is consulted.
+///
+/// Four, which is `maxRestartCount`'s default in `vscode-languageclient`. The
+/// fifth exit inside [`CRASH_WINDOW`] is what stops it.
+const MAX_RESTARTS: usize = 4;
 
-/// A configured server and whatever became of it.
-enum Server {
-    /// Nothing has needed it yet. Servers are never started on the cold-start
-    /// path: the 100 ms budget cannot wait for rust-analyzer, which takes tens
-    /// of seconds to be useful.
-    NotStarted,
-    Running(Box<Client>),
-    /// It could not be started, or it died. **Never retried here.** A crash
-    /// loop is worse than an absent server; the restart policy is Task 14's.
-    Gone,
-}
+/// The span VS Code measures a crash loop over.
+const CRASH_WINDOW: Duration = Duration::from_secs(3 * 60);
 
 /// What one server has been told about one document.
 struct Doc {
@@ -102,7 +109,9 @@ pub(crate) struct DocSnapshot {
 #[derive(Default)]
 pub(crate) struct Lsp {
     configs: Vec<ServerConfig>,
-    /// Parallel to `configs`; `ServerId(i)` indexes both.
+    /// Every server started this session. `ServerId(i)` indexes it, and an
+    /// entry is never removed — an id in a pending request has to keep meaning
+    /// the same thing after another server starts.
     servers: Vec<Server>,
     docs: HashMap<PathBuf, Doc>,
     /// How many of each notification have gone out.
@@ -158,9 +167,21 @@ impl Lsp {
         }
     }
 
+    /// Add one server configuration, replacing a default of the same language.
     pub(crate) fn add(&mut self, config: ServerConfig) {
-        self.configs.push(config);
-        self.servers.push(Server::NotStarted);
+        match self
+            .configs
+            .iter()
+            .position(|c| c.language_id == config.language_id)
+        {
+            Some(existing) => self.configs[existing] = config,
+            None => self.configs.push(config),
+        }
+    }
+
+    /// Replace the whole set, as `config.toml` does at startup.
+    pub(crate) fn set_configs(&mut self, configs: Vec<ServerConfig>) {
+        self.configs = configs;
     }
 
     pub(crate) fn set_sender(&mut self, sender: crate::run::AppSender) {
@@ -183,47 +204,214 @@ impl Lsp {
         }
     }
 
-    /// Which configured server handles this path, starting it if nothing has
-    /// yet. `None` when there is no server, or it would not start.
+    /// Which server handles this path, starting one if nothing has yet.
+    ///
+    /// `None` when no configuration matches, when the binary would not start,
+    /// or when the server has been given up on. All three are ordinary and all
+    /// three leave the editor exactly as it was.
     fn server_for(&mut self, path: &Path) -> Option<ServerId> {
         let index = self.configs.iter().position(|c| c.handles(path))?;
-        match self.servers[index] {
-            Server::Running(_) => return Some(ServerId(index as u32)),
-            Server::Gone => return None,
-            Server::NotStarted => {}
+        let root = config::root_for(path, &self.configs[index].roots, &self.root);
+
+        // **One process per `(command, args, root)`**, not per language and not
+        // per file. Two files in one project share a server; the same project
+        // opened twice does not start two.
+        // **Stopped counts as present.** The lookup has to see a server that
+        // has been given up on, or the next reconciliation pass finds no entry
+        // for this root, starts a fresh one, and the crash guard is bypassed by
+        // the thing it was guarding. Only a root nothing has ever been started
+        // for reaches `start`.
+        if let Some(at) = self
+            .servers
+            .iter()
+            .position(|s| s.config == index && s.root == root)
+        {
+            return (self.servers[at].client.is_some()).then_some(ServerId(at as u32));
         }
 
+        self.start(index, root)
+    }
+
+    /// Spawn one, and record what became of it either way.
+    fn start(&mut self, config: usize, root: PathBuf) -> Option<ServerId> {
         // Nothing to send results to yet: `App::new` builds an app with no
         // channel, and a server whose answers go nowhere is worse than none.
         let sender = self.sender.clone()?;
-        let id = ServerId(index as u32);
-        let config = &self.configs[index];
-        match Client::start(id, &config.command, &config.args, &self.root, sender) {
-            Ok(client) => {
-                self.servers[index] = Server::Running(Box::new(client));
-                Some(id)
-            }
+        let id = ServerId(self.servers.len() as u32);
+        let (command, args) = {
+            let c = &self.configs[config];
+            (c.command.clone(), c.args.clone())
+        };
+
+        let mut server = Server {
+            config,
+            root: root.clone(),
+            client: None,
+            exits: Vec::new(),
+            ever_ready: false,
+            stopped: false,
+            last_stderr: Vec::new(),
+        };
+
+        match Client::start(id, &command, &args, &root, sender) {
+            Ok(client) => server.client = Some(Box::new(client)),
             Err(SpawnError::NotFound { command }) => {
-                // The ordinary case on most machines, and not something to
-                // interrupt anyone over. It goes to the log, which is where the
-                // answer will be looked for.
+                // The ordinary case on a machine without the toolchain, and not
+                // something to interrupt anyone over.
                 crate::log_info!("no language server: {command} is not on PATH");
-                self.servers[index] = Server::Gone;
-                None
+                server.stopped = true;
             }
             Err(e) => {
                 crate::log_warn!("language server: {e}");
-                self.servers[index] = Server::Gone;
-                None
+                server.stopped = true;
+            }
+        }
+
+        let started = server.client.is_some();
+        self.servers.push(server);
+        started.then_some(id)
+    }
+
+    /// Start a server again after it exited, reusing its slot's history.
+    fn restart(&mut self, id: ServerId) -> bool {
+        let Some(server) = self.servers.get(id.0 as usize) else {
+            return false;
+        };
+        let (config, root) = (server.config, server.root.clone());
+        let Some(sender) = self.sender.clone() else {
+            return false;
+        };
+        let (command, args) = {
+            let c = &self.configs[config];
+            (c.command.clone(), c.args.clone())
+        };
+
+        match Client::start(id, &command, &args, &root, sender) {
+            Ok(client) => {
+                let server = &mut self.servers[id.0 as usize];
+                server.client = Some(Box::new(client));
+                server.ever_ready = false;
+                // Its documents were dropped when it died, so the next
+                // reconciliation pass announces them again. Nothing here has to
+                // remember which they were.
+                true
+            }
+            Err(e) => {
+                crate::log_warn!("language server would not restart: {e}");
+                self.servers[id.0 as usize].stopped = true;
+                false
             }
         }
     }
 
-    fn client(&mut self, id: ServerId) -> Option<&mut Client> {
-        match self.servers.get_mut(id.0 as usize)? {
-            Server::Running(client) => Some(client),
-            _ => None,
+    /// Decide what a server's exit means, and act on it.
+    ///
+    /// **VS Code's `DefaultErrorHandler`, and it needs no clock.** Restart
+    /// while fewer than [`MAX_RESTARTS`] exits are on record; after that, stop
+    /// if the whole run of them fits inside [`CRASH_WINDOW`], and otherwise
+    /// drop the oldest and restart. A server that dies once an hour is not a
+    /// crash loop and is not treated as one.
+    fn after_exit(&mut self, id: ServerId) {
+        let Some(server) = self.servers.get_mut(id.0 as usize) else {
+            return;
+        };
+        // Taken before the client goes: the drain thread fills the tail as the
+        // pipe closes, which is exactly when this runs.
+        if let Some(client) = server.client.as_ref() {
+            server.last_stderr = client.stderr_tail();
         }
+        server.client = None;
+        server.exits.push(Instant::now());
+
+        // Never started properly. Restarting a binary that is not there just
+        // burns the window — the reason is in its stderr and the app says it.
+        if !server.ever_ready {
+            server.stopped = true;
+            return;
+        }
+
+        if server.exits.len() <= MAX_RESTARTS {
+            self.restart(id);
+            return;
+        }
+
+        let span = server.exits[server.exits.len() - 1] - server.exits[0];
+        if span <= CRASH_WINDOW {
+            server.stopped = true;
+        } else {
+            server.exits.remove(0);
+            self.restart(id);
+        }
+    }
+
+    /// Why a server that has just exited did, in one line.
+    ///
+    /// **Its own stderr, not a sentence TYPE composed.** Zed reports a failed
+    /// start as the error plus the captured stderr for the same reason: a
+    /// rustup shim answering "Unknown binary 'rust-analyzer.exe' in official
+    /// toolchain" says more than any wording here could, and the shim being on
+    /// `PATH` while the component is not is the ordinary state of a machine
+    /// with rustup — measured, not guessed.
+    pub(crate) fn exit_reason(&self, id: ServerId) -> Option<String> {
+        let server = self.servers.get(id.0 as usize)?;
+        let command = self.configs.get(server.config)?.command.clone();
+        let last = server
+            .last_stderr
+            .iter()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .cloned();
+
+        Some(match (server.ever_ready, last) {
+            (_, Some(line)) => format!("{command}: {line}"),
+            (true, None) => format!("{command} exited."),
+            (false, None) => format!("{command} did not start."),
+        })
+    }
+
+    /// Whether a server has been given up on.
+    pub(crate) fn is_stopped(&self, id: ServerId) -> bool {
+        self.servers.get(id.0 as usize).is_some_and(|s| s.stopped)
+    }
+
+    /// How many servers are running.
+    pub(crate) fn running(&self) -> usize {
+        self.servers.iter().filter(|s| s.client.is_some()).count()
+    }
+
+    /// Start a stopped server again because the user asked.
+    ///
+    /// Helix's `:lsp-restart` and Zed's restart command, which is the half a
+    /// crash-loop guard needs: something has to be able to say "I fixed it".
+    /// Clears the window, so the count starts again.
+    pub(crate) fn restart_all(&mut self) -> usize {
+        let ids: Vec<ServerId> = (0..self.servers.len())
+            .map(|i| ServerId(i as u32))
+            .filter(|id| {
+                let s = &self.servers[id.0 as usize];
+                s.stopped || s.client.is_none()
+            })
+            .collect();
+        let mut started = 0;
+        for id in ids {
+            let server = &mut self.servers[id.0 as usize];
+            server.stopped = false;
+            server.exits.clear();
+            if self.restart(id) {
+                started += 1;
+            }
+        }
+        started
+    }
+
+    /// The `languageId` the server at `id` was configured for.
+    fn language_id(&self, id: ServerId) -> Option<String> {
+        let server = self.servers.get(id.0 as usize)?;
+        Some(self.configs.get(server.config)?.language_id.clone())
+    }
+
+    fn client(&mut self, id: ServerId) -> Option<&mut Client> {
+        self.servers.get_mut(id.0 as usize)?.client.as_deref_mut()
     }
 
     /// Bring every server's idea of the open documents up to date.
@@ -263,10 +451,10 @@ impl Lsp {
 
     /// Which unit a server counts positions in, if it is running.
     pub(crate) fn encoding(&self, id: ServerId) -> Encoding {
-        match self.servers.get(id.0 as usize) {
-            Some(Server::Running(client)) => client.encoding(),
-            _ => Encoding::Utf16,
-        }
+        self.servers
+            .get(id.0 as usize)
+            .and_then(|s| s.client.as_ref())
+            .map_or(Encoding::Utf16, |c| c.encoding())
     }
 
     /// The version a server last heard about a document.
@@ -294,7 +482,13 @@ impl Lsp {
         let Some(id) = self.server_for(&snapshot.path) else {
             return;
         };
-        let language_id = self.configs[id.0 as usize].language_id.clone();
+        // **Through the server, not the id.** `ServerId` indexes `servers` and
+        // has done since one process per (command, root) replaced one per
+        // configuration; indexing `configs` with it read fine and panicked the
+        // moment a second server started.
+        let Some(language_id) = self.language_id(id) else {
+            return;
+        };
 
         match self.docs.get(&snapshot.path) {
             // Known and current. The common case, and it sends nothing.
@@ -395,16 +589,29 @@ impl Lsp {
     /// waiting on `workspace/configuration` waits forever.
     pub(crate) fn handle(&mut self, incoming: Incoming) -> Option<(ServerId, LspEvent)> {
         let id = incoming.server();
-        let event = self.client(id)?.handle(incoming)?;
+        let event = self.client(id)?.handle(incoming);
+
+        // Recorded on the way past rather than asked for later: once the client
+        // is gone, nothing can say whether it ever answered `initialize`, and
+        // that is the difference between a binary that is not installed and a
+        // server that crashed.
+        if let Some(client) = self.client(id)
+            && client.is_initialized()
+            && let Some(server) = self.servers.get_mut(id.0 as usize)
+        {
+            server.ever_ready = true;
+        }
+        let event = event?;
 
         match event {
             LspEvent::Exited => {
-                self.servers[id.0 as usize] = Server::Gone;
                 // Its documents were never closed politely, and there is nobody
                 // left to tell. Forgetting them is what lets a restart announce
-                // them again.
+                // them again — the reconciliation pass sees them missing and
+                // sends `didOpen`.
                 self.docs.retain(|_, doc| doc.server != id);
                 self.forget_progress(id);
+                self.after_exit(id);
                 Some((id, LspEvent::Exited))
             }
             LspEvent::ServerRequest {
@@ -621,10 +828,11 @@ impl Lsp {
     /// killing it every time is how a stale lock outlives TYPE.
     pub(crate) fn shutdown(&mut self) {
         for server in &mut self.servers {
-            if let Server::Running(client) = server {
+            if let Some(client) = server.client.as_mut() {
                 client.shutdown(SHUTDOWN_GRACE);
             }
-            *server = Server::Gone;
+            server.client = None;
+            server.stopped = true;
         }
     }
 }

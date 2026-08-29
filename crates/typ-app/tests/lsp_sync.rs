@@ -47,6 +47,7 @@ fn rust_server(command: &str) -> ServerConfig {
         extensions: vec!["rs".into()],
         command: command.into(),
         args: Vec::new(),
+        roots: vec!["Cargo.toml".into()],
     }
 }
 

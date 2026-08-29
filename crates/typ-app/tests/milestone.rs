@@ -162,6 +162,7 @@ fn every_default_binding_resolves_to_something_that_handles_it() {
         // it sits in a list of them.
         typ_core::Action::GotoDefinition,
         typ_core::Action::Hover,
+        typ_core::Action::RestartLanguageServers,
         // Tabs are the app's, not the panel's: a panel that could close itself
         // would need to know it sits in a list, and invariant 5 says it does
         // not get to know anything about the app at all.

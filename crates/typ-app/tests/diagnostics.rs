@@ -47,6 +47,7 @@ fn server(flags: &[&str]) -> ServerConfig {
         extensions: vec!["rs".into()],
         command: fake().into(),
         args: flags.iter().map(|f| f.to_string()).collect(),
+        roots: vec!["Cargo.toml".into()],
     }
 }
 

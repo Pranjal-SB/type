@@ -113,6 +113,13 @@ pub enum Action {
     GotoDefinition,
     /// Show what the server knows about the thing under the cursor.
     Hover,
+    /// Start every stopped language server again.
+    ///
+    /// The other half of a crash-loop guard: something has to be able to say
+    /// "I fixed it". Helix spells it `:lsp-restart` and Zed has a command for
+    /// it; TYPE reaches it through the palette, which every named action is in
+    /// for free.
+    RestartLanguageServers,
 }
 
 /// The `go_to_tab_N` names, indexed by `n - 1`.
@@ -287,6 +294,7 @@ impl Action {
         Action::Outdent,
         Action::GotoDefinition,
         Action::Hover,
+        Action::RestartLanguageServers,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -364,6 +372,7 @@ impl Action {
             Action::CloseTab => "close_tab",
             Action::GotoDefinition => "goto_definition",
             Action::Hover => "hover",
+            Action::RestartLanguageServers => "restart_language_servers",
             Action::GoToTab(n) => GO_TO_TAB_NAMES
                 .get((*n as usize).saturating_sub(1))
                 .copied()
