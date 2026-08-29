@@ -152,3 +152,86 @@ fn the_existing_signals_still_win_on_their_own() {
     );
     assert_eq!(depth_from(None, None, None), Depth::Ansi256);
 }
+
+// --- styled underlines ---
+
+use typ_app::capability::{Underlines, underlines_from};
+
+fn underlines(term: &str) -> Underlines {
+    underlines_from(Some(term), None, None, None)
+}
+
+#[test]
+fn kitty_foot_wezterm_alacritty_and_ghostty_draw_a_curl() {
+    for term in [
+        "xterm-kitty",
+        "foot",
+        "foot-extra",
+        "wezterm",
+        "alacritty",
+        "xterm-ghostty",
+    ] {
+        assert_eq!(underlines(term), Underlines::Styled, "{term}");
+    }
+}
+
+#[test]
+fn xterm_and_the_rest_get_a_straight_line() {
+    for term in ["xterm", "xterm-256color", "rxvt-unicode", "st-256color", ""] {
+        assert_eq!(underlines(term), Underlines::Plain, "{term}");
+    }
+}
+
+#[test]
+fn windows_terminal_draws_a_curl() {
+    // The platform this editor is most developed on, and the one that made the
+    // *colour* sequence a compatibility question.
+    assert_eq!(
+        underlines_from(None, None, Some("some-guid"), None),
+        Underlines::Styled
+    );
+    // Set-but-empty is not a claim, for the same reason it is not one for
+    // `COLORTERM`: scripts export variables unconditionally.
+    assert_eq!(
+        underlines_from(None, None, Some(""), None),
+        Underlines::Plain
+    );
+}
+
+#[test]
+fn a_vte_build_number_is_a_claim() {
+    assert_eq!(
+        underlines_from(Some("xterm-256color"), None, None, Some("7402")),
+        Underlines::Styled
+    );
+}
+
+#[test]
+fn a_named_terminal_program_is_believed() {
+    for program in ["WezTerm", "iTerm.app", "ghostty", "mintty", "vscode"] {
+        assert_eq!(
+            underlines_from(Some("xterm-256color"), Some(program), None, None),
+            Underlines::Styled,
+            "{program}"
+        );
+    }
+    assert_eq!(
+        underlines_from(Some("xterm-256color"), Some("Apple_Terminal"), None, None),
+        Underlines::Plain,
+        "Terminal.app has never drawn one"
+    );
+}
+
+#[test]
+fn a_multiplexer_answers_no_whatever_else_is_set() {
+    // Inside tmux, every other variable describes whichever terminal started
+    // it, which may be two terminals ago. A shape claim is not something tmux
+    // inherits, so there is nothing to believe.
+    for term in ["tmux-256color", "screen-256color"] {
+        assert_eq!(
+            underlines_from(Some(term), Some("WezTerm"), Some("guid"), Some("7402")),
+            Underlines::Plain,
+            "{term}"
+        );
+    }
+}

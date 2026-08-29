@@ -227,8 +227,11 @@ fn click(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
 /// test that hardcoded a column was wrong in the same way at once.
 fn text_cell(col: u16, line: u16) -> (u16, u16) {
     const BORDER: u16 = 1;
-    const GUTTER: u16 = 2;
-    (col + BORDER + GUTTER, line + BORDER)
+    // Asked rather than hardcoded. The default gutter grew a diagnostics column
+    // at M3, and a constant here made that land as a clipboard failure instead
+    // of as the arithmetic change it was.
+    let gutter = typ_panel_editor::gutter::Gutter::default().width(1) as u16;
+    (col + BORDER + gutter, line + BORDER)
 }
 
 #[test]

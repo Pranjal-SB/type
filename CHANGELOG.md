@@ -3,6 +3,72 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.3.0] - 2026-08-29 (M3, code intelligence)
+
+TYPE talks to language servers. Diagnostics appear as you type, `F12` goes to a definition,
+`Alt+H` says what a thing is, and the status bar says what the server is busy with. rust-analyzer
+and taplo are configured without a config file.
+
+`landscape.md` has ranked the absence of LSP as the only *instant* bounce since it was written,
+and everything below it on that list had already shipped. This is the milestone where the
+architecture's central bet — that "all the frontier IDE features" is mostly three protocol
+clients — either pays out or does not.
+
+### Added
+- **`typ-lsp`**, an eleventh crate at the bottom of the graph beside `typ-syntax` and `typ-find`.
+  One reader thread and one writer thread per server, no async runtime. It speaks char offsets
+  and never mentions graphemes; `typ-buffer` owns that conversion, because that is where grapheme
+  logic already lives.
+- **Documents sync to the server**, one notification per frame rather than one per keystroke. The
+  event loop already batches input, so a ten-key burst is one `didChange`.
+- **Diagnostics**, undercurled under the text in the severity's colour, marked in the gutter, and
+  counted on the status bar. They shift forward through your edits rather than sitting under the
+  wrong words until the server catches up.
+- **Goto-definition** on `F12` and **hover** on `Alt+H`, both also in the command palette. A
+  reply that arrives after the cursor has moved is discarded rather than acted on.
+- **Indexing progress** in the status bar, so the first minute on a real project looks like work
+  rather than like a broken editor.
+- **A backend that draws styled underlines**, and owns the frame boundary that `run.rs` used to
+  write by hand around every draw.
+- **`[[language]]` in `config.toml`**, with rust-analyzer and taplo compiled in as defaults. An
+  entry replaces a default of the same name; a language TYPE has never heard of is added.
+- **`restart_language_servers`**, for after you install the thing it said was missing.
+
+### Fixed
+- **A form feed is no longer a line break.** ropey's `unicode_lines` is on by default and makes
+  `U+000B`, `U+000C`, `U+0085`, `U+2028` and `U+2029` line breaks, per Unicode Annex #14. Every
+  tool TYPE talks to counts a line feed and nothing else — rust-analyzer's line index, ripgrep,
+  git — so a file containing a form feed put every diagnostic *and every project-search hit*
+  below it on the wrong line. The search half had been wrong since v0.2.8.
+- **The weekly perf tripwire runs all nine budget files**, having run two of seven. The five it
+  skipped included the one holding the sub-100 ms cold start that the workflow's own header names
+  as its reason for existing.
+
+### Deliberately not in this release
+- **Completion and signature help.** v0.3.1. The completion popup is the largest new UI surface in
+  M3 and deserves its own release.
+- **Pull diagnostics.** v0.3.1, moved there once the premise for including them turned out to be
+  false: rust-analyzer sends its *native* diagnostics by push unless the client declares
+  `textDocument.diagnostic`, so v0.3.0 already gets the fast half. Declaring that capability
+  without a working pull path would turn it **off**, so the declaration and the implementation
+  are one change and that change is a release.
+- **Rename, code actions, formatting, references, document symbols.** v0.3.2 — all five apply
+  workspace edits, which is one mechanism, so they ship together.
+- **Several servers against one document.** One server per language is enough to prove the
+  client; routing by capability and merging two sources of diagnostics is its own problem.
+- **Incremental document sync.** Full sync cannot desync and is the smaller change. The cost was
+  measured rather than assumed: the render thread pays 17 ns per notification, because it hands
+  the writer thread a snapshot instead of a string.
+- **Peek definition, and semantic tokens.** Additive later; neither blocks anything.
+
+### Known
+- Starting a server costs about 8 ms on the thread that asks for it, once per server. Invariant 7
+  says subprocess work goes off-thread and this is subprocess work; it lands on a file-open frame
+  rather than a keystroke, and the fix is an asynchronous `Client::start`. Gap analysis 61.
+- Hover has no dwell-on-mouse, and a crashed server is restarted immediately rather than after a
+  pause. Both want a timer the event loop does not have — it blocks on a bare `recv()` — which is
+  the same thing pull diagnostics need, and all three arrive together in v0.3.1.
+
 ## [0.2.10] - 2026-08-26 (M2.9 loose ends)
 
 A patch release for the bug tabs created and the documentation eight releases left behind.

@@ -9,7 +9,11 @@ use std::path::PathBuf;
 /// M2.7 added `Parsed` and M3 adds an LSP response. That is the point of the
 /// type: a new off-thread producer is a variant here and a match arm in the
 /// loop, not a change to how the loop waits.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// **Not `PartialEq`.** `lsp_server::Message` is not, and a hand-written
+/// equality over a protocol frame would be comparing JSON for the benefit of
+/// one assertion. Tests that want to identify an event use `matches!`, which is
+/// what all but one of them already did.
+#[derive(Debug, Clone)]
 pub enum AppEvent {
     /// Something arrived from the terminal: a key, a mouse report, a paste.
     Input(crossterm::event::Event),
@@ -25,6 +29,12 @@ pub enum AppEvent {
     Parsed(typ_syntax::Parsed),
     /// A worker finished walking the project, or ranking a query against it.
     Found(typ_find::Found),
+    /// A language server said something, and which server said it.
+    ///
+    /// One variant for the whole protocol. `LspEvent` sorts it into four kinds
+    /// on the app's thread; growing a variant per LSP feature is how this enum
+    /// would become the chokepoint `PanelEvent` is deliberately not.
+    Lsp(typ_lsp::Incoming),
 }
 
 /// So `ParseWorker::spawn` can take the app's own sender.
@@ -44,6 +54,14 @@ impl From<typ_syntax::Parsed> for AppEvent {
 impl From<typ_find::Found> for AppEvent {
     fn from(found: typ_find::Found) -> Self {
         AppEvent::Found(found)
+    }
+}
+
+/// So `Transport::spawn` can take the app's own sender. Same arrangement as
+/// the two above, and the third reason `typ-lsp` sits below this crate.
+impl From<typ_lsp::Incoming> for AppEvent {
+    fn from(incoming: typ_lsp::Incoming) -> Self {
+        AppEvent::Lsp(incoming)
     }
 }
 

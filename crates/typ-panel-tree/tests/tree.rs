@@ -90,6 +90,7 @@ fn the_sidebar_sits_on_the_chrome_surface_not_the_editors_page() {
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: 20,

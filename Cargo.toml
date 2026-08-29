@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.10"
+version = "0.3.0"
 edition = "2024"
 # Matches rust-toolchain.toml. Without it, someone on an older compiler gets a
 # wall of syntax errors from edition-2024 code and let-chains instead of cargo
@@ -22,7 +22,14 @@ crossterm = "0.29"
 # place to take an RC.
 notify = "8.2"
 ratatui = "0.30.2"
-ropey = "1.6"
+# `default-features = false` drops `unicode_lines`, which would make `U+000B`,
+# `U+000C`, `U+0085`, `U+2028` and `U+2029` line breaks. That is Unicode Annex
+# #14 conformance and it is wrong here: rust-analyzer's line index breaks on a
+# line feed and nothing else, ripgrep the same, so a file with a form feed in it
+# would put every diagnostic, match and hunk below it one line out. `simd` has
+# to come back explicitly -- it is a default feature, and ropey's own docs call
+# losing it this way a footgun. Helix pins the identical line.
+ropey = { version = "1.6", default-features = false, features = ["simd"] }
 toml = "1.1"
 unicode-segmentation = "1.11"
 unicode-width = "0.2"
@@ -99,16 +106,16 @@ url = "2"
 
 # Version alongside path: cargo resolves the path locally and publishes the
 # version, and refuses to publish a crate whose dependencies carry only a path.
-typ-core = { path = "crates/typ-core", version = "0.2.10" }
-typ-buffer = { path = "crates/typ-buffer", version = "0.2.10" }
-typ-registry = { path = "crates/typ-registry", version = "0.2.10" }
-typ-panel-editor = { path = "crates/typ-panel-editor", version = "0.2.10" }
-typ-panel-tree = { path = "crates/typ-panel-tree", version = "0.2.10" }
-typ-app = { path = "crates/typ-app", version = "0.2.10" }
-typ-syntax = { path = "crates/typ-syntax", version = "0.2.10" }
-typ-find = { path = "crates/typ-find", version = "0.2.10" }
-typ-picker = { path = "crates/typ-picker", version = "0.2.10" }
-typ-lsp = { path = "crates/typ-lsp", version = "0.2.10" }
+typ-core = { path = "crates/typ-core", version = "0.3.0" }
+typ-buffer = { path = "crates/typ-buffer", version = "0.3.0" }
+typ-registry = { path = "crates/typ-registry", version = "0.3.0" }
+typ-panel-editor = { path = "crates/typ-panel-editor", version = "0.3.0" }
+typ-panel-tree = { path = "crates/typ-panel-tree", version = "0.3.0" }
+typ-app = { path = "crates/typ-app", version = "0.3.0" }
+typ-syntax = { path = "crates/typ-syntax", version = "0.3.0" }
+typ-find = { path = "crates/typ-find", version = "0.3.0" }
+typ-picker = { path = "crates/typ-picker", version = "0.3.0" }
+typ-lsp = { path = "crates/typ-lsp", version = "0.3.0" }
 
 [profile.release]
 opt-level = 3

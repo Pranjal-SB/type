@@ -52,7 +52,10 @@ fn a_worker_thread_wakes_the_loop_without_any_terminal_input() {
     });
 
     let received = rx.recv_timeout(WAIT).expect("the loop was never woken");
-    assert_eq!(received, AppEvent::FileChanged(file));
+    assert!(
+        matches!(&received, AppEvent::FileChanged(p) if p == &file),
+        "{received:?}"
+    );
 }
 
 #[test]
@@ -83,7 +86,7 @@ fn the_sender_is_cloneable_so_every_worker_can_hold_one() {
     std::thread::spawn(move || a.send(AppEvent::FileChanged(PathBuf::from("a"))).unwrap());
     std::thread::spawn(move || b.send(AppEvent::FileChanged(PathBuf::from("b"))).unwrap());
 
-    let mut seen = vec![
+    let mut seen = [
         rx.recv_timeout(WAIT).unwrap(),
         rx.recv_timeout(WAIT).unwrap(),
     ];
@@ -91,13 +94,14 @@ fn the_sender_is_cloneable_so_every_worker_can_hold_one() {
         AppEvent::FileChanged(p) => p.clone(),
         _ => PathBuf::new(),
     });
-    assert_eq!(
-        seen,
-        vec![
-            AppEvent::FileChanged(PathBuf::from("a")),
-            AppEvent::FileChanged(PathBuf::from("b")),
-        ]
-    );
+    let paths: Vec<PathBuf> = seen
+        .iter()
+        .map(|e| match e {
+            AppEvent::FileChanged(p) => p.clone(),
+            other => panic!("not a file change: {other:?}"),
+        })
+        .collect();
+    assert_eq!(paths, vec![PathBuf::from("a"), PathBuf::from("b")]);
 }
 
 #[test]

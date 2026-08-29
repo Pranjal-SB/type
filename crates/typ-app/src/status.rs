@@ -27,6 +27,9 @@ pub enum SegmentId {
     FileType,
     LineEnding,
     Indent,
+    Diagnostics,
+    /// What a language server is busy with.
+    Progress,
     Selections,
     Position,
     Percentage,
@@ -82,6 +85,14 @@ pub struct StatusFacts<'a> {
     pub line: usize,
     pub col: usize,
     pub total_lines: usize,
+    /// Diagnostics on the file being edited, by severity.
+    ///
+    /// Two counts rather than a slice: the bar wants a number, and handing it
+    /// the diagnostics would make it walk them once per frame to find one.
+    pub errors: usize,
+    pub warnings: usize,
+    /// Work the servers have said they are doing, oldest first.
+    pub progress: &'a [&'a str],
 }
 
 /// The right-hand segments, in order.
@@ -131,6 +142,49 @@ pub fn segments(facts: &StatusFacts) -> Vec<Segment> {
         text: format!("Spaces: {}", facts.indent_width),
         emphasis: Emphasis::Quiet,
     });
+
+    // **Omitted when there is nothing wrong**, like every other segment that
+    // cannot be answered: a bar reading "0E 0W" has spent three cells saying
+    // what its own silence already said.
+    if facts.errors > 0 || facts.warnings > 0 {
+        let mut text = String::new();
+        if facts.errors > 0 {
+            text.push_str(&format!("{}E", facts.errors));
+        }
+        if facts.warnings > 0 {
+            if !text.is_empty() {
+                text.push(' ');
+            }
+            text.push_str(&format!("{}W", facts.warnings));
+        }
+        out.push(Segment {
+            id: SegmentId::Diagnostics,
+            text,
+            // An error changes what a user does next; a warning on its own does
+            // not, and the bar's three levels are a ranking rather than a
+            // palette. Colour per severity would also put the one distinction
+            // that matters behind a hue difference, which is the thing the
+            // contrast rubric exists to stop.
+            emphasis: if facts.errors > 0 {
+                Emphasis::Accent
+            } else {
+                Emphasis::Quiet
+            },
+        });
+    }
+
+    // **The first one, not all of them.** rust-analyzer runs several at once
+    // and the bar is one strip: naming them all would push the position off the
+    // right-hand end, which is the thing on it a user actually looks at.
+    if let Some(work) = facts.progress.first() {
+        out.push(Segment {
+            id: SegmentId::Progress,
+            text: (*work).to_string(),
+            // Quiet: it is temporary, it is not an error, and it must not read
+            // as one. A server indexing is the editor working, not failing.
+            emphasis: Emphasis::Quiet,
+        });
+    }
 
     if facts.selection_count > 1 {
         out.push(Segment {

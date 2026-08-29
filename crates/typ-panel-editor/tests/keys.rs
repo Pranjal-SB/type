@@ -31,6 +31,7 @@ fn render(p: &mut EditorPanel, area: Rect) {
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: area.width,
@@ -106,9 +107,9 @@ fn the_cursor_sits_inside_the_border_at_the_text_position() {
     render(&mut p, area);
     p.apply_action(mv(Motion::Right));
     p.apply_action(mv(Motion::Right));
-    // One column and one row of border, two columns of gutter, then two
-    // columns of text.
-    assert_eq!(p.cursor_position(area), Some((5, 1)));
+    // One column and one row of border, three columns of gutter — a diagnostic
+    // sign, a digit, a spacer — then two columns of text.
+    assert_eq!(p.cursor_position(area), Some((6, 1)));
 }
 
 #[test]
@@ -118,7 +119,7 @@ fn the_cursor_accounts_for_wide_characters() {
     render(&mut p, area);
     p.apply_action(mv(Motion::Right));
     // One CJK grapheme is two display columns, plus the border and the gutter.
-    assert_eq!(p.cursor_position(area), Some((5, 1)));
+    assert_eq!(p.cursor_position(area), Some((6, 1)));
 }
 
 #[test]

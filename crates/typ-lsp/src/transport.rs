@@ -49,14 +49,43 @@ impl std::fmt::Display for SpawnError {
 
 impl std::error::Error for SpawnError {}
 
-/// Something the server said.
-#[derive(Debug)]
+/// Which server. Assigned by the app, carried back on everything that server
+/// says.
+///
+/// **Without it a reply goes to the wrong conversation.** Every server shares
+/// one channel to the app, request ids are per-server, and a
+/// `workspace/configuration` from one server answered on another's stdin is a
+/// server left waiting forever. One `u32` is the whole cost of not having that
+/// bug.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ServerId(pub u32);
+
+/// Something a server said, and which server said it.
+#[derive(Debug, Clone)]
 pub enum Incoming {
     /// A framed protocol message.
-    Message(Box<Message>),
+    Message(ServerId, Box<Message>),
     /// The connection ended. Always the last thing sent, exactly once.
-    Closed,
+    Closed(ServerId),
 }
+
+impl Incoming {
+    /// Which server this came from.
+    pub fn server(&self) -> ServerId {
+        match self {
+            Incoming::Message(id, _) | Incoming::Closed(id) => *id,
+        }
+    }
+}
+
+/// A message that has not been built yet.
+///
+/// `didChange` carries the whole document under full sync, and turning a rope
+/// into a `String` costs 1.3 ms on a 50k-line file — measured, against a 16 ms
+/// keystroke budget. A `Rope` clone is a snapshot for nothing, so the render
+/// thread clones and hands over a closure and the writer thread pays for the
+/// text. Everything else arrives already built.
+type Pending = Box<dyn FnOnce() -> Message + Send>;
 
 /// How many lines of the server's stderr to keep.
 ///
@@ -74,7 +103,7 @@ const MAX_CONSECUTIVE_ERRORS: usize = 8;
 pub struct Transport {
     child: Child,
     /// Dropped to tell the writer thread to stop.
-    outgoing: Option<Sender<Message>>,
+    outgoing: Option<Sender<Pending>>,
     stderr: Arc<Mutex<Vec<String>>>,
     #[cfg(windows)]
     job: platform::Job,
@@ -88,6 +117,7 @@ impl Transport {
     /// reason: a dev-dependency on `typ-core` would be a publish-order failure
     /// waiting for release day.
     pub fn spawn<E>(
+        id: ServerId,
         command: &str,
         args: &[String],
         root: &std::path::Path,
@@ -125,7 +155,7 @@ impl Transport {
         let stdout = child.stdout.take().expect("stdout was piped");
         let stderr = child.stderr.take().expect("stderr was piped");
 
-        let (tx, rx) = mpsc::channel::<Message>();
+        let (tx, rx) = mpsc::channel::<Pending>();
 
         thread::Builder::new()
             .name("typ-lsp-write".into())
@@ -133,8 +163,8 @@ impl Transport {
                 let mut stdin = stdin;
                 // `recv` fails once the Transport holding the sender is
                 // dropped, which is how this thread learns to exit.
-                while let Ok(message) = rx.recv() {
-                    if message.write(&mut stdin).is_err() || stdin.flush().is_err() {
+                while let Ok(build) = rx.recv() {
+                    if build().write(&mut stdin).is_err() || stdin.flush().is_err() {
                         break;
                     }
                 }
@@ -151,7 +181,7 @@ impl Transport {
                         Ok(Some(message)) => {
                             consecutive_errors = 0;
                             let boxed = Box::new(message);
-                            if results.send(E::from(Incoming::Message(boxed))).is_err() {
+                            if results.send(E::from(Incoming::Message(id, boxed))).is_err() {
                                 return;
                             }
                         }
@@ -176,7 +206,7 @@ impl Transport {
                         }
                     }
                 }
-                let _ = results.send(E::from(Incoming::Closed));
+                let _ = results.send(E::from(Incoming::Closed(id)));
             })
             .expect("the OS can start a thread");
 
@@ -195,8 +225,17 @@ impl Transport {
     /// Queue a message. Never blocks, and never fails visibly: a server that
     /// has gone away is reported by the reader thread's `Closed`, once.
     pub fn send(&self, message: Message) {
+        self.send_deferred(move || message);
+    }
+
+    /// Queue a message the writer thread will build.
+    ///
+    /// For the one notification whose payload is expensive: see [`Pending`].
+    /// The closure runs off the render thread, so whatever it captures has to
+    /// be a snapshot rather than a borrow — a `Rope` clone is both.
+    pub fn send_deferred(&self, build: impl FnOnce() -> Message + Send + 'static) {
         if let Some(tx) = &self.outgoing {
-            let _ = tx.send(message);
+            let _ = tx.send(Box::new(build));
         }
     }
 

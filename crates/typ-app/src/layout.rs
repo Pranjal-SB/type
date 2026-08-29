@@ -55,6 +55,46 @@ pub fn picker_area(frame: Rect) -> Rect {
 pub const PICKER_WIDTH: u16 = 72;
 pub const PICKER_HEIGHT: u16 = 18;
 
+/// Where a hover box goes, given where the cursor is and how much it says.
+///
+/// **Under the cursor, and the placement is deferred rather than designed.**
+/// `visual.md` has an open question about where floating things live and this
+/// does not answer it: the box goes below the cursor when there is room and
+/// above it when there is not, which is what every editor does and what nobody
+/// has to be told.
+///
+/// Clamped into the frame on both axes, because the alternative is a box that
+/// disappears off the right of the screen for anyone editing a long line.
+pub fn hover_area(frame: Rect, cursor: (u16, u16), lines: usize, longest: usize) -> Rect {
+    let width = (longest as u16 + 2)
+        .clamp(3, HOVER_MAX_WIDTH)
+        .min(frame.width);
+    let height = (lines as u16 + 2)
+        .clamp(3, HOVER_MAX_HEIGHT)
+        .min(frame.height);
+
+    let (cx, cy) = cursor;
+    let x = cx.min(frame.width.saturating_sub(width));
+    // Below when it fits, above when it does not. Never over the cursor: the
+    // box is about the thing under it.
+    let y = if cy + 1 + height <= frame.height {
+        cy + 1
+    } else {
+        cy.saturating_sub(height)
+    };
+
+    Rect {
+        x: frame.x + x,
+        y: frame.y + y,
+        width,
+        height,
+    }
+}
+
+/// Wide enough for a signature, short enough to leave the code visible.
+pub const HOVER_MAX_WIDTH: u16 = 64;
+pub const HOVER_MAX_HEIGHT: u16 = 12;
+
 /// Split the editor's rect into `(tab_bar, editor)`.
 ///
 /// **One function, because render and hit-testing both need the answer.** A bar

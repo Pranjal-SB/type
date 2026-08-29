@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::Duration;
 
-use typ_lsp::{Client, Encoding, Incoming, LspEvent};
+use typ_lsp::{Client, Encoding, Incoming, LspEvent, ServerId};
 
 fn fake() -> &'static str {
     env!("CARGO_BIN_EXE_typ-lsp-fake-server")
@@ -16,7 +16,8 @@ fn args(list: &[&str]) -> Vec<String> {
 
 fn start(flags: &[&str]) -> (Client, Receiver<Incoming>) {
     let (tx, rx) = channel();
-    let client = Client::start(fake(), &args(flags), Path::new("."), tx).expect("it starts");
+    let client =
+        Client::start(ServerId(1), fake(), &args(flags), Path::new("."), tx).expect("it starts");
     (client, rx)
 }
 
@@ -92,7 +93,7 @@ fn what_the_server_was_told(flags: &[&str]) -> serde_json::Value {
         let Ok(incoming) = rx.recv_timeout(Duration::from_secs(10)) else {
             break;
         };
-        if let Incoming::Message(message) = &incoming
+        if let Incoming::Message(_, message) = &incoming
             && let lsp_server::Message::Response(response) = &**message
             && let Ok(result) = &response.response_result
         {
@@ -177,4 +178,28 @@ fn shutdown_lets_the_server_stop_on_its_own() {
     let (mut client, rx) = start(&[]);
     pump_until_initialized(&mut client, &rx);
     client.shutdown(Duration::from_secs(10));
+}
+
+#[test]
+fn pull_diagnostics_are_not_claimed_until_they_are_built() {
+    // Declaring `textDocument.diagnostic` turns rust-analyzer's *native*
+    // diagnostics -- the ones that appear as you type -- from push to pull:
+    // `main_loop.rs` guards `update_diagnostics` on
+    // `!config.text_document_diagnostic()`. So claiming the capability without
+    // a working pull path costs the fast diagnostics TYPE already gets by
+    // push. The day someone declares it, they build the other half too.
+    let told = what_the_server_was_told(&[]);
+    assert_eq!(told.pointer("/capabilities/textDocument/diagnostic"), None);
+}
+
+#[test]
+fn the_client_says_it_reads_the_version_on_a_publish() {
+    // It does: a publish describing a version older than the one already sent
+    // is dropped. Reading the field without declaring `versionSupport` is as
+    // dishonest as declaring it and ignoring the field.
+    let told = what_the_server_was_told(&[]);
+    assert_eq!(
+        told.pointer("/capabilities/textDocument/publishDiagnostics/versionSupport"),
+        Some(&serde_json::Value::Bool(true)),
+    );
 }

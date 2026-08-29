@@ -153,6 +153,7 @@ fn a_keyword_reaches_the_screen_in_the_themes_colour() {
     let ctx = RenderContext {
         theme: &slate.colors,
         syntax: &slate.syntax,
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: area.width,

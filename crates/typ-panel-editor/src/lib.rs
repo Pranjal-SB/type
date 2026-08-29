@@ -17,6 +17,7 @@ use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
 use typ_syntax::{Language, Syntax};
 
 pub mod actions;
+pub mod diagnostic;
 pub mod gutter;
 mod highlight;
 mod occurrence;
@@ -300,6 +301,15 @@ impl EditorPanel {
         &self.buffer
     }
 
+    /// Take the edits applied since this was last called.
+    ///
+    /// Drained by the app once per event batch, which is what keeps the
+    /// buffer's record of them bounded. Anything holding a position across an
+    /// edit — diagnostics today — maps it forward through these.
+    pub fn take_edits(&mut self) -> Vec<typ_buffer::EditSpan> {
+        self.buffer.take_edits()
+    }
+
     /// The grammar this buffer's extension claims, if any.
     pub fn language(&self) -> Option<Language> {
         self.language
@@ -507,6 +517,15 @@ impl EditorPanel {
         self.buffer.find_all(query)
     }
 
+    /// Replace the gutter's components.
+    ///
+    /// The default carries diagnostics, line numbers and a spacer. This exists
+    /// so a test can strip it to the one column it is asking about, and for the
+    /// configuration that will set it.
+    pub fn set_gutter(&mut self, gutter: crate::gutter::Gutter) {
+        self.gutter = gutter;
+    }
+
     /// Select a range and scroll it into view.
     pub fn select_range(&mut self, selection: Selection) {
         self.selections.set_single(selection);
@@ -638,13 +657,21 @@ impl Panel for EditorPanel {
         // The gutter is furniture, not text: it is drawn into its own area and
         // never windowed by `left_col`, so scrolling a long line sideways moves
         // the code and leaves the numbers standing.
+        // Once per frame, for the whole viewport. Per line it would be a walk
+        // of every diagnostic in the file for every visible row — the same
+        // shape of mistake `highlight::for_viewport` exists to avoid.
+        let diagnostics = crate::diagnostic::for_viewport(ctx.diagnostics, self.top_line..end);
+
         let gutter_lines: Vec<Line> = (self.top_line..end)
             .map(|i| {
-                let line =
-                    Line::from(
-                        self.gutter
-                            .render_line(i, cursor_line, line_count, ctx.theme),
-                    );
+                let worst = diagnostics.get(i - self.top_line).and_then(|row| row.worst);
+                let line = Line::from(self.gutter.render_line(
+                    i,
+                    cursor_line,
+                    line_count,
+                    worst,
+                    ctx.theme,
+                ));
                 // The same predicate the text uses, so the tint cannot cover one
                 // and miss the other. The spans carry a foreground only, so a
                 // background set here survives underneath them.
@@ -716,6 +743,9 @@ impl Panel for EditorPanel {
                         syntax: syntax
                             .get(i - self.top_line)
                             .map_or(&[][..], |spans| spans.as_slice()),
+                        diagnostics: diagnostics
+                            .get(i - self.top_line)
+                            .map_or(&[][..], |row| row.ranges.as_slice()),
                         theme: ctx.theme,
                     };
                     crate::render::styled_line(text, &style)

@@ -3,7 +3,7 @@ type: design
 status: living
 area: spec
 verified: 2026-08-22
-verified-against: v0.2.4
+verified-against: v0.2.4 (§5 stack table: v0.3.0)
 ---
 
 # TYPE — Terminal-Yoked Programming Environment
@@ -179,7 +179,7 @@ Guaranteed by the protocol leverage in §2, not by grinding out features one at 
 | TUI | ratatui 0.30 + crossterm 0.29 |
 | Text buffer | `ropey` |
 | Syntax | `tree-house` + five grammars, **compiled in** — reversed, see below |
-| LSP | not built; the choice and its reasoning are in [`lsp.md`](lsp.md) |
+| LSP | `gen-lsp-types` 0.11 + `lsp-server` 0.10, threads not a runtime — see [`lsp.md`](lsp.md) |
 | Terminal panel | `portable-pty` + `vte` — not built |
 | Git | `gitoxide` — not built |
 | Fuzzy matching | `nucleo-matcher`, without the `nucleo` wrapper |
@@ -189,6 +189,15 @@ Guaranteed by the protocol leverage in §2, not by grinding out features one at 
 decisions for months after the tree stopped agreeing with them, which is the same failure as the
 crate list in §5 — a 2025 prediction being read as a specification. A milestone that changes the
 stack changes this table in the same commit.
+
+**The LSP row was a 2025 prediction and both halves of it were wrong.** It named `lsp-types`
+0.97 and a custom *async* client. `lsp-types` has had no release since June 2024, and the fork
+route every large consumer took is closed to a workspace that publishes — cargo refuses a git
+dependency in a published crate. So: `gen-lsp-types`, generated from the official metamodel,
+which is the class of fix for the eight transcription defects rust-analyzer named when it moved.
+And threads rather than a runtime, because TYPE's loop blocks on one `recv()` and `ParseWorker`
+and `FindWorker` are both threads plus channels — a runtime would be a second concurrency shape
+alongside them and a startup cost against a 100 ms budget.
 
 **Grammars are compiled in, and the dynamic-loading argument was answered rather than accepted.**
 The original reasoning was TermIDE's six-line comment about tree-sitter ABI-14 versus ABI-15

@@ -20,12 +20,14 @@ const AREA: Rect = Rect {
 /// Every test below states coordinates the way it always has — column 1 is the
 /// first cell inside the border — and this shifts them past the gutter that now
 /// sits between the border and the text. Every fixture here is two or three
-/// lines, so the gutter is one digit and a spacer.
+/// lines, so the gutter is a diagnostic sign, one digit and a spacer.
 fn at(kind: MouseEventKind, column: u16, row: u16, modifiers: KeyModifiers) -> MouseEvent {
-    const GUTTER: u16 = 2;
+    // Asked rather than hardcoded: the default gutter grew a diagnostic sign
+    // at M3.
+    let gutter = typ_panel_editor::gutter::Gutter::default().width(1) as u16;
     MouseEvent {
         kind,
-        column: column + GUTTER,
+        column: column + gutter,
         row,
         modifiers,
     }

@@ -64,7 +64,7 @@ fn the_opening_frame_draws_both_panels_and_the_status_bar() {
     // rather than something that appears once there is text.
     let expected = [
         "┌─ opening ──────────────────┬─ untitled ──────────────────┐",
-        "│> src                       │1                            │",
+        "│> src                       │ 1                           │",
         "│  main.rs                   │                             │",
         "│                            │                             │",
         "│                            │                             │",
@@ -169,12 +169,13 @@ fn an_open_file_renders_its_text_with_the_cursor_on_it() {
     let mut terminal = draw(&mut app, 60, 8);
     let rows = rows(&terminal);
     assert!(rows[0].contains("main.rs"), "title missing: {}", rows[0]);
-    assert_eq!(cols(&rows[1], 30, 60), "1 fn main() {}               │");
-    assert_eq!(cols(&rows[2], 30, 60), "2 let x = 1;                 │");
+    assert_eq!(cols(&rows[1], 30, 60), " 1 fn main() {}              │");
+    assert_eq!(cols(&rows[2], 30, 60), " 2 let x = 1;                │");
 
-    // Divider at 29, gutter 30-31: editor text starts at column 32. The
-    // cursor is one line down and one grapheme in.
-    assert_eq!(terminal.get_cursor_position().unwrap(), (33, 2).into());
+    // Divider at 29, gutter 30-32 — a diagnostic sign, a digit, a spacer — so
+    // editor text starts at column 33. The cursor is one line down and one
+    // grapheme in.
+    assert_eq!(terminal.get_cursor_position().unwrap(), (34, 2).into());
 }
 
 #[test]
@@ -188,7 +189,7 @@ fn wide_characters_do_not_push_the_border_out_of_line() {
     // A wide grapheme occupies its cell plus a blank continuation cell, so one
     // char here is one column — which is the whole point: if the width maths
     // were wrong, the trailing border would move.
-    assert_eq!(cols(&rows[1], 30, 60), "1 日 本 語  ok                  │");
+    assert_eq!(cols(&rows[1], 30, 60), " 1 日 本 語  ok                 │");
     // The trailing border is the evidence: get the width maths wrong and it
     // moves. The divider at 29 is the same check on the other side — a tree row
     // that overran would push it right.
@@ -208,8 +209,10 @@ fn the_cursor_lands_past_a_wide_character_not_inside_it() {
     app.handle_chord(key(KeyCode::Right)).unwrap();
 
     let mut terminal = draw(&mut app, 60, 8);
-    // Text starts at 32 and one CJK grapheme is two columns: 32 + 2.
-    assert_eq!(terminal.get_cursor_position().unwrap(), (34, 1).into());
+    // Text starts at 33 — the divider at 29, then a three-cell gutter: a
+    // diagnostic sign, a digit and a spacer. One CJK grapheme is two
+    // columns, so 33 + 2.
+    assert_eq!(terminal.get_cursor_position().unwrap(), (35, 1).into());
 }
 
 #[test]
@@ -282,13 +285,14 @@ fn a_selection_is_visible_in_the_rendered_frame() {
 
     let terminal = draw(&mut app, 60, 8);
     let theme = ThemeColors::default();
-    // Editor text begins at column 32: the divider at 29, then a two-cell gutter.
+    // Editor text begins at column 33: the divider at 29, then a three-cell
+    // gutter — a diagnostic sign, a digit and a spacer.
     // A lone selection is the primary one — the thing every motion is
     // relative to, and the only one on screen worth pointing at.
-    assert_eq!(bg(&terminal, 32, 1), Some(theme.selection_primary_bg));
     assert_eq!(bg(&terminal, 33, 1), Some(theme.selection_primary_bg));
+    assert_eq!(bg(&terminal, 34, 1), Some(theme.selection_primary_bg));
     assert_eq!(
-        bg(&terminal, 34, 1),
+        bg(&terminal, 35, 1),
         Some(theme.bg),
         "the highlight must stop where the selection does"
     );

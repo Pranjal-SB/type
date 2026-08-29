@@ -10,7 +10,7 @@ use std::sync::mpsc::{Receiver, channel};
 use std::time::Duration;
 
 use lsp_server::{Message, Notification};
-use typ_lsp::{Incoming, SpawnError, Transport};
+use typ_lsp::{Incoming, ServerId, SpawnError, Transport};
 
 fn fake() -> &'static str {
     env!("CARGO_BIN_EXE_typ-lsp-fake-server")
@@ -22,15 +22,16 @@ fn args(list: &[&str]) -> Vec<String> {
 
 fn start(flags: &[&str]) -> (Transport, Receiver<Incoming>) {
     let (tx, rx) = channel();
-    let transport = Transport::spawn(fake(), &args(flags), Path::new("."), tx).expect("it starts");
+    let transport =
+        Transport::spawn(ServerId(1), fake(), &args(flags), Path::new("."), tx).expect("it starts");
     (transport, rx)
 }
 
 /// The next message, or a failure that says what was waited for.
 fn next(rx: &Receiver<Incoming>) -> Message {
     match rx.recv_timeout(Duration::from_secs(10)) {
-        Ok(Incoming::Message(m)) => *m,
-        Ok(Incoming::Closed) => panic!("the server closed before answering"),
+        Ok(Incoming::Message(_, m)) => *m,
+        Ok(Incoming::Closed(_)) => panic!("the server closed before answering"),
         Err(e) => panic!("nothing arrived: {e}"),
     }
 }
@@ -48,9 +49,15 @@ fn a_missing_binary_is_a_reason_not_a_panic() {
     // The ordinary case on most machines: nobody has every language server
     // installed, and that must not read as an error.
     let (tx, _rx) = channel::<Incoming>();
-    let err = Transport::spawn("definitely-not-a-language-server", &[], Path::new("."), tx)
-        .err()
-        .expect("a missing binary cannot start");
+    let err = Transport::spawn(
+        ServerId(1),
+        "definitely-not-a-language-server",
+        &[],
+        Path::new("."),
+        tx,
+    )
+    .err()
+    .expect("a missing binary cannot start");
     assert!(matches!(err, SpawnError::NotFound { .. }), "was: {err:?}");
 }
 
@@ -77,13 +84,13 @@ fn a_malformed_frame_does_not_lose_the_connection() {
     let mut saw_response = false;
     for _ in 0..4 {
         match rx.recv_timeout(Duration::from_secs(10)) {
-            Ok(Incoming::Message(m)) => {
+            Ok(Incoming::Message(_, m)) => {
                 if matches!(*m, Message::Response(_)) {
                     saw_response = true;
                     break;
                 }
             }
-            Ok(Incoming::Closed) => break,
+            Ok(Incoming::Closed(_)) => break,
             Err(_) => break,
         }
     }
@@ -96,11 +103,11 @@ fn a_server_that_exits_reports_it_rather_than_hanging() {
     let mut closed = false;
     for _ in 0..4 {
         match rx.recv_timeout(Duration::from_secs(10)) {
-            Ok(Incoming::Closed) => {
+            Ok(Incoming::Closed(_)) => {
                 closed = true;
                 break;
             }
-            Ok(Incoming::Message(_)) => {}
+            Ok(Incoming::Message(..)) => {}
             Err(_) => break,
         }
     }
@@ -153,7 +160,7 @@ fn dropping_the_transport_kills_the_grandchildren() {
 
     let grandchild = (0..4)
         .find_map(|_| match rx.recv_timeout(Duration::from_secs(10)) {
-            Ok(Incoming::Message(m)) => match *m {
+            Ok(Incoming::Message(_, m)) => match *m {
                 Message::Notification(n) if n.method == "fake/grandchild" => n
                     .params
                     .get("pid")

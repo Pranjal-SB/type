@@ -109,6 +109,7 @@ fn draw_frame(editor: &mut EditorPanel, area: Rect) {
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: area.width,
@@ -208,6 +209,7 @@ fn draw_highlighted_frame(editor: &mut EditorPanel, area: Rect, theme: &typ_core
     let ctx = RenderContext {
         theme: &colors,
         syntax: theme,
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: area.width,
@@ -276,4 +278,98 @@ fn a_cold_parse_of_50k_lines_is_recorded() {
     // it is the number that sets the big-file threshold, and an unrecorded
     // number is one nobody can tell has regressed.
     println!("cold parse, 50k lines: {best:?}");
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored"]
+fn painting_a_frame_with_forty_undercurled_ranges_fits_in_a_frame() {
+    // A file mid-refactor: every visible line carrying a diagnostic. The
+    // underline is a third style axis, so every one of them breaks a span —
+    // this is the cost of that, against the same 16 ms the paint already has.
+    let _guard = exclusive();
+    let mut panel = big_editor();
+    let theme = ThemeColors::default();
+    let area = Rect::new(0, 0, 120, 40);
+
+    let diagnostics: Vec<typ_core::Diagnostic> = (0..40)
+        .map(|line| typ_core::Diagnostic {
+            range: (
+                typ_buffer::Position { line, col: 4 },
+                typ_buffer::Position { line, col: 11 },
+            ),
+            severity: typ_core::Severity::Error,
+            message: "mismatched types".into(),
+            source: Some("rustc".into()),
+        })
+        .collect();
+
+    let ctx = RenderContext {
+        theme: &theme,
+        syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &diagnostics,
+        is_focused: true,
+        panel_index: 0,
+        terminal_width: area.width,
+        terminal_height: area.height,
+    };
+
+    let mut best = u128::MAX;
+    for _ in 0..5 {
+        let mut buf = Buffer::empty(area);
+        let start = Instant::now();
+        panel.render(area, &mut buf, &ctx);
+        best = best.min(start.elapsed().as_micros());
+    }
+    println!("paint with 40 undercurled ranges: {best} µs");
+    assert!(
+        best < 2_000,
+        "painting 40 diagnostics took {best} µs against a 2 ms budget"
+    );
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored"]
+fn four_hundred_diagnostics_outside_the_viewport_cost_one_pass() {
+    // `for_viewport`, not `for_buffer`: a 50k-line file with four hundred
+    // problems must not walk them per row. Forty rows, four hundred
+    // diagnostics, and only the handful on screen may do any work.
+    let _guard = exclusive();
+    let mut panel = big_editor();
+    let theme = ThemeColors::default();
+    let area = Rect::new(0, 0, 120, 40);
+
+    let diagnostics: Vec<typ_core::Diagnostic> = (0..400)
+        .map(|i| {
+            let line = 1_000 + i * 100;
+            typ_core::Diagnostic {
+                range: (
+                    typ_buffer::Position { line, col: 4 },
+                    typ_buffer::Position { line, col: 11 },
+                ),
+                severity: typ_core::Severity::Warning,
+                message: "unused".into(),
+                source: None,
+            }
+        })
+        .collect();
+
+    let ctx = RenderContext {
+        theme: &theme,
+        syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &diagnostics,
+        is_focused: true,
+        panel_index: 0,
+        terminal_width: area.width,
+        terminal_height: area.height,
+    };
+
+    let mut best = u128::MAX;
+    for _ in 0..5 {
+        let mut buf = Buffer::empty(area);
+        let start = Instant::now();
+        panel.render(area, &mut buf, &ctx);
+        best = best.min(start.elapsed().as_micros());
+    }
+    println!("paint with 400 off-screen diagnostics: {best} µs");
+    assert!(best < 2_000, "off-screen diagnostics cost {best} µs");
 }

@@ -24,6 +24,7 @@ fn render(panel: &mut EditorPanel) -> Buffer {
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: AREA.width,
@@ -34,16 +35,13 @@ fn render(panel: &mut EditorPanel) -> Buffer {
     buf
 }
 
-/// Screen x of a display column of text: the frame, then the gutter, which is
-/// as wide as the line count needs plus one blank.
+/// Screen x of a display column of text: the frame, then the gutter.
+///
+/// Asked rather than counted. The gutter grew a diagnostic sign at M3, and a
+/// hand-rolled width here would have made that land as seven indent-guide
+/// failures instead of as one arithmetic change.
 fn tx(line_count: usize, col: u16) -> u16 {
-    let mut digits = 1;
-    let mut n = line_count;
-    while n >= 10 {
-        n /= 10;
-        digits += 1;
-    }
-    1 + digits + 1 + col
+    1 + typ_panel_editor::gutter::Gutter::default().width(line_count) as u16 + col
 }
 
 fn ty(line: u16) -> u16 {

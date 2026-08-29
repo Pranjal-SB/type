@@ -33,6 +33,11 @@ pub struct Settings {
     /// Unlike the two above there is no `None` case: every value is a real
     /// answer, and "unset" already has a name — [`Whitespace::None`].
     pub whitespace: Whitespace,
+    /// Language servers, the compiled-in defaults with `[[language]]` applied.
+    ///
+    /// Never empty: TYPE knows about rust-analyzer and taplo without being
+    /// told, and a config file that mentions neither leaves both.
+    pub language_servers: Vec<crate::lsp::ServerConfig>,
 }
 
 impl Default for Settings {
@@ -42,6 +47,7 @@ impl Default for Settings {
             color_depth: None,
             indent_width: None,
             whitespace: Whitespace::default(),
+            language_servers: crate::lsp::config::defaults(),
         }
     }
 }
@@ -115,9 +121,16 @@ pub fn load_settings(path: Option<&Path>) -> (Settings, Option<String>) {
                     "whitespace {value} is not \"none\", \"trailing\", \"selection\" or \"all\""
                 )),
             },
+            // Handled below, as a whole: an array of tables is not one value
+            // with one answer, and each entry stands or falls on its own.
+            "language" => {}
             other => complaints.push(format!("{other} is not a setting this editor has")),
         }
     }
+
+    let (servers, server_complaints) = crate::lsp::config::load(&table);
+    settings.language_servers = servers;
+    complaints.extend(server_complaints);
 
     let warning =
         (!complaints.is_empty()).then(|| format!("{}: {}", path.display(), complaints.join("; ")));

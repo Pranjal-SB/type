@@ -62,3 +62,61 @@ impl Shift {
         self.lines += after.line as isize - applied_end.line as isize;
     }
 }
+
+/// One edit that has been applied, in the coordinates current when it ran.
+///
+/// [`Shift`] above answers "where does the *next* edit in this batch go", which
+/// is a different question from "where did the thing I was already holding
+/// move to" — `Shift::apply` moves every position, including ones before the
+/// edit, because within a batch there are none. A diagnostic can sit anywhere,
+/// so it needs the edit's own extent to compare against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditSpan {
+    /// Where the replaced range began.
+    pub start: Position,
+    /// Where it ended, before the replacement.
+    pub old_end: Position,
+    /// Where the replacement text left it.
+    pub new_end: Position,
+}
+
+/// Where `pos` sits after `edits` have been applied to the text it described.
+///
+/// The edits are in the order they ran, each stated in the coordinates that
+/// were current at the time, which is what makes folding them left to right
+/// correct.
+///
+/// A position **inside** an edit's range clamps to the range's start. There is
+/// nowhere else honest for it to go: the text it named is gone.
+///
+/// **This does not survive an undo, a redo, or a reload from disk.** Those
+/// replace the whole rope rather than going through `replace_range`, so no
+/// spans are recorded and everything held against the old text keeps stale
+/// coordinates until whatever produced it produces it again.
+pub fn shift_through(pos: Position, edits: &[EditSpan]) -> Position {
+    edits.iter().fold(pos, shift_one)
+}
+
+fn shift_one(pos: Position, edit: &EditSpan) -> Position {
+    if before(pos, edit.start) {
+        return pos;
+    }
+    if !before(edit.old_end, pos) {
+        // Inside the replaced range, or exactly at its end.
+        return edit.start;
+    }
+    let lines = edit.new_end.line as isize - edit.old_end.line as isize;
+    let col = if pos.line == edit.old_end.line {
+        (pos.col as isize + (edit.new_end.col as isize - edit.old_end.col as isize)).max(0) as usize
+    } else {
+        pos.col
+    };
+    Position {
+        line: (pos.line as isize + lines).max(0) as usize,
+        col,
+    }
+}
+
+fn before(a: Position, b: Position) -> bool {
+    (a.line, a.col) < (b.line, b.col)
+}

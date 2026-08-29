@@ -4,6 +4,9 @@ use typ_app::status::{Emphasis, SegmentId, StatusFacts, file_type_of, segments};
 
 fn facts() -> StatusFacts<'static> {
     StatusFacts {
+        progress: &[],
+        errors: 0,
+        warnings: 0,
         file_name: "main.rs",
         modified: false,
         file_type: Some("rs"),

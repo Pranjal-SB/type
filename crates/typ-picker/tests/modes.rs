@@ -143,6 +143,7 @@ fn a_search_row_shows_the_path_the_line_number_and_the_text() {
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: 60,

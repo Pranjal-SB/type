@@ -19,6 +19,7 @@ fn render(panel: &mut EditorPanel, area: Rect) -> Buffer {
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
         is_focused: true,
         panel_index: 0,
         terminal_width: area.width,
@@ -36,10 +37,11 @@ const AREA: Rect = Rect {
     height: 6,
 };
 
-/// Screen x for a display column of text: border, then a two-cell gutter for
-/// the small fixtures here.
+/// Screen x for a display column of text: border, then the gutter.
+///
+/// Asked rather than counted — the gutter grew a diagnostic sign at M3.
 fn tx(col: u16) -> u16 {
-    3 + col
+    1 + typ_panel_editor::gutter::Gutter::default().width(1) as u16 + col
 }
 
 /// Screen y for a buffer line at the top of the viewport.
@@ -58,7 +60,10 @@ fn the_cursors_line_is_tinted_across_the_whole_text_width() {
     // Past the end of "ab" as well as under it. A highlight that stops at the
     // last character reads as a rendering bug rather than as a feature — it is
     // the ragged right edge that gives it away.
-    for col in 0..20 {
+    // Every column the text area actually has: the frame takes two and the
+    // gutter takes what it takes.
+    let text_width = AREA.width - 2 - typ_panel_editor::gutter::Gutter::default().width(1) as u16;
+    for col in 0..text_width {
         assert_eq!(
             buf[(tx(col), ty(0))].bg,
             theme.cursor_line_bg,
