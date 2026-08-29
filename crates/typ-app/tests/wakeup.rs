@@ -116,3 +116,28 @@ fn quitting_stops_the_loop() {
 
     assert_eq!(flow, Flow::Quit);
 }
+
+#[test]
+fn the_loop_wires_the_app_to_its_workers() {
+    // **The test that was missing for four releases.** From M2.7 until v0.3.0
+    // `event_loop` created the event channel, gave one end to the input pump
+    // and never gave the other to the app — so every shipped binary ran with
+    // `parse_worker`, `find_worker` and `sender` all `None`. Syntax
+    // highlighting, the picker's corpus, project search, external-change
+    // reloading and every language server were fully tested and completely
+    // dead.
+    //
+    // Every other test in the suite calls `set_event_sender` itself, which is
+    // exactly why none of them could see it. This one asserts the *loop's*
+    // wiring rather than its own.
+    let dir = std::env::temp_dir().join("typ-wakeup-wired");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut app = App::new(&dir).unwrap();
+    assert!(!app.is_wired(), "a fresh app has no channel");
+
+    let _rx = typ_app::run::wire(&mut app);
+    assert!(
+        app.is_wired(),
+        "the loop left the app with no way to reach its workers"
+    );
+}

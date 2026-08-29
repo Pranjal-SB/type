@@ -247,6 +247,14 @@ impl App {
         })
     }
 
+    /// Whether the app has been given the channel its workers report through.
+    ///
+    /// The one thing a test of `App` alone could not check, because a test
+    /// always wires it. See `run::wire`.
+    pub fn is_wired(&self) -> bool {
+        self.sender.is_some() && self.parse_worker.is_some() && self.find_worker.is_some()
+    }
+
     /// Something changed that the screen does not show yet.
     pub fn mark_dirty(&mut self) {
         self.dirty = true;

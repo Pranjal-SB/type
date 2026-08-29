@@ -93,9 +93,36 @@ fn spawn_input_pump(tx: AppSender) {
     });
 }
 
-fn event_loop(terminal: &mut Terminal<TypBackend<Stdout>>, app: &mut App) -> Result<()> {
+/// Give the app the channel its workers report through, and start the pump.
+///
+/// **A named function because the line it replaces was never written.** From
+/// M2.7 until v0.3.0 `event_loop` made this channel, handed one end to the
+/// input pump, and never gave the other to the app — so in every shipped
+/// binary `parse_worker`, `find_worker` and `sender` were all `None`. Syntax
+/// highlighting, the file picker's corpus, project search, external-change
+/// reloading and every language server were fully tested and completely dead,
+/// because one call was missing one layer above where the tests look.
+///
+/// `parse_wiring.rs` opens by saying its whole reason for existing is that "a
+/// wiring mistake — a request never made, a result never routed — passes all
+/// of them". It was right, and it was one frame too low: the tests wire the
+/// app by hand, so the only thing they could not catch was the binary failing
+/// to.
+pub fn wire(app: &mut App) -> AppReceiver {
     let (tx, rx) = channel();
+    app.set_event_sender(tx.clone());
     spawn_input_pump(tx);
+    // **Once before the loop blocks.** `sync_language_servers` otherwise runs
+    // only at the end of a batch, and the loop draws a frame and then waits on
+    // `recv()` — so a file opened from the command line reached no server until
+    // the user pressed a key. `set_event_sender` already does the same thing
+    // for the parse, and for the same reason.
+    app.sync_language_servers();
+    rx
+}
+
+fn event_loop(terminal: &mut Terminal<TypBackend<Stdout>>, app: &mut App) -> Result<()> {
+    let rx = wire(app);
 
     loop {
         // `Terminal::draw` diffs against the previous buffer and emits only the
