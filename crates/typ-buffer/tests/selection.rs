@@ -138,3 +138,45 @@ fn a_caret_inside_a_selection_is_absorbed_by_it() {
     assert_eq!(s.len(), 1);
     assert_eq!(s.primary().range(), (pos(0, 0), pos(0, 6)));
 }
+
+#[test]
+fn a_caret_at_a_selections_start_merges_into_it() {
+    // The one case the half-open rule does *not* cover. A caret at `P` sorts
+    // before the selection `[P, Q)` it sits inside (`range()` gives
+    // `(P,P) < (P,Q)`) so the strict `a_end > b_start` test is false and the
+    // caret-vs-caret fallback needs both sides empty. Reachable by
+    // double-clicking a word and Alt+clicking its first cell.
+    //
+    // Not cosmetic: `edit_at_each_selection` applies in ascending order through
+    // a `Shift`, so the caret inserts first, records a column shift, and the
+    // selection is then replaced one grapheme to the right of what was
+    // selected. Gap 72.
+    let mut s = Selections::default();
+    s.set_single(Selection {
+        anchor: pos(0, 5),
+        head: pos(0, 7),
+    });
+    s.push(Selection::caret(pos(0, 5)));
+
+    assert_eq!(
+        s.len(),
+        1,
+        "two selections both cover column 5: {:?}",
+        s.iter().collect::<Vec<_>>()
+    );
+    assert_eq!(s.iter().next().unwrap().range(), (pos(0, 5), pos(0, 7)));
+}
+
+#[test]
+fn a_caret_at_a_selections_end_stays_separate() {
+    // The other side of the same boundary, and it must not move: `contains` is
+    // half-open, so `P..Q` does not contain `Q` and a caret there is a second
+    // cursor rather than a duplicate.
+    let mut s = Selections::default();
+    s.set_single(Selection {
+        anchor: pos(0, 5),
+        head: pos(0, 7),
+    });
+    s.push(Selection::caret(pos(0, 7)));
+    assert_eq!(s.len(), 2);
+}

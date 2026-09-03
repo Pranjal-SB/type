@@ -163,11 +163,23 @@ fn overlaps(a: Selection, b: Selection) -> bool {
         // same rule as `Selection::contains` being half-open.
         return true;
     }
-    // Two carets at the same position are one cursor, not two. Half-open
-    // ranges alone would keep them apart, because an empty range never
-    // strictly contains anything — and the consequence is typing inserting
-    // twice at the same place.
-    a.is_empty() && b.is_empty() && a_end == b_start
+    // The boundary case, and it is one-sided. `a` is the earlier of the two
+    // (`normalize` sorts by `range()` before it gets here) so `a_end == b_start`
+    // means one of:
+    //
+    //   * `a` is a caret at `b`'s start. `[P,Q)` **does** contain `P`, so this
+    //     is one cursor. Two carets at the same position are the same case.
+    //   * `a` is a selection ending where `b` starts. Half-open, so they only
+    //     touch: two cursors.
+    //   * `a` is a selection and `b` a caret at its end. `[P,Q)` does **not**
+    //     contain `Q`: two cursors.
+    //
+    // So it turns on `a` being empty and not on either being empty. Testing
+    // both (which is what this did) left a caret sitting exactly at a
+    // selection's start as a second entry covering the same position, and
+    // `edit_at_each_selection` then replaced one grapheme to the right of what
+    // was selected. Gap 72.
+    a.is_empty() && a_end == b_start
 }
 
 fn union(a: Selection, b: Selection) -> Selection {
