@@ -283,11 +283,27 @@ impl Picker {
         self.selected = next.clamp(0, last as isize) as usize;
     }
 
-    /// Scroll without moving the selection — what a wheel event resolves to.
+    /// Move the viewport: what a wheel event resolves to.
+    ///
+    /// **The selection comes along.** This used to move `offset` alone, on the
+    /// reading that a wheel is not a selection gesture. It cannot be: `visible`
+    /// promises the selection is among the rows it returns and moves the offset
+    /// to keep that promise, and the mouse hit-test resolves a click against
+    /// exactly that slice. So a wheel notch that left the selection behind was
+    /// undone by the very next paint, and the list did not move at all: from
+    /// the top of a list, which is where every picker starts, the wheel did
+    /// nothing whatsoever. Gap 74.
+    ///
+    /// Carrying the selection is also what fzf and telescope do.
     pub fn scroll(&mut self, delta: isize, rows: usize) {
         let max = self.len().saturating_sub(rows);
         let next = self.offset as isize + delta;
         self.offset = next.clamp(0, max as isize) as usize;
+        if rows > 0 && self.len() > 0 {
+            let last = self.len() - 1;
+            let bottom = (self.offset + rows - 1).min(last);
+            self.selected = self.selected.clamp(self.offset.min(last), bottom);
+        }
     }
 
     /// Bring the selection into a window of `rows` lines.
