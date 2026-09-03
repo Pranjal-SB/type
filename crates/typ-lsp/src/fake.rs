@@ -108,6 +108,29 @@ fn progress(out: &mut impl Write, token: &str, value: serde_json::Value) {
     let _ = out.flush();
 }
 
+/// The id the fake gives `window/workDoneProgress/create`.
+const CREATE_ID: i32 = 7;
+
+/// Two tokens' worth of progress, which is the ordinary rust-analyzer shape
+/// rather than the strange one.
+fn progress_burst(out: &mut impl Write) {
+    progress(
+        out,
+        "indexing",
+        serde_json::json!({ "kind": "begin", "title": "Indexing" }),
+    );
+    progress(
+        out,
+        "indexing",
+        serde_json::json!({ "kind": "report", "percentage": 40 }),
+    );
+    progress(
+        out,
+        "fetching",
+        serde_json::json!({ "kind": "begin", "title": "Fetching" }),
+    );
+}
+
 /// A URI naming `name` in the same directory as `uri`.
 fn sibling(uri: &str, name: &str) -> String {
     match uri.rfind('/') {
@@ -299,40 +322,20 @@ pub fn run() {
                 }
                 if method == "initialized" && flags.progress {
                     if flags.progress_create {
+                        // **And then wait.** The burst goes out when the client
+                        // answers, not regardless of whether it does: sending
+                        // it anyway is what let a client that answered nothing
+                        // pass the test for this. See the `Response` arm.
                         let _ = Message::Request(Request {
-                            id: 7.into(),
+                            id: CREATE_ID.into(),
                             method: "window/workDoneProgress/create".into(),
                             params: serde_json::json!({ "token": "indexing" }),
                         })
                         .write(&mut out);
                         let _ = out.flush();
+                    } else {
+                        progress_burst(&mut out);
                     }
-                    progress(
-                        &mut out,
-                        "indexing",
-                        serde_json::json!({
-                            "kind": "begin",
-                            "title": "Indexing",
-                        }),
-                    );
-                    progress(
-                        &mut out,
-                        "indexing",
-                        serde_json::json!({
-                            "kind": "report",
-                            "percentage": 40,
-                        }),
-                    );
-                    // A second token at once. Two pieces of work is the
-                    // ordinary case for rust-analyzer, not the strange one.
-                    progress(
-                        &mut out,
-                        "fetching",
-                        serde_json::json!({
-                            "kind": "begin",
-                            "title": "Fetching",
-                        }),
-                    );
                 }
                 if method == "initialized" && flags.server_request {
                     // The half clients forget. rust-analyzer really does this,
@@ -346,7 +349,21 @@ pub fn run() {
                     let _ = out.flush();
                 }
             }
-            Message::Response(_) => {}
+            Message::Response(response) => {
+                // The reply to `window/workDoneProgress/create`, and the burst
+                // waits for it. A fake that sends progress regardless cannot
+                // tell a client that answers from one that does not, and the
+                // client did not answer at all. **An accepting reply**: a
+                // client is entitled to refuse the token, and one that refuses
+                // should not then be sent progress for it, so an error here is
+                // as good as silence. Gaps 78 and 131.
+                if flags.progress_create
+                    && response.id == CREATE_ID.into()
+                    && response.response_result.is_ok()
+                {
+                    progress_burst(&mut out);
+                }
+            }
         }
     }
 }

@@ -399,7 +399,7 @@ impl App {
             // the first one the status bar; until then a server talking about
             // itself changes nothing on screen.
             typ_lsp::LspEvent::Notification { .. } => false,
-            typ_lsp::LspEvent::Response { id, result } => self.handle_answer(id, result),
+            typ_lsp::LspEvent::Response { id, result } => self.handle_answer(server, id, result),
             typ_lsp::LspEvent::ServerRequest { .. } => false,
             // **Say why, in the server's own words.** A rustup shim for a
             // component that is not installed is on `PATH`, spawns fine, and
@@ -487,11 +487,14 @@ impl App {
     /// An answer arrived. Returns whether the screen changed.
     fn handle_answer(
         &mut self,
+        server: typ_lsp::ServerId,
         id: typ_lsp::RequestId,
         result: Result<serde_json::Value, typ_lsp::ResponseError>,
     ) -> bool {
         // Nobody is waiting: it was cancelled, or its tab closed under it.
-        let Some(pending) = self.lsp.take_pending(&id) else {
+        // Keyed on the server too: a `RequestId` is unique within one
+        // conversation and not across them. Gap 76.
+        let Some(pending) = self.lsp.take_pending(server, &id) else {
             return false;
         };
         let Ok(result) = result else {
