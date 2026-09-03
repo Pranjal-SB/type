@@ -338,3 +338,47 @@ fn an_index_past_the_end_of_a_path_does_not_panic() {
     let mut buf = Buffer::empty(area);
     picker.render(area, &mut buf, &ctx);
 }
+
+// --- control characters -----------------------------------------------------
+//
+// `Cell::set_symbol` is ratatui's low-level API and does not filter; the two
+// that do are `Span::styled_graphemes` and `Buffer::set_stringn`, and the
+// picker uses neither. Both of the strings it paints are attacker-reachable
+// (a path comes from the walk, a search row's text comes from a file's bytes)
+// and `TypBackend` prints a cell's symbol to the terminal verbatim. A filename
+// is any byte but `/` and NUL on POSIX, and git checks one out happily.
+
+/// `README<ESC>]52;c;ZXZpbA==<BEL>.md`: an OSC 52 clipboard write.
+const HOSTILE: &str = "README\u{1b}]52;c;ZXZpbA==\u{7}.md";
+
+fn control_cells(buf: &Buffer, area: Rect) -> Vec<(u16, u16)> {
+    (0..area.height)
+        .flat_map(|y| (0..area.width).map(move |x| (x, y)))
+        .filter(|&(x, y)| buf[(x, y)].symbol().contains(|c: char| c.is_control()))
+        .collect()
+}
+
+#[test]
+fn an_escape_sequence_in_a_path_never_reaches_a_cell() {
+    let theme = ThemeColors::default();
+    let mut picker = open(&[HOSTILE]);
+    let area = Rect::new(0, 0, 60, 12);
+    let ctx = RenderContext {
+        theme: &theme,
+        syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
+        is_focused: true,
+        panel_index: 0,
+        terminal_width: 60,
+        terminal_height: 24,
+    };
+    let mut buf = Buffer::empty(area);
+    picker.render(area, &mut buf, &ctx);
+
+    let escaped = control_cells(&buf, area);
+    assert!(
+        escaped.is_empty(),
+        "raw control characters reached {} cells: {escaped:?}",
+        escaped.len()
+    );
+}

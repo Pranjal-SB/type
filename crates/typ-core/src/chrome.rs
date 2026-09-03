@@ -22,6 +22,29 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
+use unicode_segmentation::UnicodeSegmentation;
+
+/// The graphemes of `text` that are safe to put in a cell, in order.
+///
+/// **`Cell::set_symbol` does not filter and the backend does not either.**
+/// ratatui strips control characters in `Span::styled_graphemes` and
+/// `Buffer::set_stringn`, and says in its own source that `set_symbol` is a
+/// low-level API where the caller is responsible. `TypBackend` then writes a
+/// cell's symbol to the terminal verbatim, so an `ESC` that reaches a cell is
+/// an escape sequence the terminal obeys.
+///
+/// Both strings TYPE paints through `set_symbol` are attacker-reachable: a tab
+/// label is a file name, and a picker row is a path from the walk or a line of
+/// bytes from a searched file. A filename is any byte but `/` and NUL on POSIX
+/// and git checks one out happily, so `typ .` on a cloned repository was enough
+/// to hand a terminal an OSC 52 clipboard write. Gap 69.
+///
+/// One function rather than the same `filter` at each site, for the reason gap
+/// 68 records: a predicate written twice is a predicate that drifts once.
+pub fn printable(text: &str) -> impl Iterator<Item = &str> {
+    text.graphemes(true)
+        .filter(|g| !g.contains(char::is_control))
+}
 
 use crate::RenderContext;
 

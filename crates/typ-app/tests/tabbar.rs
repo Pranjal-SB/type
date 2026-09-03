@@ -241,3 +241,23 @@ fn a_cell_knows_which_tab_it_is() {
         "the bar scrolled but the cells still claim to start at tab 0"
     );
 }
+
+#[test]
+fn an_escape_sequence_in_a_file_name_never_reaches_a_cell() {
+    // A tab label is `panel.title()`, i.e. the file's name, and `write_cell`
+    // paints it through `Cell::set_symbol`: the one ratatui API that does not
+    // filter control characters. `TypBackend` then prints the symbol verbatim.
+    // The picker has the same defect against the same byte; see gap 69.
+    let hostile = "README\u{1b}]52;c;ZXZpbA==\u{7}.md".to_string();
+    let area = Rect::new(0, 0, 40, 1);
+    let mut buf = Buffer::empty(area);
+    let theme = typ_core::ThemeColors::default();
+
+    tabbar::draw(&mut buf, area, &[hostile, "b.rs".to_string()], 0, &theme);
+
+    let drawn = row(&buf, 0);
+    assert!(
+        !drawn.contains(|c: char| c.is_control()),
+        "a control character reached the tab bar: {drawn:?}"
+    );
+}

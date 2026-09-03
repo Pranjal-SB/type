@@ -12,6 +12,7 @@ pub mod theme;
 
 pub use action::{Action, Direction, Motion};
 pub use audit::audit;
+pub use chrome::printable;
 pub use colour::{Depth, downgrade};
 pub use diagnostic::{Diagnostic, Severity};
 pub use event::{AppEvent, HandlerId, NotifyLevel, PanelEvent, PanelId};

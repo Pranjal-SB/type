@@ -10,7 +10,6 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use typ_buffer::display_width;
 use typ_core::ThemeColors;
-use unicode_segmentation::UnicodeSegmentation;
 
 /// A space either side of the name, so adjacent tabs do not read as one word,
 /// plus the column the close box sits in.
@@ -155,7 +154,9 @@ fn write_cell(buf: &mut Buffer, area: Rect, cell: TabCell, label: &str, style: S
     };
 
     put(&mut x, " ");
-    for grapheme in label.graphemes(true) {
+    // `printable`, not `graphemes`: a label is a file name, and `set_symbol`
+    // hands whatever it is given straight to the terminal. Gap 69.
+    for grapheme in typ_core::printable(label) {
         // Leave room for the trailing space and the close box, so a long name
         // is clipped rather than growing over them.
         if x + 2 >= end {

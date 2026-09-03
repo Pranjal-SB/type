@@ -2195,6 +2195,7 @@ dependencies = [
  "typ-find",
  "typ-lsp",
  "typ-syntax",
+ "unicode-segmentation",
 ]
 
 [[package]]

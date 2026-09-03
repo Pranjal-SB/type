@@ -272,7 +272,10 @@ fn write_clipped(
     // Both sequences are ascending, so one cursor into `matched_indices` walks
     // alongside the graphemes instead of searching it per cell.
     let mut next = matched_indices.iter().copied().peekable();
-    for (i, grapheme) in text.graphemes(true).take(width as usize).enumerate() {
+    // `printable`, not `graphemes`: a path from the walk and a matched line
+    // from a searched file are both attacker-reachable, and `set_symbol` hands
+    // whatever it is given straight to the terminal. Gap 69.
+    for (i, grapheme) in typ_core::printable(text).take(width as usize).enumerate() {
         let cell_x = x + i as u16;
         if cell_x >= buf.area.right() || y >= buf.area.bottom() {
             break;
