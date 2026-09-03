@@ -141,6 +141,13 @@ impl App {
             return;
         }
 
+        // **The answer dies with the question.** `close_pending` is an index and
+        // an index is not a handle: closing a tab in the middle of the list
+        // slides another one into the number just confirmed, and `handle_chord`
+        // deliberately does not `clear_transient` for `CloseTab`, so without
+        // this, one more Ctrl+W discards the new occupant with no prompt.
+        self.close_pending = None;
+
         // Never zero tabs: `editor()` would have to return an `Option` and
         // every one of its callers would handle a state with no meaning. The
         // last one closing leaves the empty buffer the editor starts in.
