@@ -1104,6 +1104,99 @@ quadratic at any scaling factor, and paint growing linearly with cursors that ar
 linear at any scaling factor. Treat the numbers as "which order of magnitude and which curve",
 not as measurements to regress against; the budget tests are the place for that.
 
+### Who found what, and what that is worth
+
+Nine readers ran over the tree in parallel, each with one scope and no sight of the others. That
+independence is the only reason this section means anything: **a defect two readers reached from
+different directions is worth more than one reader's confident report**, and there is no way to
+tell them apart later unless it is written down now.
+
+| Scope | Gaps it produced |
+|---|---|
+| `typ-buffer`, `typ-core` | 72, 73, 80, 81, 100, 115, 117, 118, 119 |
+| `typ-panel-editor` | 81, 87, 88, 89, 123 |
+| `typ-app` wiring, `main.rs` | 67, 71, 79, 83, 84, 85, 86, 115, 124, 125, 126 |
+| `typ-lsp`, `typ-app/lsp`, `typ-syntax` | 76, 77, 78, 93, 95, 111, 112, 113, 114 |
+| `typ-find`, `typ-picker`, `typ-panel-tree`, `typ-registry` | 74, 75, 96, 107, 108, 109, 110, 116, 122 |
+| Silent failure, whole tree | 70, 90, 91, 92, 93, 94, 95, 97, 98, 99, 101, 102 |
+| Type design | 82, 140–145 |
+| Security | 69, 103, 104, 146 |
+| The test suite itself | 127–139 |
+| Read directly rather than delegated | 105, 106, 120, and the clean bills on the perf workflow, `PanelEvent`'s variant count, `Action`'s coverage, raw subtraction, the manifests test and both installers |
+
+**Four were found twice, independently.** Treat these as the highest-confidence rows in the part:
+
+- **Gap 95** (the two discarded Win32 `BOOL`s) came from the LSP reader and the silent-failure
+  reader separately, by different routes: one auditing process lifetime, one auditing discarded
+  return values.
+- **Gap 93** (a refused `initialize` recorded as a successful one) likewise.
+- **Gaps 72 and 73** were found by the buffer reader as two bugs in `overlaps` and `union`, and
+  by the type-design reader as one question: "what actually enforces the `Selections`
+  invariants?", with those two as its evidence. The second framing is why gaps 140–145 exist.
+- **Gap 81** arrived as two halves that had to be put together: the buffer reader found
+  `begin_edit_group` snapshotting unconditionally, and the panel-editor reader independently
+  found `edit_at_each_selection` calling it without a guard while every sibling call site guards.
+  Neither half is the whole defect.
+
+Everything else is a single reader's finding, re-checked by hand before it was written down. That
+re-check is not nothing, but it is one person agreeing with one report, which is a weaker thing
+than the four rows above.
+
+### Dead ends
+
+Eleven claims were investigated and turned out to be wrong, or right for the wrong reason. They
+are here because a wrong answer that is not written down gets re-derived at full price, and
+because six of them are the same mistake: **believing a measurement without checking what it
+measured.**
+
+**Wrong theories about the code:**
+
+- **`install.sh`'s `set -e` loop.** The `for candidate in …; do [ -f "$candidate" ] && found=… ; done`
+  body looked like it must exit early when the last iteration's test fails. It does not: POSIX
+  exempts a failure that is not the last command of an AND-list, so the list's status is 1 but
+  the shell does not exit. Settled in two minutes under `dash` after an argument that would have
+  gone on much longer. The installer is fine.
+- **The `overlaps` fix.** The proposal was `a_end == b_start && (a.is_empty() || b.is_empty())`.
+  Wrong: `a` is always the earlier of the two, and a caret at a *preceding* selection's end is a
+  genuine second cursor because `[P,Q)` does not contain `Q`. The correct condition is
+  `a.is_empty()` alone. Caught by writing the second boundary test before the fix.
+- **ratatui's `debug_assert!` on control characters.** Reported as "a debug build panics on this
+  input, so there is at least a signal". It does not fire on the render path: the assert is in
+  `cell_width`, which that path does not reach. Gap 69 was silent in debug and release alike.
+
+**Reproductions that passed, and did not mean what that looked like:**
+
+- **Gap 67's first repro** closed the *last* tab. Its index is never reused, so `close_pending`
+  named nothing and the test went green. The defect needs a middle tab. A failed reproduction
+  disproves the reproduction before it disproves the claim: this one nearly buried a CRITICAL.
+- **Gap 75's first probe** used an empty `sub/` directory, so expanding it added no rows and the
+  assertion could not see the bug it was written for.
+- **Gap 75's second probe** asserted that clicking a directory twice expands it. It does not: a
+  fresh tree already has entry 0 selected, and clicking an already-selected row activates on the
+  *first* click, so the second collapsed it again. The test was wrong, not the code.
+- **Gap 77's test** passed on its first run against the fixed code, but would have passed against
+  the broken code too: `close_tab` pushes no event, so `step_batch` never ran and the
+  reconciliation the test asserts against had not happened.
+- **Gap 78's first disable-and-recheck** reported the test still passing without the fix. Removing
+  the specific match arm falls through to the `MethodNotFound` catch-all, and the fake sent its
+  progress burst on *any* reply. The check was measuring nothing.
+
+**Measurements of the wrong quantity:**
+
+- **"Six tests disappeared."** The suite reported 971 before the branch and 970 after five tests
+  were added. The two numbers came from different counters: `rtk`'s summary line includes six
+  doctests, the per-suite sum does not. Apples to apples it is 965 → 970, exactly +5. Nothing was
+  lost, and half an hour went into proving it.
+- **`awk -F'[ ;]'` over `test result:` lines.** Consecutive delimiters produce empty fields, so
+  the field taken for "failed" was the empty string and the field taken for "ignored" was the
+  literal word `failed`. Every "0 failed" printed that way was meaningless. The counts were
+  re-taken with a `sed` capture, and the failure count is now read from `grep -c` on the failure
+  lines instead: a different measurement, not a better parse of the same one.
+
+The last two are worth more than they look. The budgets section of `AGENTS.md` already carries
+five ways a wall-clock number lies; these are two ways a *pass/fail* number lies, which is the
+one everybody trusts without looking.
+
 ### Where this stands
 
 **A snapshot, not a living list: delete this subsection when the branch lands.** It exists
@@ -1139,7 +1232,8 @@ worth knowing before someone "corrects" them back:
   selection travels with the viewport instead.
 
 **Suite at this point:** 986 passed, 0 failed, 31 ignored; `clippy --workspace --all-targets`
-clean. The runnable count was 965 before this branch.
+clean. The runnable count was 965 before this branch. Take the failure count from `grep -c` on
+the failure lines rather than from a field split: see the dead ends above for why.
 
 **Three of the RED steps were taken after the fix rather than before**, which is not the
 workflow and is recorded because two of them were nearly wrong. Each was checked by disabling
