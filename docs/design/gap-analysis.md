@@ -971,10 +971,29 @@ masked a defect above.
 | 138 | LOW | **Invariant 10 is tested only through its error paths.** `cli.rs` covers `--version`, `--help` and two missing-path failures. Nothing covers "opens that file, blocks until closed, exits honestly, never detaches", the three clauses that make `typ` usable as `$EDITOR`. A regression that backgrounds the process or exits 0 on a failed save is invisible. | `typ/tests/cli.rs` | v0.3.1 |
 | 139 | LOW | **Negatives asserted after a fixed sleep.** Two `navigate.rs` tests assert something did *not* happen after a 400 ms `settle()`; on a loaded runner the answer has merely not arrived, and they pass identically if the feature is broken end to end. `client.rs:155` drains with a 5 s `recv_timeout` and terminates on the timeout rather than on a state, costing ≥5 s every run. | `typ-app/tests/navigate.rs:170`, `:274`; `typ-lsp/tests/client.rs:155` | unowned |
 
+### Type design: where an invariant rests on discipline
+
+Invariant 4 (`col` is always a grapheme index) and the `Selections` contract are both real and
+both currently held. Neither is held *by the compiler*, and this section is the list of places
+where a wrong-unit value would compile. Gaps 72 and 73 are what that costs when the discipline
+slips, so these are the same finding at one level up.
+
+| # | Sev | Defect | Where | Lands |
+|---|---|---|---|---|
+| 140 | MED | **`Shift::record` takes three unlabelled positional arguments in two different coordinate spaces.** `original_end_line` is in *original* coordinates while `applied_end` and `after` are in current ones, and the two `Position`s are interchangeable to the compiler, `shift.record(edit.end.line, after, end)` compiles and makes every subsequent multi-caret edit land wrong. Invisible on a single cursor, because the shift is only consulted for the *next* selection, so only a multi-caret same-line test would catch a swap. `EditSpan` already holds `start`/`old_end`/`new_end` and is already produced by `replace_range`, so the fix is one named argument. | `typ-buffer/src/change.rs:54`, sole caller `typ-panel-editor/src/actions.rs:216` | v0.3.1 |
+| 141 | MED | **`PanelEvent::OpenFile` re-flattens a `Position` into two bare `usize`, across a crate boundary.** Every boundary that converts *into* a `col` is currently correct, `typ-find`'s `grapheme_col`, `typ-lsp`'s `from_lsp` then `TextBuffer::position`, the mouse's `display_to_grapheme_col`, and every one of them is correct by convention. This event is where the convention has no type to lean on: a future producer writing `col: pos.character as usize` compiles, lands in `panel.goto`, and is *clamped* to the line's grapheme count, so a wrong unit becomes a plausible wrong column rather than a failure. `typ-core` already depends on `typ-buffer`, so `at: Position` costs nothing. Same family: `typ_lsp::from_lsp` returns a bare `usize` char offset that is assignment-compatible with a grapheme `col`; every caller pipes it through `TextBuffer::position`, but nothing makes them. | `typ-core/src/event.rs:100`, `typ-lsp/src/position.rs` | v0.3.1 |
+| 142 | LOW | **The `Vec<Selection>` → `Selections` conversion is a runtime panic rather than a type.** `Selections` guarantees non-emptiness internally, and then every caller rebuilding one from a `Vec` re-establishes it with `.expect("selections are never empty")` or an `assert!`. All four callers currently derive their `Vec` from an existing `Selections`, so it cannot fire, until one filters, e.g. dropping empty selections, which panics on a buffer holding only carets. Folds into gap 82's fix: one `replace_preserving_primary(first, rest)` that is non-empty by signature. | `typ-panel-editor/src/actions.rs:170`, `typ-panel-editor/src/lib.rs:215` | v0.3.1 |
+| 143 | LOW | **`goal_col` is a display column stored in the same type as `Position::col`, which is a grapheme index.** Both current writers convert correctly. `self.goal_col = Some(cursor.col)` compiles and is wrong only on lines containing tabs or wide graphemes, so it survives every ASCII fixture. `left_col` sits beside grapheme-column comparisons in `render.rs` with the same shape. Low because between them there are three writers, all `pub(crate)`. | `typ-panel-editor/src/lib.rs:96`, `:93` | unowned |
+| 144 | LOW | **`ThemeColors` holds `ratatui::style::Color`, which is wider than a theme file can express.** All 27 fields are public on a public struct, and `Theme::write_toml` ends in `unreachable!("{other:?} cannot be written to a theme file")`, so a `ThemeColors` built by hand with `Color::Reset` panics the writer. Both real producers (`parse_hex`, `downgrade`) return `Color::Rgb` unconditionally, so this is theoretical today. Not worth a newtype until a second producer exists; worth knowing before someone adds one. | `typ-core/src/panel.rs:82-154`, `typ-core/src/theme.rs:223` | unowned |
+| 145 | LOW | **The theme's `ui_pairs` and `assign` can drift, and a runtime assert is what catches it.** The destructure at `theme.rs:289` is exhaustive and compiler-enforced; `assign` at `:351` matches on string keys and is not. The two are bridged by an `assert!` and a round-trip test. This is the right trade and should stay, recorded only because it is the one place in the theme system where the compiler is not the enforcer. | `typ-core/src/theme.rs:289`, `:351`, `:452` | won't fix |
+| 146 | LOW | **The OSC 52 write is unbounded in length.** Copying a 10 MB selection emits a ~13 MB escape sequence. Some terminals cap and truncate; the worst outcome is a partial clipboard, and there is no breakout because the payload is base64 first. A length cap with a status message would be honest about what happened. | `typ-buffer/src/clipboard.rs:114` | unowned |
+
 ### What was checked and is sound
 
 Worth recording, because a clean bill on a surface someone will worry about later is as useful
 as a defect, and because two of these are one design decision away from becoming critical.
+Everything below was read rather than assumed; where a reader traced an argument by hand rather
+than running it, that is said.
 
 - **Language-server spawn cannot be hijacked by a cloned repository.** The command comes from
   `<config_dir>/config.toml` and nothing else: `TYP_CONFIG_DIR`, else `APPDATA` on Windows,
@@ -1017,6 +1036,131 @@ as a defect, and because two of these are one design decision away from becoming
 - **Layout arithmetic survives a 1×1, 0-width and 2-row terminal**, and `main.rs` satisfies all
   four clauses of invariant 10 in the code even though the tests only cover the error ones
   (gap 138).
+
+Named individually, because "no underflow found" is worth nothing without the list of what was
+looked at:
+
+- **`typ-buffer` arithmetic.** `brackets.rs:111` `*depth -= 1` cannot underflow: `depth` starts
+  at 1 in both scanners and the function returns the instant it reaches 0. `indent.rs:87-93`
+  `ab[ab.len() - 1]` cannot panic: `b_spaces >= 1` is checked first, so the index is guarded by
+  a short-circuit. `word.rs:83` `len - 1` sits behind a `len == 0` early return.
+  `position.rs:22,43,60` `tab_width - (col % tab_width)` cannot divide by zero: `set_tab_width`
+  clamps `.max(1)`, `detect_indent_width` only returns 2..=8, and the fallback is 4.
+  `line_ending.rs:49` `text.as_bytes()[index - 1]` is UTF-8 safe (it compares against `b'\r'`
+  and continuation bytes are ≥ 0x80) with `Some(0)` handled before it.
+- **`change.rs`'s `Shift` was traced by hand**, not run: multi-cursor insert on one line,
+  multi-cursor Enter, and multi-cursor line-join via backspace at column 0. The `cols`/`col_line`
+  reset is safe because `Selections::normalize` guarantees document order, so a later edit can
+  never target an earlier line. Gap 140 is about the *call*, not this logic.
+- **`buffer.rs` grapheme↔char conversion** snaps down correctly at cluster boundaries and clamps
+  at line end. No byte or char offset leaks into a `col` anywhere in `typ-buffer` or `typ-core`.
+- **`find_next` wraparound** is correct: the second loop is inclusive of the cursor line with
+  `min_col: None`, so a lone match at the cursor's own column is still found.
+- **The hand-rolled base64** in `clipboard.rs` is covered against the RFC 4648 vectors including
+  the padding cases, which is where a hand-rolled encoder normally goes wrong.
+- **Undo eviction** drops the oldest and keeps the newest, and is tested. The CRLF mixed-ending
+  rewrite on save is a documented decision, not a defect.
+- **The find worker's generation discipline holds.** The coalescing drain keeps `Index`, `Filter`
+  and `Grep` separate and orders index before filter; `awaited_filter != Some(generation)` drops
+  every superseded result; a late `Found::Files` in `Search`/`Commands` mode is a no-op; `send`
+  on a dead receiver sets `jobs = None` rather than panicking. (The *parse* worker's coalescing
+  is gap 111: different code, different answer.)
+- **`typ-find`'s mutex lock order is consistently `found → capped`**, so no deadlock. Symlinks
+  are not followed, matching ripgrep's default. `relative_to` handles the root itself and
+  non-UTF-8. `require_git(false)` and the default ignore rules match between `walk` and `search`.
+- **Fuzzy match indices map correctly to what is painted.** The ASCII/Unicode split in
+  `haystack_of` and the walk in `write_clipped` are both grapheme-indexed and in step; indices
+  past the end are ignored rather than panicking. Highlighting cannot land on the wrong
+  characters. Gap 110 is about *scoring*, which is a different call.
+- **Picker page-boundary arithmetic agrees across all three consumers**: `list_rows`, `row_at`
+  and `draw_rows` put the last row on `inner.bottom() - 1`. Enter or a click on an empty list
+  returns `None` rather than an `OpenFile` with an empty path.
+- **`typ-registry` extension matching is case-insensitive and its no-extension fallback is
+  correct**, both tested.
+- **LSP capability gates are real.** `did_open`/`did_change`/`did_save`/`did_close` and `ask` all
+  check the relevant capability before sending, with the spec's absent-`textDocumentSync`
+  semantics, behind nine unit tests.
+- **`pending` cannot grow without bound**: `cancel(kind)` prunes on every new ask of that kind,
+  so at most one stale entry per `Ask` variant survives a server death.
+- **All three LSP threads exit cleanly** on channel disconnect or EOF; stderr is drained so the
+  pipe cannot fill and fake a hang, and is capped at 32 lines; the malformed-frame budget is
+  bounded and tested.
+- **Document versions are monotonic** within a server's life, and `docs.retain` on exit is
+  correct because a restarted server is a fresh document set.
+- **The process-lifetime handling is better than most editors manage**: a Unix process group
+  with `SIGTERM`/`SIGKILL`, a Windows job object with `KILL_ON_JOB_CLOSE`. Gap 95 is about the
+  two return values it discards, not about the design.
+- **Writing through a symlink is deliberate, and correct.** `resolve_symlink` canonicalises so
+  the rename replaces the *target* rather than the link: a repo containing `notes.md ->
+  ~/.bashrc` means saving that file writes `~/.bashrc`. vim, emacs and ttt all do this, the user
+  sees the target's contents on open, and replacing the link instead breaks every dotfiles repo.
+  Recorded so it stays a decision rather than becoming an accident.
+
+**On the perf figures in this part.** Each is best-of-five, `--release`, taken on a machine that
+may have had other work on it: the absolute values are worth ±20–30%, and were not re-taken on
+a quiet machine per the budgets section above. What is not in doubt is the *shape*: `Action::Move`
+going 3 µs → 331 µs → 8.5 ms → 28 ms → 110 ms across 1 → 100 → 1000 → 2000 → 4000 cursors is
+quadratic at any scaling factor, and paint growing linearly with cursors that are off screen is
+linear at any scaling factor. Treat the numbers as "which order of magnitude and which curve",
+not as measurements to regress against; the budget tests are the place for that.
+
+### Where this stands
+
+**A snapshot, not a living list: delete this subsection when the branch lands.** It exists
+because the state below is the one thing in this part that is not recoverable by reading the
+tree, and the audit's own lesson is that unrecorded context is context that is gone.
+
+Branch `fix/audit-v0.3.0`, off `e1998d8`. Each fix was written test-first: the failing test was
+run and its output read *before* the fix, and the suite plus `clippy -D warnings` was green
+before each commit.
+
+| Commit | Gaps | |
+|---|---|---|
+| `c59255e` | 67–139 | This part of this document |
+| `dce7fbb` | 67 | `close_pending = None` in `close_tab` |
+| `64403bf` | 68 | `answers_its_own_confirmation`, shared by both dispatch paths |
+| `0f83fdc` | 69 | `typ_core::printable`, used by the picker and the tab bar |
+| `eb735a6` | 70, 71 | `App::open_or_report`, and `reload` no longer propagates |
+| `6c50614` | 72 | `overlaps` merges on `a.is_empty()` |
+| `08ce332` | 73 | `union` keeps a direction both inputs agree on |
+| `45a9b36` | 74, 129 | `scroll` carries the selection; the test paints before asserting |
+| `4c062b9` | 75, 128 | The tree's hit test is bounded, and the crate has mouse tests |
+| `192a417` | 76, 77, 78, 131 | Answers keyed on `ServerId`; a reopen sends `didOpen`; server requests are answered. Carries gaps 140–146 and this subsection, which `git add -A` swept in, they belong to the doc commit and are noted here rather than rewritten |
+
+Two fixes deliberately differ from what the audit proposed, because a test said so, and both are
+worth knowing before someone "corrects" them back:
+
+- **Gap 72.** The proposal was `a.is_empty() || b.is_empty()`. That is wrong in the other
+  direction: a caret at a *preceding* selection's end is a genuine second cursor, because
+  `[P,Q)` does not contain `Q`. The boundary is one-sided: `a` is the earlier of the two, so it
+  turns on `a.is_empty()` alone. There is now a test pinning each side.
+- **Gap 74.** The proposal offered two options, one of which was to make `visible` stop
+  correcting the offset. That would break the guarantee the mouse hit-test depends on, so the
+  selection travels with the viewport instead.
+
+**Suite at this point:** 986 passed, 0 failed, 31 ignored; `clippy --workspace --all-targets`
+clean. The runnable count was 965 before this branch.
+
+**Three of the RED steps were taken after the fix rather than before**, which is not the
+workflow and is recorded because two of them were nearly wrong. Each was checked by disabling
+the fix and re-running:
+
+- Gap 77's test passed on the first run because `close_tab` marks the frame dirty but pushes no
+  event, so nothing drove `step_batch` and the reconciliation pass never ran. The test was
+  asserting against a sync that had not happened. It calls `sync_language_servers` directly now.
+- Gap 78's first disable-and-check said the test still passed, because removing the specific
+  arm just falls through to the `MethodNotFound` catch-all, and the fake sent its burst on *any*
+  reply. The fake now requires an accepting one, which is both the correct semantic and what
+  makes the test able to fail.
+- Gap 76's two unit tests were confirmed red by dropping `p.server == server` from the
+  predicate.
+
+**There is a stash.** `stash@{0}`, "wip: LSP ContentModified retry + empty-answer status
+(pre-audit)": work that predates this audit, set aside so the branch started clean. It touches
+`app.rs` and `lsp/mod.rs`, both of which gaps 76–78 also edit, and it changes `handle_answer`,
+whose signature gap 76 changes. It will not pop cleanly. It is also *not* redundant with gap 101:
+it adds a message for an empty answer and a retry for `ContentModified`, and leaves the
+`Err(_) => log_warn!` arm (which is gap 101) exactly as it was.
 
 ---
 
