@@ -318,3 +318,42 @@ fn enter_on_an_empty_result_list_runs_nothing() {
         "Enter on nothing closed the overlay anyway"
     );
 }
+
+// --- the two actions that answer their own confirmation --------------------
+//
+// `handle_chord` exempts Quit and CloseTab from `clear_transient`, because
+// their confirmation *is* the next press of the same key. The palette reaches
+// the same two actions by name and did not: it cleared the flag it was about
+// to set, so on a dirty buffer neither could ever complete.
+
+fn dirty(name: &str) -> (App, PathBuf) {
+    let (mut app, dir) = app(name);
+    app.handle_chord(key(KeyCode::Char('X'))).unwrap();
+    assert!(app.editor().is_dirty(), "the fixture is not dirty");
+    (app, dir)
+}
+
+#[test]
+fn quit_can_be_confirmed_from_the_palette() {
+    let (mut app, _dir) = dirty("palette-quit");
+    app.apply_named_action(Action::Quit).unwrap();
+    assert!(!app.should_quit(), "a dirty buffer should ask first");
+    app.apply_named_action(Action::Quit).unwrap();
+    assert!(
+        app.should_quit(),
+        "quit never completes from the palette; status was {:?}",
+        app.status()
+    );
+}
+
+#[test]
+fn a_tab_can_be_closed_from_the_palette() {
+    let (mut app, _dir) = dirty("palette-close");
+    app.apply_named_action(Action::CloseTab).unwrap();
+    app.apply_named_action(Action::CloseTab).unwrap();
+    assert!(
+        !app.editor().is_dirty(),
+        "close never completes from the palette; status was {:?}",
+        app.status()
+    );
+}

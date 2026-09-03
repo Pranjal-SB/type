@@ -204,6 +204,18 @@ fn diagnostics_for<'a>(lsp: &'a crate::lsp::Lsp, tab: &Tab) -> &'a [typ_core::Di
 /// Between status segments. Two spaces rather than a glyph separator: a
 /// separator needs a colour decision of its own and a Nerd Font question at
 /// M6, and whitespace has neither.
+/// The two actions whose confirmation is the next press of the same thing.
+///
+/// Both dispatch paths have to make the same exception, because clearing
+/// transient state on the way in erases the answer these two are about to
+/// read. It is a function rather than a `matches!` in each of them because it
+/// was already wrong in one: the palette cleared the flag it then set, so on a
+/// dirty buffer `quit` and `close_tab` could never complete from it: the
+/// message just came back forever. Gap 68.
+fn answers_its_own_confirmation(action: Action) -> bool {
+    matches!(action, Action::Quit | Action::CloseTab)
+}
+
 const SEGMENT_GAP: &str = "  ";
 
 /// Shown when there is nothing more urgent to say. Discoverability is part of
@@ -755,7 +767,9 @@ impl App {
     /// an action reachable one way and not the other is exactly the split the
     /// palette exists to close.
     pub fn apply_named_action(&mut self, action: Action) -> Result<()> {
-        self.clear_transient();
+        if !answers_its_own_confirmation(action) {
+            self.clear_transient();
+        }
         if let Some(events) = self.focused_mut().apply_action(action) {
             return self.apply(events);
         }
@@ -917,7 +931,7 @@ impl App {
         // Keyed on the action rather than on the chord: this used to compare
         // `chord.canonical` against the literal `"ctrl+q"`, which meant
         // rebinding quit silently broke its own confirmation.
-        if !matches!(bound, Some(Action::Quit) | Some(Action::CloseTab)) {
+        if !bound.is_some_and(answers_its_own_confirmation) {
             self.clear_transient();
         }
 
