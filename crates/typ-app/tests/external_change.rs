@@ -142,3 +142,28 @@ fn our_own_save_does_not_come_back_as_an_external_change() {
         "a save reported back as an external change"
     );
 }
+
+#[test]
+fn a_reload_that_cannot_read_the_file_says_so_instead_of_exiting() {
+    // `TextBuffer::from_path` goes through `read_to_string`, so a build step or
+    // a `git checkout` that puts non-UTF-8 bytes at the path makes `reload`
+    // fail. That error used to travel out through `step_batch` and end the
+    // process: taking every other tab's unsaved work with it, on a watcher
+    // event rather than on anything the user did. Gap 70.
+    let (mut app, file, rx) = watching("reload-not-utf8");
+
+    std::fs::write(&file, [0xff, 0xfe, 0x00, 0x01]).unwrap();
+
+    let event = await_change(&rx, &file);
+    let flow = step(&mut app, event, AREA);
+    assert!(
+        flow.is_ok(),
+        "a file the editor cannot read ended the session: {:?}",
+        flow.err()
+    );
+    assert!(
+        app.status().is_some_and(|s| s.contains("hello.rs")),
+        "no status explained the failed reload; status was {:?}",
+        app.status()
+    );
+}

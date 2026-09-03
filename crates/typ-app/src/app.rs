@@ -530,8 +530,7 @@ impl App {
             return true;
         }
 
-        if let Err(e) = self.open_path(&path) {
-            self.status = Some(format!("Could not open {}: {e:#}", path.display()));
+        if !self.open_or_report(&path) {
             return true;
         }
 
@@ -672,7 +671,18 @@ impl App {
             return Ok(true);
         }
 
-        self.tabs[self.active].panel.reload()?;
+        // **Not `?`.** `reload` reads through `read_to_string`, so a build step
+        // or a `git checkout` that leaves non-UTF-8 bytes at the path fails
+        // here, and propagating that ends the process from `step_batch`,
+        // discarding every *other* tab's unsaved work on a watcher event rather
+        // than on anything the user did. Gap 70.
+        if let Err(e) = self.tabs[self.active].panel.reload() {
+            self.status = Some(format!(
+                "Could not reload {}: {e:#}",
+                self.tabs[self.active].panel.file_name()
+            ));
+            return Ok(true);
+        }
         // `reload` swaps in a fresh `TextBuffer`, so revisions restart and the
         // comparison in `request_parse_if_stale` would be against a number
         // from a buffer that no longer exists.
@@ -1075,24 +1085,41 @@ impl App {
         true
     }
 
+    /// Open a file, putting the reason on the status bar if it will not open.
+    ///
+    /// Returns whether a tab was opened, and **never an `Err`**. Every caller
+    /// is an ordinary gesture (Enter on a tree entry, a picker result, a
+    /// goto-definition) and a path that is not UTF-8 is one a user can point
+    /// at by accident. Propagating instead ran out through `apply` to
+    /// `step_batch` and ended the process, discarding every other tab's unsaved
+    /// work because someone pressed Enter on a PNG. Gap 71.
+    fn open_or_report(&mut self, path: &Path) -> bool {
+        match self.open_path(path) {
+            Ok(()) => true,
+            Err(e) => {
+                self.status = Some(format!("Could not open {}: {e:#}", path.display()));
+                false
+            }
+        }
+    }
+
     /// Process events emitted by panels.
     pub fn apply(&mut self, events: Vec<PanelEvent>) -> Result<()> {
         for event in events {
             match event {
                 PanelEvent::Quit => self.request_quit(),
                 PanelEvent::OpenFile { path, line, col } => {
-                    self.open_path(&path)?;
                     // **The event has carried `line` and `col` since M1 and
                     // nothing read them until M2.8.** Harmless while the only
                     // producer was the file tree, which always means the top of
                     // the file; a project-search result that opens at line 0 has
                     // thrown away the only thing the search found out.
-                    if line > 0 || col > 0 {
+                    if self.open_or_report(&path) && (line > 0 || col > 0) {
                         self.tabs[self.active].panel.goto(line, col);
                     }
                 }
                 PanelEvent::OpenWith { path, .. } => {
-                    self.open_path(&path)?;
+                    self.open_or_report(&path);
                 }
                 // Redraw happens every loop pass in the walking skeleton.
                 PanelEvent::NeedsRedraw => {}
