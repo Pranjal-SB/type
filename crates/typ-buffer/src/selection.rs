@@ -182,12 +182,32 @@ fn overlaps(a: Selection, b: Selection) -> bool {
     a.is_empty() && a_end == b_start
 }
 
+/// The smallest selection covering both.
+///
+/// **Direction is part of the answer, not a detail of it.** The head is the end
+/// that moves, so a merge that always returns a forward selection puts the head
+/// at the wrong end of two leftward ones, and the next Shift+Left shrinks the
+/// selection from the far edge instead of extending it from the near one.
+///
+/// Only agreement is honoured. Two selections travelling opposite ways have no
+/// combined direction to preserve, and inventing one would mean guessing which
+/// of them the user is about to move; forward is the older behaviour and is no
+/// worse for that case. Gap 73.
 fn union(a: Selection, b: Selection) -> Selection {
     let (a_start, a_end) = a.range();
     let (b_start, b_end) = b.range();
+    let (start, end) = (a_start.min(b_start), a_end.max(b_end));
+
+    let backwards = |s: &Selection| !s.is_empty() && s.head < s.anchor;
+    if backwards(&a) && backwards(&b) {
+        return Selection {
+            anchor: end,
+            head: start,
+        };
+    }
     Selection {
-        anchor: a_start.min(b_start),
-        head: a_end.max(b_end),
+        anchor: start,
+        head: end,
     }
 }
 

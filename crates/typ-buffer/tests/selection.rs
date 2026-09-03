@@ -180,3 +180,44 @@ fn a_caret_at_a_selections_end_stays_separate() {
     s.push(Selection::caret(pos(0, 7)));
     assert_eq!(s.len(), 2);
 }
+
+#[test]
+fn merging_two_backwards_selections_keeps_them_backwards() {
+    // The head is the end that moves. Merge two leftward selections into a
+    // rightward one and the next Shift+Left shrinks the selection from the far
+    // end instead of extending it from the near one. Gap 73.
+    let mut s = Selections::default();
+    s.set_single(Selection {
+        anchor: pos(0, 5),
+        head: pos(0, 1),
+    });
+    s.push(Selection {
+        anchor: pos(0, 8),
+        head: pos(0, 4),
+    });
+    assert_eq!(s.len(), 1, "these overlap and should merge");
+
+    let merged = s.primary();
+    assert_eq!(merged.range(), (pos(0, 1), pos(0, 8)));
+    assert_eq!(
+        (merged.anchor, merged.head),
+        (pos(0, 8), pos(0, 1)),
+        "the merge turned two leftward selections into a rightward one"
+    );
+}
+
+#[test]
+fn merging_two_forwards_selections_keeps_them_forwards() {
+    let mut s = Selections::default();
+    s.set_single(Selection {
+        anchor: pos(0, 1),
+        head: pos(0, 5),
+    });
+    s.push(Selection {
+        anchor: pos(0, 4),
+        head: pos(0, 8),
+    });
+    assert_eq!(s.len(), 1);
+    let merged = s.primary();
+    assert_eq!((merged.anchor, merged.head), (pos(0, 1), pos(0, 8)));
+}
