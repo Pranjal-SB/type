@@ -265,7 +265,21 @@ impl Panel for TreePanel {
             return Vec::new();
         }
         let inner = Self::list_area(panel_area);
-        let row = event.row.saturating_sub(inner.y) as usize;
+        // **Inside the list, or nowhere.** `saturating_sub` turns every row
+        // above `inner.y` into row 0, so without this the panel's own title bar
+        // acted as a click on the first visible entry, and on a fresh tree,
+        // where `selected == top_line == 0`, that is not a select but an
+        // activate: it opened the first file or expanded the first directory.
+        // The bottom border is the same mistake one row past the end. The
+        // picker's `row_at` has done this since M2.8. Gap 75.
+        if event.row < inner.y
+            || event.row >= inner.bottom()
+            || event.column < inner.x
+            || event.column >= inner.right()
+        {
+            return Vec::new();
+        }
+        let row = (event.row - inner.y) as usize;
         let idx = self.top_line + row;
         if idx >= self.entries.len() {
             return Vec::new();
