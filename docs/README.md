@@ -15,6 +15,7 @@ fixed. Each carries a `verified` date saying when that was last checked.
 | [`design/gap-analysis.md`](design/gap-analysis.md) | Known defects, and how TYPE measures against other editors. Re-run at each milestone. |
 | [`design/themes.md`](design/themes.md) | The theme format, the 25 slots, and the contrast rubric every palette is measured against. |
 | [`design/visual.md`](design/visual.md) | **Draft, not built.** What TYPE looks like: one rule instead of boxes, how focus is shown without one, and why the renderer is not what caps it. |
+| [`design/ui-ux-study.md`](design/ui-ux-study.md) | **Study, input to plans.** VS Code and Zed translated to a terminal: the UX principles, the concrete visual language (answers `visual.md`'s open questions), the delight layer, the completeness census, the panel/posture layout model, and the native-terminal fixes. |
 | [`design/controls.md`](design/controls.md) | **Half built.** The keyboard model: two chord tiers, prefix resolution and its hint, layered keymaps. The tier analysis decided how the palette and tab switching are bound; the prefix mechanism is not built. |
 | [`design/landscape.md`](design/landscape.md) | Who else is in this niche and whether the bet is a good one. Asks a harder question than the gap analysis: not what is missing, but whether it matters. |
 | [`design/lsp.md`](design/lsp.md) | **Research, ahead of the code.** What the field uses to talk to language servers and why, the position-encoding problem, and the nine decisions M3 was planned against. |

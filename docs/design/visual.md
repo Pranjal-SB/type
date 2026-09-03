@@ -154,18 +154,22 @@ movement. Deciding that is part of the milestone this document is the input to.
 crossterm. M3 needs it for the diagnostics underline regardless, and building it there means the
 visual milestone starts with the capability already present instead of blocked behind it.
 
-## Open
+## Open: all three answered at v0.3.0
 
-**Density inside a panel.** Nothing here says how much padding a panel carries, whether the gutter
-is flush with the rule, or how the tree indents. Those are the next questions and they want
-mockups rather than prose.
+Answered in [`ui-ux-study.md`](ui-ux-study.md) Part 2, which is this document's companion
+until the visual milestone merges the two. Recorded here so the questions read as closed:
 
-**Where the `Ctrl+K` hint box lives.** `controls.md` specifies it as grouped, described and
-navigable. At 80 columns, in a layout with a sidebar, there is not obviously room. Overlay it on
-the editor, dock it above the status bar, or replace the status bar while pending — undecided,
-and it is a visual question, so it wants mockups.
+**Density inside a panel** → study §7: one space each side of the rule, gutter right-aligned
+at digits+1, tree indent 2 columns, heading is row 0, overlay `min(64, cols−8)`.
 
-**Typography.** TYPE does not get a vote on the font — `gap-analysis.md` Part 5 settles that. What
-it does get a vote on is glyph *choice*: box-drawing weight, whether marks like `·` and `→` come
-from a Unicode set with an ASCII fallback, and whether nerd-font icons are ever assumed. TermIDE
-and Fresh both ship symbol presets (`unicode | nerd | ascii`); TYPE has no answer.
+**Where the `Ctrl+K` hint box lives** → study §9: docked full-width directly above the
+status bar: the editor's text never reflows mid-chord, and at 80 columns nowhere else has
+room.
+
+**Typography / glyphs** → study §8: a single symbols table under one config key
+(`symbols = "unicode" | "ascii"`), every glyph single-width, nerd fonts never assumed. The
+table is the whole shell vocabulary; new glyphs are added there or not at all.
+
+The first slice of this document to be built is planned:
+[`../plans/m3.3-native.md`](../plans/m3.3-native.md): one rule, recede, terminal ground,
+window title.
