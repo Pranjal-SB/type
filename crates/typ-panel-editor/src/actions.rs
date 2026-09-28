@@ -7,7 +7,7 @@
 use unicode_segmentation::UnicodeSegmentation;
 
 use typ_buffer::{
-    EditKind, Position, Selection, Shift, TextBuffer, clipboard, display_to_grapheme_col,
+    EditKind, EditSpan, Position, Selection, Shift, TextBuffer, clipboard, display_to_grapheme_col,
     grapheme_to_display_col, next_word_boundary, previous_word_boundary,
 };
 use typ_core::{Action, Direction, Motion, PanelEvent};
@@ -203,7 +203,14 @@ impl EditorPanel {
             self.buffer.replace_range(start, end, &edit.text);
 
             let after = position_after(start, &edit.text);
-            shift.record(edit.end.line, end, after);
+            shift.record(
+                edit.end.line,
+                EditSpan {
+                    start,
+                    old_end: end,
+                    new_end: after,
+                },
+            );
             heads.push(after);
         }
 
