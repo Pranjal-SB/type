@@ -1263,7 +1263,8 @@ impl App {
         for event in events {
             match event {
                 PanelEvent::Quit => self.request_quit(),
-                PanelEvent::OpenFile { path, line, col } => {
+                PanelEvent::OpenFile { path, at } => {
+                    let (line, col) = (at.line, at.col);
                     // **The event has carried `line` and `col` since M1 and
                     // nothing read them until M2.8.** Harmless while the only
                     // producer was the file tree, which always means the top of

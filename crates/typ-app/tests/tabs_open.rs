@@ -145,8 +145,7 @@ fn the_tree_opens_into_a_tab_too() {
 
     app.apply(vec![PanelEvent::OpenFile {
         path: dir.join("second.rs"),
-        line: 0,
-        col: 0,
+        at: typ_core::Position::default(),
     }])
     .unwrap();
 
@@ -270,8 +269,7 @@ fn opening_a_file_that_cannot_be_read_says_so_instead_of_exiting() {
 
     let outcome = app.apply(vec![PanelEvent::OpenFile {
         path: binary,
-        line: 0,
-        col: 0,
+        at: typ_core::Position::default(),
     }]);
 
     assert!(

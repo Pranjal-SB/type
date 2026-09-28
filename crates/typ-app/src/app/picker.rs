@@ -224,12 +224,11 @@ impl App {
         let events: Vec<PanelEvent> = events
             .into_iter()
             .map(|event| match event {
-                PanelEvent::OpenFile { path, line, col } => {
+                PanelEvent::OpenFile { path, at } => {
                     opened = true;
                     PanelEvent::OpenFile {
                         path: self.root.join(path),
-                        line,
-                        col,
+                        at,
                     }
                 }
                 other => other,

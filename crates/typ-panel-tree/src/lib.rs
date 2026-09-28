@@ -139,8 +139,7 @@ impl TreePanel {
         } else {
             vec![PanelEvent::OpenFile {
                 path: entry.path,
-                line: 0,
-                col: 0,
+                at: typ_core::Position::default(),
             }]
         }
     }

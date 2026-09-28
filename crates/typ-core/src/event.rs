@@ -107,10 +107,14 @@ pub enum PanelEvent {
     /// Move focus to another panel.
     Focus(PanelId),
     /// Open a path in whichever panel the registry says owns it.
+    ///
+    /// `at` is a `Position` rather than a bare line and column so the column
+    /// is typed as the grapheme index invariant 4 says it is. As two `usize`s,
+    /// a producer writing an LSP character offset or a byte offset compiled,
+    /// and `goto` clamped it to a plausible wrong column. Gap 141.
     OpenFile {
         path: PathBuf,
-        line: usize,
-        col: usize,
+        at: typ_buffer::Position,
     },
     /// Open a path with an explicitly chosen handler.
     OpenWith { handler: HandlerId, path: PathBuf },

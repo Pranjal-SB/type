@@ -194,13 +194,16 @@ impl Picker {
         match self.mode {
             Mode::Files => self.hits.get(index).map(|hit| PanelEvent::OpenFile {
                 path: hit.path.clone().into(),
-                line: 0,
-                col: 0,
+                at: typ_core::Position::default(),
             }),
+            // `hit.col` is a grapheme index: `typ-find` converts it before it
+            // leaves the worker.
             Mode::Search => self.lines.get(index).map(|hit| PanelEvent::OpenFile {
                 path: hit.path.clone().into(),
-                line: hit.line,
-                col: hit.col,
+                at: typ_core::Position {
+                    line: hit.line,
+                    col: hit.col,
+                },
             }),
             // A command opens nothing. The app reads `selected_command` after
             // the Enter goes past rather than the picker inventing a variant

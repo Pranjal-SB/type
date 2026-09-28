@@ -57,8 +57,7 @@ fn pressing_enter_on_a_file_emits_open_file() {
     assert!(matches!(
         events.first(),
         Some(PanelEvent::OpenFile {
-            line: 0,
-            col: 0,
+            at: typ_core::Position { line: 0, col: 0 },
             ..
         })
     ));

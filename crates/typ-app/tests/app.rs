@@ -43,8 +43,7 @@ fn open_file_event_loads_the_file_into_the_editor() {
     let mut app = App::new(&dir).unwrap();
     app.apply(vec![PanelEvent::OpenFile {
         path: dir.join("hello.rs"),
-        line: 0,
-        col: 0,
+        at: typ_core::Position::default(),
     }])
     .unwrap();
     assert_eq!(app.editor_title(), "hello.rs");
@@ -56,8 +55,7 @@ fn opening_a_file_moves_focus_to_the_editor() {
     let mut app = App::new(&dir).unwrap();
     app.apply(vec![PanelEvent::OpenFile {
         path: dir.join("hello.rs"),
-        line: 0,
-        col: 0,
+        at: typ_core::Position::default(),
     }])
     .unwrap();
     assert_eq!(app.focused_name(), "editor");

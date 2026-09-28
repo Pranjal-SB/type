@@ -165,7 +165,7 @@ fn enter_opens_the_selected_hit() {
     let events = picker.handle_key(chord(KeyCode::Enter));
 
     let opened = events.iter().find_map(|event| match event {
-        PanelEvent::OpenFile { path, line, col } => Some((path.clone(), *line, *col)),
+        PanelEvent::OpenFile { path, at } => Some((path.clone(), at.line, at.col)),
         _ => None,
     });
     let (path, line, col) = opened.expect("expected an OpenFile");
