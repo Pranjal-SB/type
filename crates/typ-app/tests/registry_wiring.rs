@@ -24,8 +24,7 @@ fn a_path_registered_to_another_viewer_is_not_opened_as_text() {
     // The same event Enter in the tree and a picker click both produce.
     app.apply(vec![PanelEvent::OpenFile {
         path: dir.join("logo.png"),
-        line: 0,
-        col: 0,
+        at: typ_core::Position::default(),
     }])
     .unwrap();
 
