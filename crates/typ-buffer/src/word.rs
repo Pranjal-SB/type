@@ -28,6 +28,11 @@ fn class(grapheme: &str) -> Class {
     }
 }
 
+/// Whether a grapheme belongs to a word: letters, digits and `_`.
+pub fn is_word_grapheme(grapheme: &str) -> bool {
+    class(grapheme) == Class::Word
+}
+
 fn classes(line: &str) -> Vec<Class> {
     line.graphemes(true).map(class).collect()
 }

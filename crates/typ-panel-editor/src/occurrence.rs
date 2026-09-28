@@ -7,6 +7,7 @@
 
 use typ_buffer::{Position, SearchQuery, Selection};
 use typ_core::PanelEvent;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::EditorPanel;
 
@@ -55,13 +56,32 @@ impl EditorPanel {
         Some(self.buffer.text_in_range(start, end))
     }
 
-    /// Case-sensitive, unlike `Ctrl+F`.
+    /// Case-sensitive, unlike `Ctrl+F`, and whole-word when the needle is a
+    /// whole word.
     ///
     /// Smart-case is right for a search box, where the job is finding prose.
     /// Matching an identifier is a different job: `value` and `Value` are two
     /// different things, and every editor in the field draws that line here.
-    fn occurrence_query(needle: String) -> SearchQuery {
-        SearchQuery::new(needle, true)
+    ///
+    /// So are `value` and `other_value`. When the primary selection is exactly
+    /// one word (which is what the first press makes of a bare caret) only
+    /// whole words match. A selection that is part of a word, or spans
+    /// several, is asking for that text wherever it is and matches inside
+    /// words. VS Code draws the line in the same place, keyed on whether the
+    /// search began at a caret; reading it off the selection instead needs no
+    /// state to go stale between presses. Gap 123.
+    fn occurrence_query(&self, needle: String) -> SearchQuery {
+        let (start, end) = self.selections.primary().range();
+        let is_word = start.line == end.line
+            && self.buffer.with_line_str(start.line, |line| {
+                typ_buffer::word_at(line, start.col) == Some((start.col, end.col))
+                    && line
+                        .graphemes(true)
+                        .nth(start.col)
+                        .is_some_and(typ_buffer::is_word_grapheme)
+            });
+        let query = SearchQuery::new(needle, true);
+        if is_word { query.whole_word() } else { query }
     }
 
     pub(crate) fn select_next_occurrence(&mut self) -> Option<Vec<PanelEvent>> {
@@ -73,7 +93,7 @@ impl EditorPanel {
         };
 
         let from = self.selections.primary().range().0;
-        let query = Self::occurrence_query(needle);
+        let query = self.occurrence_query(needle);
         // From the cursor, not `find_all` filtered: the whole-buffer scan is
         // ~7 ms on 50k lines and this is a key people hold down. See
         // `TextBuffer::find_next`.
@@ -101,7 +121,7 @@ impl EditorPanel {
 
         // One scan, once, for an action nobody holds down — the opposite
         // trade-off from Ctrl+D and the right one here.
-        let query = Self::occurrence_query(needle);
+        let query = self.occurrence_query(needle);
         let hits = self.buffer.find_all(&query);
         let Some((first, rest)) = hits.split_first() else {
             return Some(Vec::new());

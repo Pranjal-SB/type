@@ -12,6 +12,7 @@ fn pos(line: usize, col: usize) -> Position {
 
 fn query(needle: &str, case_sensitive: bool) -> SearchQuery {
     SearchQuery {
+        whole_word: false,
         needle: needle.to_string(),
         case_sensitive,
     }
