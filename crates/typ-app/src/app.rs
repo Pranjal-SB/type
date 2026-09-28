@@ -662,6 +662,22 @@ impl App {
     /// leave the buffer unhighlighted for as long as it stays open: nothing
     /// would ever ask again.
     pub fn handle_parsed(&mut self, parsed: typ_syntax::Parsed) -> bool {
+        // **Anything older will never come.** The worker answers in generation
+        // order and drops whatever is queued behind the job it is running,
+        // which with tabs includes other tabs' requests. A tab still waiting on
+        // an older generation is forgotten, so the next pass that finds it
+        // active asks again rather than trusting a revision nobody parsed.
+        // Gap 111.
+        for tab in &mut self.tabs {
+            if tab
+                .awaited_generation
+                .is_some_and(|g| g < parsed.generation)
+            {
+                tab.awaited_generation = None;
+                tab.parsed_revision = None;
+            }
+        }
+
         // Not a parse anyone is still waiting for. It describes a buffer that
         // has since been replaced, and its byte offsets index text that is gone.
         let Some(index) = self
