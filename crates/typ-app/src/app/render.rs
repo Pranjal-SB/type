@@ -175,7 +175,9 @@ impl App {
     }
 
     /// Areas for hit-testing mouse events, in the same order as `render`.
-    /// Excludes the status bar row, so a click on it hits neither panel.
+    /// Excludes the status bar row. That alone does not stop a click there
+    /// reaching a panel (their hit tests clamp) so `run::step` drops a press
+    /// below these rects before routing it.
     ///
     /// The editor's rect is the one *below* the tab bar. It has to come from
     /// `split_tabs` rather than from `split`, because the bar moves every

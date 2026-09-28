@@ -430,6 +430,14 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
                 let (tree_area, editor_area) = app.areas(area);
                 let in_tree = m.column < tree_area.width;
 
+                // A press on the status bar belongs to neither panel. Both
+                // hit tests clamp a row past their bottom to their last line,
+                // so without this a click there moved the caret. Gap 84. Only
+                // a press: a drag that runs off the bottom is still selecting.
+                if matches!(m.kind, MouseEventKind::Down(_)) && m.row >= tree_area.bottom() {
+                    return finish(app, events, changed);
+                }
+
                 match m.kind {
                     MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
                         // One notch. A run of them arriving together is folded
