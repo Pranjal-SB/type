@@ -83,9 +83,9 @@ pub fn search(root: &Path, query: &str, limit: usize, overrides: &[(PathBuf, Str
     };
 
     let found = Mutex::new(Vec::<LineHit>::new());
-    // Set when any worker hits the cap. Checked before starting a file, so the
-    // overshoot is bounded by one file rather than by the number of threads
-    // times the size of the project.
+    // Set when any worker hits the cap. Checked before starting a file, and
+    // each file's sink stops at `limit + 1`, so the overshoot is bounded by the
+    // number of threads times the limit rather than by the size of any file.
     let capped = Mutex::new(false);
 
     WalkBuilder::new(root)
@@ -122,9 +122,13 @@ pub fn search(root: &Path, query: &str, limit: usize, overrides: &[(PathBuf, Str
                 };
 
                 let mut local = Vec::new();
+                // **The cap holds inside a file too.** Between files alone, one
+                // lockfile built a hit for every matching line before the limit
+                // was consulted. `limit + 1` for the reason given below: the
+                // extra hit is what says there were more. Gap 108.
                 let sink = UTF8(|line_number, line| {
                     local.push(hit_of(&relative, line_number, line, &matcher));
-                    Ok(true)
+                    Ok(local.len() <= limit)
                 });
 
                 // The open buffer wins over the file on disk.
