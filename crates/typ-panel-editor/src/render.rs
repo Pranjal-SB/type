@@ -239,6 +239,13 @@ pub fn styled_line(text: &str, ctx: &LineStyle) -> Line<'static> {
     let mut span = 0usize;
 
     for (offset, (byte, grapheme)) in visible.grapheme_indices(true).enumerate() {
+        // Past the right edge nothing more can be drawn. Without this a
+        // minified bundle (one line, half a megabyte) was walked and turned
+        // into spans in full every frame, 30 ms of work for 120 cells, and then
+        // clipped by `Paragraph`. Gap 89.
+        if column - start >= ctx.width {
+            break;
+        }
         let position = Position {
             line: ctx.line,
             col: skipped + offset,
