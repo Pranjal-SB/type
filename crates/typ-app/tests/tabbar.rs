@@ -261,3 +261,31 @@ fn an_escape_sequence_in_a_file_name_never_reaches_a_cell() {
         "a control character reached the tab bar: {drawn:?}"
     );
 }
+
+#[test]
+fn a_close_box_is_drawn_exactly_where_the_hit_test_finds_one() {
+    // Gap 86. `write_cell` painted a close box on a clipped cell while
+    // `close_box_x` said it had none, so clicking the glyph activated the tab.
+    // Bind what `draw` puts on screen to what the hit test believes, at every
+    // width where the last cell gets clipped somewhere.
+    let names = labels(&["main.rs", "highlight.rs", "render.rs"]);
+    let theme = typ_core::ThemeColors::default();
+    for width in 1..=45 {
+        let area = Rect::new(3, 0, width, 1);
+        let mut buf = Buffer::empty(area);
+        tabbar::draw(&mut buf, area, &names, 0, &theme);
+
+        let drawn: Vec<u16> = (0..width)
+            .filter(|x| buf[(area.x + x, 0)].symbol() == "×")
+            .collect();
+        let hit: Vec<u16> = tabbar::cells(&names, 0, width)
+            .iter()
+            .filter_map(|cell| tabbar::close_box_x(cell, &names[cell.index]))
+            .collect();
+
+        assert_eq!(
+            drawn, hit,
+            "at width {width} the bar drew close boxes at {drawn:?} and the hit test has them at {hit:?}"
+        );
+    }
+}
