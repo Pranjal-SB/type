@@ -63,16 +63,34 @@ impl TreePanel {
 
     /// Rebuild the visible rows, keeping the selection on the same path where
     /// that path is still visible.
+    ///
+    /// **One unreadable directory does not stop the rest.** It is collapsed and
+    /// reported, after the rows are assigned. Propagating it instead left the
+    /// path in `expanded` for good, so every later expand or collapse of any
+    /// other directory failed the same way. Gap 96.
     fn rebuild(&mut self) -> Result<()> {
         let previous = self.selected().map(Path::to_path_buf);
         let mut entries = Vec::new();
-        collect(&self.root, 0, &self.expanded, &mut entries)?;
+        let mut unreadable = Vec::new();
+        read_children(&self.root, 0, &mut entries)
+            .with_context(|| format!("reading {}", self.root.display()))?;
+        let children = std::mem::take(&mut entries);
+        descend(children, &self.expanded, &mut entries, &mut unreadable);
+
         self.entries = entries;
         self.selected = previous
             .and_then(|p| self.entries.iter().position(|e| e.path == p))
             .unwrap_or(self.selected)
             .min(self.entries.len().saturating_sub(1));
-        Ok(())
+
+        let Some((path, error)) = unreadable.first() else {
+            return Ok(());
+        };
+        let message = format!("reading {}: {error}", path.display());
+        for (path, _) in &unreadable {
+            self.expanded.remove(path);
+        }
+        Err(anyhow::anyhow!(message))
     }
 
     fn move_selection(&mut self, delta: i32) {
@@ -133,16 +151,9 @@ impl TreePanel {
     }
 }
 
-/// Depth-first walk that descends only into expanded directories.
-/// Directories sort before files, each alphabetically.
-fn collect(
-    dir: &Path,
-    depth: usize,
-    expanded: &HashSet<PathBuf>,
-    out: &mut Vec<Entry>,
-) -> Result<()> {
-    let mut children: Vec<Entry> = std::fs::read_dir(dir)
-        .with_context(|| format!("reading {}", dir.display()))?
+/// One directory's children, directories first, each alphabetically.
+fn read_children(dir: &Path, depth: usize, out: &mut Vec<Entry>) -> std::io::Result<()> {
+    let mut children: Vec<Entry> = std::fs::read_dir(dir)?
         .filter_map(|e| e.ok())
         .map(|e| Entry {
             is_dir: e.path().is_dir(),
@@ -161,15 +172,32 @@ fn collect(
         )
     });
 
-    for child in children {
-        let descend = child.is_dir && expanded.contains(&child.path);
-        let path = child.path.clone();
-        out.push(child);
-        if descend {
-            collect(&path, depth + 1, expanded, out)?;
+    out.extend(children);
+    Ok(())
+}
+
+/// Depth-first: push each entry, then the children of any that are expanded.
+/// A directory that cannot be read is shown with nothing under it and noted in
+/// `unreadable`, rather than failing the whole tree.
+fn descend(
+    entries: Vec<Entry>,
+    expanded: &HashSet<PathBuf>,
+    out: &mut Vec<Entry>,
+    unreadable: &mut Vec<(PathBuf, std::io::Error)>,
+) {
+    for entry in entries {
+        let open = entry.is_dir && expanded.contains(&entry.path);
+        let (path, depth) = (entry.path.clone(), entry.depth);
+        out.push(entry);
+        if !open {
+            continue;
+        }
+        let mut children = Vec::new();
+        match read_children(&path, depth + 1, &mut children) {
+            Ok(()) => descend(children, expanded, out, unreadable),
+            Err(error) => unreadable.push((path, error)),
         }
     }
-    Ok(())
 }
 
 impl Panel for TreePanel {
