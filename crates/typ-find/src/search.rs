@@ -145,7 +145,11 @@ pub fn search(root: &Path, query: &str, limit: usize, overrides: &[(PathBuf, Str
 
                 let mut found = found.lock().expect("search mutex");
                 found.append(&mut local);
-                if found.len() >= limit {
+                // **One past the limit**, not at it. Stopping at exactly
+                // `limit` cannot tell "there were ten" from "there were ten
+                // and then more", and `complete` below reported the second as
+                // the first. The extra hit is what proves the `+`. Gap 107.
+                if found.len() > limit {
                     *capped.lock().expect("cap mutex") = true;
                     return WalkState::Quit;
                 }

@@ -149,6 +149,35 @@ fn the_cap_truncates_and_says_so() {
 }
 
 #[test]
+fn a_search_stopped_at_exactly_the_limit_is_not_complete() {
+    // The cap fired at `>= limit` and `complete` was `<= limit`, so only an
+    // overshoot was reported: ten matches in the first file and ten more after
+    // came back as "10 matches", no `+`. Two files of ten each, so whichever
+    // the walk reaches first fills the cap exactly. Gap 107.
+    let fixture = Fixture::new("exact-cap");
+    fixture
+        .file("a.rs", &"needle\n".repeat(10))
+        .file("b.rs", &"needle\n".repeat(10));
+
+    let found = search(fixture.path(), "needle", 10, &[]);
+
+    assert_eq!(found.hits.len(), 10);
+    assert!(!found.complete, "twenty matches reported as exactly ten");
+}
+
+#[test]
+fn exactly_limit_matches_in_the_whole_project_is_complete() {
+    // The other side: the fix must not put a `+` on an answer that is whole.
+    let fixture = Fixture::new("exact-whole");
+    fixture.file("a.rs", &"needle\n".repeat(10));
+
+    let found = search(fixture.path(), "needle", 10, &[]);
+
+    assert_eq!(found.hits.len(), 10);
+    assert!(found.complete, "a whole answer was qualified");
+}
+
+#[test]
 fn an_uncapped_search_reports_complete() {
     let fixture = Fixture::new("complete");
     fixture.file("a.rs", "needle\n");
