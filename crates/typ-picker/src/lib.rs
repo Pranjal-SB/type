@@ -126,7 +126,22 @@ impl Picker {
     /// Replace the query outright — what opening the palette by chord does,
     /// by typing the `>` the user would otherwise have typed.
     pub fn set_query(&mut self, query: String) {
+        self.replace_query(query);
+    }
+
+    /// Every query change comes through here, typed, deleted or pasted.
+    ///
+    /// **The selection goes back to the top.** The list re-ranks completely on
+    /// a new query, so the row that was third has nothing to do with the row
+    /// that is third now, and keeping the index meant Enter opened whatever
+    /// happened to land there. Gap 122.
+    fn replace_query(&mut self, query: String) {
+        if query == self.query {
+            return;
+        }
         self.query = query;
+        self.selected = 0;
+        self.offset = 0;
     }
 
     /// Replace the command rows.
@@ -344,7 +359,7 @@ impl Picker {
     }
 
     fn insert(&mut self, c: char) {
-        self.query.push(c);
+        self.replace_query(format!("{}{c}", self.query));
     }
 
     /// Remove one grapheme, not one byte or one char.
@@ -355,7 +370,7 @@ impl Picker {
     fn delete_backward(&mut self) {
         let mut graphemes: Vec<&str> = self.query.graphemes(true).collect();
         graphemes.pop();
-        self.query = graphemes.concat();
+        self.replace_query(graphemes.concat());
     }
 }
 
