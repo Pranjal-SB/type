@@ -180,6 +180,13 @@ fn an_invalid_regex_is_empty_rather_than_a_panic() {
     let found = run(fixture.path(), "[");
 
     assert!(found.hits.is_empty());
+    // Nothing was searched, so "complete with no matches" would be a claim
+    // that the project holds none: a literal `foo(` answered with a
+    // confident nothing. Gap 98.
+    assert!(
+        !found.complete,
+        "an unsearched pattern claimed a full answer"
+    );
 }
 
 #[test]

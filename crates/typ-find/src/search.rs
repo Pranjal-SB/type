@@ -59,7 +59,8 @@ const MAX_LINE: usize = 512;
 /// matches at every position, which here means every line of every file.
 /// An unparsable one returns nothing too — the query is whatever has been typed
 /// *so far*, so half-written patterns arrive on every keystroke and `[` is not
-/// an error worth reporting, just a pattern that is not finished.
+/// an error worth reporting, just a pattern that is not finished. It is marked
+/// incomplete, though: no search ran, so no count is being claimed.
 pub fn search(root: &Path, query: &str, limit: usize, overrides: &[(PathBuf, String)]) -> Search {
     if query.is_empty() || limit == 0 {
         return Search {
@@ -71,10 +72,13 @@ pub fn search(root: &Path, query: &str, limit: usize, overrides: &[(PathBuf, Str
     // Smart case: the same rule `SearchQuery` and `rank` use. Three parts of
     // "find" disagreeing about what a capital means would be worse than any one
     // of them choosing wrong.
+    // **Not complete.** Nothing was searched, and `complete: true` with no hits
+    // is the claim that the project holds none, which is what a literal `foo(`
+    // got. The picker shows the qualifier. Gap 98.
     let Ok(matcher) = RegexMatcherBuilder::new().case_smart(true).build(query) else {
         return Search {
             hits: Vec::new(),
-            complete: true,
+            complete: false,
         };
     };
 
