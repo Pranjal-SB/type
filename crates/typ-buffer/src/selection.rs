@@ -103,6 +103,19 @@ impl Selections {
         self.list.iter()
     }
 
+    /// The selections that touch `line`, found by binary search.
+    ///
+    /// The set is document-ordered and non-overlapping, so both starts and ends
+    /// ascend and the ones reaching a line are one contiguous run. This is what
+    /// lets a frame cost the selections on screen rather than all of them: a
+    /// per-cell scan of the whole set was 132 ms at four thousand cursors, most
+    /// of them nowhere near the viewport. Gap 88.
+    pub fn touching_line(&self, line: usize) -> &[Selection] {
+        let from = self.list.partition_point(|s| s.range().1.line < line);
+        let to = self.list.partition_point(|s| s.range().0.line <= line);
+        &self.list[from..to.max(from)]
+    }
+
     /// Replace everything with one selection.
     pub fn set_single(&mut self, selection: Selection) {
         self.list = vec![selection];

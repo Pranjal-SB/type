@@ -154,6 +154,9 @@ pub struct LineStyle<'a> {
     /// the edge.
     pub width: usize,
     pub tab_width: usize,
+    /// The selections touching this line, not the whole set. `paint_for`
+    /// scans these once per cell, so passing every selection in the file made
+    /// a frame cost cells × cursors, including cursors nowhere near the screen.
     pub selections: &'a [Selection],
     pub primary: Selection,
     /// Whether a caret sits on this line *with nothing selected*. A line

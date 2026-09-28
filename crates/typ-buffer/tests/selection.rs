@@ -221,3 +221,25 @@ fn merging_two_forwards_selections_keeps_them_forwards() {
     let merged = s.primary();
     assert_eq!((merged.anchor, merged.head), (pos(0, 1), pos(0, 8)));
 }
+
+#[test]
+fn the_selections_touching_a_line_are_exactly_those_that_reach_it() {
+    let mut s = Selections::single(Selection::caret(pos(0, 0)));
+    s.extend([
+        // Starts above line 5 and ends below it: the case a filter on either
+        // end alone would drop.
+        Selection {
+            anchor: pos(2, 3),
+            head: pos(7, 1),
+        },
+        Selection::caret(pos(7, 4)),
+        Selection::caret(pos(9, 0)),
+    ]);
+    let on = |line| s.touching_line(line).to_vec();
+    assert_eq!(on(0), vec![Selection::caret(pos(0, 0))]);
+    assert!(on(1).is_empty());
+    assert_eq!(on(5).len(), 1, "the spanning selection covers line 5");
+    assert_eq!(on(7).len(), 2, "it ends on line 7, where a caret also sits");
+    assert!(on(8).is_empty());
+    assert_eq!(on(9), vec![Selection::caret(pos(9, 0))]);
+}

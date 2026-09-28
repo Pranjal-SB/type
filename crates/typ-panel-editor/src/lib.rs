@@ -388,6 +388,7 @@ impl EditorPanel {
     /// plain.
     pub(crate) fn is_cursor_line(&self, line: usize) -> bool {
         self.selections
+            .touching_line(line)
             .iter()
             .any(|s| s.is_empty() && s.head.line == line)
     }
@@ -643,7 +644,6 @@ impl Panel for EditorPanel {
 
         let line_count = self.buffer.line_count();
         let end = (self.top_line + self.height).min(line_count);
-        let selections: Vec<Selection> = self.selections.iter().copied().collect();
         let left_col = self.left_col;
         let cursor_line = self.cursor().line;
 
@@ -727,7 +727,7 @@ impl Panel for EditorPanel {
                         left_col,
                         width: text_width,
                         tab_width: self.tab_width,
-                        selections: &selections,
+                        selections: self.selections.touching_line(i),
                         primary,
                         cursor_line,
                         brackets,
