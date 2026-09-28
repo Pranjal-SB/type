@@ -341,6 +341,11 @@ impl App {
         self.lsp.notifications_of(method)
     }
 
+    /// How many of a request have gone to language servers this session.
+    pub fn lsp_requests_of(&self, method: &str) -> usize {
+        self.lsp.notifications_of(method)
+    }
+
     /// The document version a server holds for a path, if one does.
     pub fn lsp_document_version(&self, path: &Path) -> Option<i32> {
         self.lsp.version(path)
@@ -465,6 +470,15 @@ impl App {
     /// The one place both requests are made, so cancellation, staleness and the
     /// four ways there is no answer are decided once rather than twice.
     fn ask_server(&mut self, kind: crate::lsp::Ask) {
+        self.ask_server_again(kind, 0);
+    }
+
+    /// The same question, carrying how many times it has already been cancelled.
+    ///
+    /// Asked from the cursor's position *now* rather than from where the first
+    /// attempt was aimed: if the caret moved while the server was cancelling,
+    /// the answer the user wants is about where they are.
+    fn ask_server_again(&mut self, kind: crate::lsp::Ask, retries: u8) {
         // A second question of the same kind abandons the first. Most are
         // superseded before they are answered.
         self.lsp.cancel(kind);
@@ -478,7 +492,7 @@ impl App {
         let char_index = tab.panel.buffer().char_index(cursor);
         let rope = tab.panel.buffer().snapshot();
 
-        match self.lsp.ask(kind, &path, char_index, &rope) {
+        match self.lsp.ask(kind, &path, char_index, &rope, retries) {
             Ok(()) => self.lsp.stamp_last(cursor),
             Err(reason) => self.status = Some(reason.message().to_string()),
         }
@@ -497,9 +511,21 @@ impl App {
         let Some(pending) = self.lsp.take_pending(server, &id) else {
             return false;
         };
-        let Ok(result) = result else {
-            crate::log_warn!("the language server refused a request");
-            return false;
+        let result = match result {
+            Ok(result) => result,
+            // **Not a refusal.** The server cancelled its own work (its state
+            // changed under the request) and the question is still open. Ask
+            // it again rather than answering the user with nothing.
+            Err(error) if error.code == crate::lsp::CONTENT_MODIFIED => {
+                if pending.retries < crate::lsp::MAX_RETRIES {
+                    self.ask_server_again(pending.kind, pending.retries + 1);
+                }
+                return false;
+            }
+            Err(_) => {
+                crate::log_warn!("the language server refused a request");
+                return false;
+            }
         };
 
         // **Stale.** The question was about a position the cursor has left, and
@@ -514,7 +540,14 @@ impl App {
             crate::lsp::Ask::Definition => self.jump_to_definition(pending.server, result),
             crate::lsp::Ask::Hover => {
                 self.hover = crate::lsp::hover_text(&result);
-                self.hover.is_some()
+                if self.hover.is_none() {
+                    self.status = Some(
+                        crate::lsp::NoAnswer::Empty(crate::lsp::Ask::Hover)
+                            .message()
+                            .into(),
+                    );
+                }
+                true
             }
         }
     }
@@ -523,8 +556,14 @@ impl App {
     fn jump_to_definition(&mut self, server: typ_lsp::ServerId, result: serde_json::Value) -> bool {
         let Some((path, position)) = crate::lsp::definition_target(&result) else {
             // A server with nothing to say is the ordinary state for the first
-            // minute of any real project.
-            return false;
+            // minute of any real project, and saying so is the difference
+            // between "not yet" and "this key does nothing".
+            self.status = Some(
+                crate::lsp::NoAnswer::Empty(crate::lsp::Ask::Definition)
+                    .message()
+                    .into(),
+            );
+            return true;
         };
         if !path.exists() {
             // The index is older than the tree. Saying so beats opening an

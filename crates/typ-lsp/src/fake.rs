@@ -38,6 +38,16 @@ struct Flags {
     definition_missing: bool,
     /// Answer `textDocument/hover` with a plain string rather than markup.
     hover_plain: bool,
+    /// Answer `textDocument/hover` with `null`. Legal, and the ordinary answer
+    /// while a server is still indexing.
+    hover_empty: bool,
+    /// Answer `textDocument/hover` with a real error rather than a result.
+    hover_error: bool,
+    /// Answer the first N `textDocument/hover` requests with `ContentModified`
+    /// before answering properly. What rust-analyzer does whenever a salsa
+    /// cancellation lands mid-request and it has no retry of its own: the code
+    /// is not a refusal, it is "ask me again".
+    content_modified: usize,
     /// Answer nothing at all to a definition request. Servers do this when
     /// they have not finished indexing.
     no_definition: bool,
@@ -67,6 +77,13 @@ impl Flags {
             definition_elsewhere: has("--definition-elsewhere"),
             definition_missing: has("--definition-missing"),
             hover_plain: has("--hover-plain"),
+            hover_empty: has("--hover-empty"),
+            hover_error: has("--hover-error"),
+            content_modified: args
+                .iter()
+                .find_map(|a| a.strip_prefix("--content-modified="))
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0),
             no_definition: has("--no-definition"),
             progress: has("--progress") || has("--progress-create"),
             progress_create: has("--progress-create"),
@@ -221,6 +238,7 @@ pub fn run() {
     let mut seen = 0usize;
     let mut open_uri = String::new();
     let mut version = 0i64;
+    let mut refusals = 0usize;
 
     while let Ok(Some(message)) = Message::read(&mut input) {
         seen += 1;
@@ -230,6 +248,29 @@ pub fn run() {
 
         match message {
             Message::Request(Request { id, method, params }) => {
+                let error = if method != "textDocument/hover" {
+                    None
+                } else if refusals < flags.content_modified {
+                    refusals += 1;
+                    Some((-32801, "content modified"))
+                } else if flags.hover_error {
+                    Some((-32603, "internal error"))
+                } else {
+                    None
+                };
+                if let Some((code, message)) = error {
+                    let _ = Message::Response(Response {
+                        id,
+                        response_result: Err(lsp_server::ResponseError {
+                            code,
+                            message: message.into(),
+                            data: None,
+                        }),
+                    })
+                    .write(&mut out);
+                    let _ = out.flush();
+                    continue;
+                }
                 let result = match method.as_str() {
                     // `clientSaw` is not LSP. It echoes the initialize params
                     // straight back so a test can assert what the client sent
@@ -265,6 +306,7 @@ pub fn run() {
                             },
                         })
                     }
+                    "textDocument/hover" if flags.hover_empty => serde_json::Value::Null,
                     "textDocument/hover" if flags.hover_plain => serde_json::json!({
                         "contents": "plain words",
                     }),

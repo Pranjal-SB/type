@@ -155,7 +155,20 @@ pub(crate) struct Pending {
     /// that arrives after the cursor moved describes somewhere the user is no
     /// longer asking about, and acting on it is a jump nobody requested.
     pub asked_at: (PathBuf, typ_buffer::Position),
+    /// How many times this question has already been asked and cancelled.
+    pub retries: u8,
 }
+
+/// Ask again this many times before giving up on a cancelled request.
+///
+/// The retry is paced by the round trip (the next one is not sent until the
+/// last is answered) so no timer is involved and a spinning client is not
+/// possible. The bound is against a server that cancels every time.
+pub(crate) const MAX_RETRIES: u8 = 3;
+
+/// `ContentModified`. Not a refusal: the server cancelled its own work and is
+/// telling the client the question is still open.
+pub(crate) const CONTENT_MODIFIED: i32 = -32801;
 
 /// What was asked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,7 +206,8 @@ impl Lsp {
         self.sender = Some(sender);
     }
 
-    /// How many of a notification have been sent, over the app's whole life.
+    /// How many of a notification or request have been sent, over the app's
+    /// whole life.
     pub(crate) fn notifications_of(&self, method: &str) -> usize {
         self.sent.get(method).copied().unwrap_or(0)
     }
@@ -705,6 +719,7 @@ impl Lsp {
         path: &Path,
         char_index: usize,
         rope: &Rope,
+        retries: u8,
     ) -> Result<(), NoAnswer> {
         let Some(doc) = self.docs.get(path) else {
             return Err(NoAnswer::NoServer);
@@ -738,11 +753,13 @@ impl Lsp {
                 "position": { "line": position.line, "character": position.character },
             }),
         );
+        self.tally(method, true);
         self.pending.push(Pending {
             id: request,
             server: id,
             kind,
             asked_at: (path.to_path_buf(), typ_buffer::Position::default()),
+            retries,
         });
         Ok(())
     }
@@ -963,6 +980,12 @@ pub(crate) enum NoAnswer {
     NotReady,
     /// It answered the handshake and does not offer this.
     Unsupported,
+    /// It answered, and the answer was `null` or an empty list.
+    ///
+    /// A fourth case rather than silence. The first three happen before a
+    /// request is sent and this one after, but from the keyboard they are the
+    /// same event: a key was pressed and nothing appeared.
+    Empty(Ask),
 }
 
 impl NoAnswer {
@@ -972,6 +995,8 @@ impl NoAnswer {
             NoAnswer::NoServer => "No language server for this file.",
             NoAnswer::NotReady => "The language server is still starting.",
             NoAnswer::Unsupported => "This language server does not offer that.",
+            NoAnswer::Empty(Ask::Definition) => "No definition found.",
+            NoAnswer::Empty(Ask::Hover) => "No hover information here.",
         }
     }
 }
@@ -1104,6 +1129,7 @@ mod tests {
             server: ServerId(server),
             kind,
             asked_at: (PathBuf::from("a.rs"), typ_buffer::Position::default()),
+            retries: 0,
         }
     }
 
