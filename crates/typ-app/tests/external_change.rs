@@ -106,6 +106,24 @@ fn a_dirty_buffer_is_never_silently_reloaded() {
 }
 
 #[test]
+fn a_failed_watch_is_reported_rather_than_trusted() {
+    // The watch dying is the state in which the next save overwrites an
+    // outside write without warning, so the user has to hear that it died.
+    let (mut app, file, _rx) = watching("watch-failed");
+    let event = AppEvent::WatchFailed {
+        path: file,
+        reason: "inotify watch limit reached".into(),
+    };
+    step(&mut app, event, AREA).unwrap();
+
+    let status = app.status().unwrap_or_default().to_string();
+    assert!(
+        status.contains("No longer watching") && status.contains("watch limit"),
+        "status was {status:?}"
+    );
+}
+
+#[test]
 fn a_deleted_file_leaves_the_buffer_standing() {
     let (mut app, file, rx) = watching("deleted");
 

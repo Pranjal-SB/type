@@ -19,6 +19,9 @@ pub enum AppEvent {
     Input(crossterm::event::Event),
     /// The file at this path changed on disk.
     FileChanged(PathBuf),
+    /// The watch on this path reported a failure and may have stopped, so an
+    /// outside write can now go unnoticed.
+    WatchFailed { path: PathBuf, reason: String },
     /// A worker finished parsing a snapshot of a buffer.
     ///
     /// The generation inside is what makes an out-of-order result harmless:

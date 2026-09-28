@@ -726,8 +726,15 @@ impl App {
             return;
         };
         let path = path.to_path_buf();
-        match typ_buffer::watch_file(&path, move |changed| {
-            let _ = sender.send(typ_core::AppEvent::FileChanged(changed));
+        match typ_buffer::watch_file(&path, move |changed, what| {
+            let event = match what {
+                typ_buffer::WatchEvent::Changed => typ_core::AppEvent::FileChanged(changed),
+                typ_buffer::WatchEvent::Failed(reason) => typ_core::AppEvent::WatchFailed {
+                    path: changed,
+                    reason,
+                },
+            };
+            let _ = sender.send(event);
         }) {
             Ok(watch) => tab.watch = Some(watch),
             Err(e) => crate::log_warn!("watching {} failed: {e:#}", path.display()),
@@ -812,6 +819,19 @@ impl App {
         self.tabs[index].parsed_revision = None;
         self.request_parse_if_stale();
         Ok(on_screen)
+    }
+
+    /// The watch on a file failed. Say so: until it is re-established an
+    /// outside write goes unnoticed, and Ctrl+S would overwrite it.
+    pub fn handle_watch_failure(&mut self, path: &Path, reason: &str) -> bool {
+        if self.tabs[self.active].panel.path() != Some(path) {
+            return false;
+        }
+        self.status = Some(format!(
+            "No longer watching {} for outside changes: {reason}",
+            self.tabs[self.active].panel.file_name()
+        ));
+        true
     }
 
     pub fn status(&self) -> Option<&str> {

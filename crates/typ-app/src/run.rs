@@ -375,6 +375,9 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
 
     match event {
         AppEvent::FileChanged(path) => changed = app.handle_external_change(&path)?,
+        AppEvent::WatchFailed { path, reason } => {
+            changed = app.handle_watch_failure(&path, &reason);
+        }
         AppEvent::Parsed(parsed) => changed = app.handle_parsed(parsed),
         AppEvent::Found(found) => changed = app.handle_found(found),
         AppEvent::Lsp(incoming) => changed = app.handle_lsp(incoming),
