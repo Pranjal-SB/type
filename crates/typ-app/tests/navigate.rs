@@ -298,6 +298,20 @@ fn a_real_error_is_not_retried() {
     assert!(app.hover().is_none());
 }
 
+#[test]
+fn a_refused_request_says_why_in_the_servers_words() {
+    // Every neighbouring arm sets the status. A refusal that only logs is, with
+    // `TYP_LOG` unset, a key that did nothing. Gap 101.
+    let (mut app, rx, _) = ready("refused", &["--hover-error"]);
+    act(&mut app, typ_core::Action::Hover);
+    assert!(pump_until(&mut app, &rx, |a| a.status().is_some()));
+    assert!(
+        app.status().is_some_and(|s| s.contains("internal error")),
+        "status was: {:?}",
+        app.status()
+    );
+}
+
 // --- an answer that arrived empty ----------------------------------------
 //
 // `null` is a legal answer to both requests and the ordinary one while a

@@ -522,9 +522,16 @@ impl App {
                 }
                 return false;
             }
-            Err(_) => {
-                crate::log_warn!("the language server refused a request");
-                return false;
+            // Said on the status bar like every neighbouring arm: `TYP_LOG` is
+            // unset by default, so a log line alone is a key that did nothing.
+            Err(error) => {
+                crate::log_warn!(
+                    "language server {server:?} refused a request: {} ({})",
+                    error.message,
+                    error.code
+                );
+                self.status = Some(format!("Language server: {}", error.message));
+                return true;
             }
         };
 
