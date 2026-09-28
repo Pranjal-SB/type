@@ -607,23 +607,27 @@ impl TextBuffer {
 
         // Same directory, so the rename never crosses a filesystem boundary —
         // across devices it would silently become a copy, which is not atomic.
-        let temp = temp_path_beside(&target);
-        write_all_and_sync(&temp, &self.rope, self.line_ending)
-            .with_context(|| format!("writing {}", temp.display()))?;
+        let (temp, file) = create_temp(&target)
+            .with_context(|| format!("creating a temporary file beside {}", target.display()))?;
 
-        // Carry the original's mode onto the temp file *before* the rename, so
-        // the file is never briefly world-readable and an executable script
-        // does not stop being executable because somebody edited it.
-        if let Err(e) = copy_permissions(&target, &temp) {
+        let written = (|| -> Result<()> {
+            // The original's mode goes on *before* the contents do, so a
+            // private file's text is never on disk under a wider mode, and an
+            // executable script stays executable. Gap 103.
+            copy_permissions(&target, &temp)
+                .with_context(|| format!("preserving the mode of {}", target.display()))?;
+            write_all_and_sync(file, &self.rope, self.line_ending)
+                .with_context(|| format!("writing {}", temp.display()))?;
+            std::fs::rename(&temp, &target)
+                .with_context(|| format!("replacing {}", target.display()))
+        })();
+        if written.is_err() {
+            // One cleanup for every step after the temp exists. The write
+            // used to return through `?` and leave the temp beside the source
+            // on a full disk. Gap 99. The original is untouched either way.
             let _ = std::fs::remove_file(&temp);
-            return Err(e).with_context(|| format!("preserving the mode of {}", target.display()));
         }
-
-        if let Err(e) = std::fs::rename(&temp, &target) {
-            // Leave nothing behind on failure; the original is untouched.
-            let _ = std::fs::remove_file(&temp);
-            return Err(e).with_context(|| format!("replacing {}", target.display()));
-        }
+        written?;
 
         // A rename is not durable until the directory entry naming it is. Skip
         // this and a power loss can leave the directory pointing at neither
@@ -673,13 +677,56 @@ fn trim_line_ending(s: &str) -> &str {
 /// a fixed temp name race: one truncates the other's half-written file and
 /// renames whichever won, and the loser's content is gone. A kill mid-save also
 /// leaves the file behind, and a pid-suffixed one is at least attributable.
-fn temp_path_beside(path: &Path) -> PathBuf {
+fn temp_path_beside(path: &Path, attempt: u32) -> PathBuf {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "buffer".to_string());
     let parent = path.parent().unwrap_or(Path::new("."));
-    parent.join(format!(".{name}.{}.typ-tmp", std::process::id()))
+    let pid = std::process::id();
+    match attempt {
+        0 => parent.join(format!(".{name}.{pid}.typ-tmp")),
+        n => parent.join(format!(".{name}.{pid}.{n}.typ-tmp")),
+    }
+}
+
+/// How many names `create_temp` tries before giving up.
+const TEMP_ATTEMPTS: u32 = 16;
+
+/// Create the temp file for a save of `target`, refusing anything already
+/// there.
+///
+/// **Exclusive.** The name is predictable (file name plus pid) so anyone
+/// with write access to the directory can put something at it first, and on
+/// Unix that something can be a symlink to a file of the user's. A plain
+/// create would truncate and write through it. `create_new` fails instead, on
+/// a file and on a symlink alike, and the next name is tried. Gap 104.
+///
+/// **Private until told otherwise.** On Unix a file that replaces an existing
+/// one starts at 0600 and is given the original's mode before any content is
+/// written, so a 0600 file's text is never readable under the umask's 0644 in
+/// between. A file saved for the first time has no mode to protect and gets
+/// the ordinary default. Gap 103.
+fn create_temp(target: &Path) -> std::io::Result<(PathBuf, std::fs::File)> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    if target.exists() {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    for attempt in 0..TEMP_ATTEMPTS {
+        let temp = temp_path_beside(target, attempt);
+        match options.open(&temp) {
+            Ok(file) => return Ok((temp, file)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "every temporary file name for this save is already taken",
+    ))
 }
 
 /// Write the rope out and flush it to the device before returning.
@@ -687,10 +734,16 @@ fn temp_path_beside(path: &Path) -> PathBuf {
 /// Without the flush, the rename can be durable while the contents are not —
 /// which produces an empty file after a power loss, the exact failure the
 /// atomic write exists to prevent.
-fn write_all_and_sync(path: &Path, rope: &Rope, ending: LineEnding) -> std::io::Result<()> {
+///
+/// Takes the file by value so it is closed before the rename: Windows will
+/// not rename a file that is still open.
+fn write_all_and_sync(
+    mut file: std::fs::File,
+    rope: &Rope,
+    ending: LineEnding,
+) -> std::io::Result<()> {
     use std::io::Write;
 
-    let mut file = std::fs::File::create(path)?;
     for chunk in rope.chunks() {
         match ending {
             // The rope holds LF. A chunk boundary cannot split a `\n`, so
@@ -744,5 +797,27 @@ fn sync_parent_dir(path: &Path) {
     };
     if let Ok(dir) = std::fs::File::open(parent) {
         let _ = dir.sync_all();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn the_temp_for_a_private_file_is_private_before_anything_is_written() {
+        let dir = std::env::temp_dir().join(format!("typ-temp-mode-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("id_ed25519");
+        std::fs::write(&target, "secret\n").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        let (temp, _file) = create_temp(&target).unwrap();
+        let mode = std::fs::metadata(&temp).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "the temp was readable under the umask");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

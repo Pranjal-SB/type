@@ -155,6 +155,31 @@ fn saving_leaves_no_temporary_file_behind() {
 }
 
 #[test]
+fn a_file_already_at_the_temp_path_is_never_written_through() {
+    // The temp name is the file name plus the pid, so anyone who can write the
+    // directory can put something there first: on Unix, a symlink to a file
+    // of the user's they want overwritten. The save must not open it.
+    let dir = std::env::temp_dir().join("typ-buffer-temp-planted");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("save.txt");
+    std::fs::write(&path, "old\n").unwrap();
+    let planted = dir.join(format!(".save.txt.{}.typ-tmp", std::process::id()));
+    std::fs::write(&planted, "not yours\n").unwrap();
+
+    let mut b = TextBuffer::from_path(&path).unwrap();
+    b.insert_char(Position { line: 0, col: 3 }, '!');
+    b.save().unwrap();
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "old!\n");
+    assert_eq!(
+        std::fs::read_to_string(&planted).unwrap(),
+        "not yours\n",
+        "the save opened a file it did not create"
+    );
+}
+
+#[test]
 fn a_save_that_cannot_be_written_leaves_the_original_untouched() {
     let dir = std::env::temp_dir().join("typ-buffer-atomic-fail");
     let _ = std::fs::remove_dir_all(&dir);
