@@ -53,13 +53,11 @@ pub fn run(mut app: App) -> Result<()> {
     // by hand means the whole job lands here: without it a panic drops the user
     // back to a shell in raw mode, on the alternate screen, still emitting
     // mouse escape sequences and wrapping every paste in markers. FINDINGS §6.
-    let previous = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
+    install_panic_hook(|| {
         let _ = stdout().execute(DisableBracketedPaste);
         let _ = stdout().execute(DisableMouseCapture);
         ratatui::restore();
-        previous(info);
-    }));
+    });
 
     let result = event_loop(&mut terminal, &mut app);
 
@@ -72,6 +70,35 @@ pub fn run(mut app: App) -> Result<()> {
     stdout().execute(DisableMouseCapture)?;
     ratatui::restore();
     result
+}
+
+/// Run `restore` when a panic unwinds the thread that called this, then the
+/// previous hook.
+///
+/// **Only that thread.** The hook is process-wide and runs on whichever thread
+/// panicked, and there are six others: parse, find, three per language server,
+/// the input pump. Restoring on a worker's panic left raw mode and the
+/// alternate screen while the loop carried on drawing into a cooked terminal:
+/// keys stopped arriving and every dirty buffer became unreachable. Gap 90.
+///
+/// A worker's panic goes to the log rather than to the previous hook, because
+/// that hook prints to stderr and stderr is the alternate screen the editor is
+/// still drawing on.
+pub fn install_panic_hook(restore: impl Fn() + Send + Sync + 'static) {
+    let loop_thread = std::thread::current().id();
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let current = std::thread::current();
+        if current.id() != loop_thread {
+            crate::log_error!(
+                "thread {} panicked: {info}",
+                current.name().unwrap_or("<unnamed>")
+            );
+            return;
+        }
+        restore();
+        previous(info);
+    }));
 }
 
 /// Feed terminal events into the channel from a thread of their own.
