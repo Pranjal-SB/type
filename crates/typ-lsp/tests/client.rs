@@ -174,6 +174,26 @@ fn a_server_that_never_initializes_supports_nothing() {
 }
 
 #[test]
+fn a_server_that_refuses_initialize_is_not_initialized_and_says_why() {
+    // It answered, but with an error. Recording that as a completed handshake
+    // made `ever_ready` true (so its death burned every restart) and made
+    // every request say "does not offer that" about a server that refused the
+    // workspace. Gap 93.
+    let (mut client, rx) = start(&["--refuse-initialize"]);
+    let incoming = rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the refusal arrives");
+    assert!(client.handle(incoming).is_none(), "the handshake leaked");
+    assert!(!client.is_initialized());
+    assert!(
+        client
+            .refusal()
+            .is_some_and(|e| e.message.contains("refused")),
+        "the reason was thrown away"
+    );
+}
+
+#[test]
 fn shutdown_lets_the_server_stop_on_its_own() {
     let (mut client, rx) = start(&[]);
     pump_until_initialized(&mut client, &rx);

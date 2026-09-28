@@ -729,7 +729,7 @@ impl Lsp {
         retries: u8,
     ) -> Result<(), NoAnswer> {
         let Some(doc) = self.docs.get(path) else {
-            return Err(NoAnswer::NoServer);
+            return Err(self.why_not_open(path));
         };
         let (id, uri) = (doc.server, doc.uri.clone());
         let encoding = self.encoding(id);
@@ -769,6 +769,29 @@ impl Lsp {
             retries,
         });
         Ok(())
+    }
+
+    /// Why a path has no document on any server.
+    ///
+    /// A document is only recorded once the handshake completes, so "no
+    /// document" covers a server still starting and one that refused the
+    /// workspace as well as there being none. Gap 93.
+    fn why_not_open(&self, path: &Path) -> NoAnswer {
+        let started = self
+            .configs
+            .iter()
+            .position(|c| c.handles(path))
+            .and_then(|index| {
+                let root = config::root_for(path, &self.configs[index].roots, &self.root);
+                self.servers
+                    .iter()
+                    .find(|s| s.config == index && s.root == root)
+            });
+        match started.and_then(|s| s.client.as_deref()) {
+            Some(client) if client.refusal().is_some() => NoAnswer::Refused,
+            Some(client) if !client.is_initialized() => NoAnswer::NotReady,
+            _ => NoAnswer::NoServer,
+        }
     }
 
     /// Record where the cursor was for the request just sent.
@@ -987,6 +1010,8 @@ pub(crate) enum NoAnswer {
     NotReady,
     /// It answered the handshake and does not offer this.
     Unsupported,
+    /// It answered `initialize` with an error. Waiting will not help.
+    Refused,
     /// It answered, and the answer was `null` or an empty list.
     ///
     /// A fourth case rather than silence. The first three happen before a
@@ -1002,6 +1027,7 @@ impl NoAnswer {
             NoAnswer::NoServer => "No language server for this file.",
             NoAnswer::NotReady => "The language server is still starting.",
             NoAnswer::Unsupported => "This language server does not offer that.",
+            NoAnswer::Refused => "The language server refused this workspace.",
             NoAnswer::Empty(Ask::Definition) => "No definition found.",
             NoAnswer::Empty(Ask::Hover) => "No hover information here.",
         }

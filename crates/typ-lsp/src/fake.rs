@@ -54,6 +54,9 @@ struct Flags {
     /// cancellation lands mid-request and it has no retry of its own: the code
     /// is not a refusal, it is "ask me again".
     content_modified: usize,
+    /// Answer `initialize` with an error, and then stay up. A server that
+    /// refuses the workspace it was started in.
+    refuse_initialize: bool,
     /// Answer nothing at all to a definition request. Servers do this when
     /// they have not finished indexing.
     no_definition: bool,
@@ -87,6 +90,7 @@ impl Flags {
             hover_plain: has("--hover-plain"),
             hover_empty: has("--hover-empty"),
             hover_error: has("--hover-error"),
+            refuse_initialize: has("--refuse-initialize"),
             content_modified: args
                 .iter()
                 .find_map(|a| a.strip_prefix("--content-modified="))
@@ -256,7 +260,9 @@ pub fn run() {
 
         match message {
             Message::Request(Request { id, method, params }) => {
-                let error = if method != "textDocument/hover" {
+                let error = if method == "initialize" && flags.refuse_initialize {
+                    Some((-32603, "this workspace is refused"))
+                } else if method != "textDocument/hover" {
                     None
                 } else if refusals < flags.content_modified {
                     refusals += 1;

@@ -83,6 +83,9 @@ pub struct Client {
     capabilities: Option<serde_json::Value>,
     /// The id of the `initialize` we are waiting on, if we still are.
     awaiting_initialize: Option<RequestId>,
+    /// The error `initialize` was answered with. A server that refused the
+    /// workspace is not initialized, and this is the reason, as data.
+    refusal: Option<ResponseError>,
 }
 
 impl Client {
@@ -111,6 +114,7 @@ impl Client {
             encoding: Encoding::Utf16,
             capabilities: None,
             awaiting_initialize: None,
+            refusal: None,
         };
 
         let id = client.request("initialize", initialize_params(root));
@@ -136,7 +140,13 @@ impl Client {
             }) => {
                 if self.awaiting_initialize.as_ref() == Some(&id) {
                     self.awaiting_initialize = None;
-                    self.finish_initialize(response_result.ok());
+                    match response_result {
+                        Ok(result) => self.finish_initialize(result),
+                        // **A refusal is not a handshake.** Recorded as data so
+                        // the app can say why; `is_initialized` stays false, so
+                        // the server is never counted as having been ready.
+                        Err(error) => self.refusal = Some(error),
+                    }
                     return None;
                 }
                 Some(LspEvent::Response {
@@ -153,14 +163,7 @@ impl Client {
         }
     }
 
-    fn finish_initialize(&mut self, result: Option<serde_json::Value>) {
-        let Some(result) = result else {
-            // A server that refuses to initialize is a server that will not be
-            // used. It stays at the default encoding and advertises nothing,
-            // so every capability check answers no.
-            return;
-        };
-
+    fn finish_initialize(&mut self, result: serde_json::Value) {
         if let Some(named) = result.get("positionEncoding").and_then(|e| e.as_str())
             && let Some(encoding) = Encoding::from_wire(named)
         {
@@ -181,9 +184,14 @@ impl Client {
         self.encoding
     }
 
-    /// Whether the handshake has completed.
+    /// Whether the handshake has completed. A refused one has not.
     pub fn is_initialized(&self) -> bool {
-        self.awaiting_initialize.is_none()
+        self.awaiting_initialize.is_none() && self.refusal.is_none()
+    }
+
+    /// Why the server refused `initialize`, if it did.
+    pub fn refusal(&self) -> Option<&ResponseError> {
+        self.refusal.as_ref()
     }
 
     /// What the server said it can do, as it said it.

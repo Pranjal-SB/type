@@ -299,6 +299,32 @@ fn a_real_error_is_not_retried() {
 }
 
 #[test]
+fn a_server_that_refused_the_workspace_says_so_rather_than_still_starting() {
+    // Gap 93. "Still starting" is a promise that waiting helps, and it does not.
+    let dir = fixture("refused-init");
+    let (tx, rx) = channel();
+    let mut app = App::new(&dir).unwrap();
+    app.add_language_server(server(&["--refuse-initialize"]));
+    app.set_event_sender(tx);
+    app.open_path(&dir.join("a.rs")).unwrap();
+
+    let deadline = Instant::now() + WAIT;
+    let mut status = None;
+    while Instant::now() < deadline {
+        settle(&mut app, &rx);
+        act(&mut app, typ_core::Action::Hover);
+        status = app.status().map(str::to_string);
+        if status.as_deref().is_some_and(|s| s.contains("refused")) {
+            break;
+        }
+    }
+    assert!(
+        status.as_deref().is_some_and(|s| s.contains("refused")),
+        "status was: {status:?}"
+    );
+}
+
+#[test]
 fn a_refused_request_says_why_in_the_servers_words() {
     // Every neighbouring arm sets the status. A refusal that only logs is, with
     // `TYP_LOG` unset, a key that did nothing. Gap 101.
