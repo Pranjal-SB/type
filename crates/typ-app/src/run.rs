@@ -111,13 +111,28 @@ pub fn install_panic_hook(restore: impl Fn() + Send + Sync + 'static) {
 /// It ends on its own when the receiver is dropped and the send fails, which is
 /// what stops it outliving the editor.
 fn spawn_input_pump(tx: AppSender) {
-    std::thread::spawn(move || {
-        while let Ok(event) = event::read() {
-            if tx.send(AppEvent::Input(event)).is_err() {
+    std::thread::spawn(move || pump_input(&tx, event::read));
+}
+
+/// The pump's body, over any reader, so a test can hand it one that fails.
+///
+/// A failed read (a closed tty, EOF on the input) is the last thing it says.
+/// The channel cannot say it by disconnecting, because the app holds a sender
+/// of its own. Gap 83.
+pub fn pump_input(tx: &AppSender, mut read: impl FnMut() -> std::io::Result<Event>) {
+    loop {
+        match read() {
+            Ok(event) => {
+                if tx.send(AppEvent::Input(event)).is_err() {
+                    return;
+                }
+            }
+            Err(e) => {
+                let _ = tx.send(AppEvent::InputClosed(e.to_string()));
                 return;
             }
         }
-    });
+    }
 }
 
 /// Give the app the channel its workers report through, and start the pump.
@@ -167,8 +182,8 @@ fn event_loop(terminal: &mut Terminal<TypBackend<Stdout>>, app: &mut App) -> Res
             return Ok(());
         }
 
-        // Every sender is gone only when the pump thread has died, which means
-        // the terminal is gone too. Nothing left to wait for.
+        // Unreachable in practice: the app holds a sender, so this never
+        // disconnects. A dead pump says so with `InputClosed` instead.
         let Ok(first) = rx.recv() else {
             return Ok(());
         };
@@ -323,6 +338,9 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
         AppEvent::Parsed(parsed) => changed = app.handle_parsed(parsed),
         AppEvent::Found(found) => changed = app.handle_found(found),
         AppEvent::Lsp(incoming) => changed = app.handle_lsp(incoming),
+        // An error rather than a quit: the user did not finish, and exiting 0
+        // tells whoever ran `typ` as `$EDITOR` that they did. Invariant 10.
+        AppEvent::InputClosed(reason) => anyhow::bail!("the terminal's input closed: {reason}"),
         AppEvent::Input(input) => match input {
             // Every binding lives in the keymap now, so there is nothing left
             // here to special-case. The dispatcher owns the order.

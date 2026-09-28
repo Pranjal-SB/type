@@ -35,6 +35,13 @@ pub enum AppEvent {
     /// on the app's thread; growing a variant per LSP feature is how this enum
     /// would become the chokepoint `PanelEvent` is deliberately not.
     Lsp(typ_lsp::Incoming),
+    /// The terminal stopped delivering input, and why. Nothing will ever send
+    /// another `Input`.
+    ///
+    /// An event rather than the channel disconnecting, because it cannot
+    /// disconnect: the app holds a sender of its own for its workers, so the
+    /// pump dying left `recv()` blocked forever. Gap 83.
+    InputClosed(String),
 }
 
 /// So `ParseWorker::spawn` can take the app's own sender.

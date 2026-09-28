@@ -118,6 +118,46 @@ fn quitting_stops_the_loop() {
 }
 
 #[test]
+fn a_dead_input_source_is_reported_rather_than_waited_on() {
+    // Gap 83. The app holds a sender for its workers, so the channel never
+    // disconnects when the pump dies, and `recv()` blocked forever. `_app_end`
+    // stands in for that clone.
+    let (tx, rx) = channel();
+    let _app_end = tx.clone();
+    let mut reads = vec![
+        Err(std::io::Error::other("the tty closed")),
+        Ok(Event::Key(KeyEvent::new(
+            KeyCode::Char('x'),
+            KeyModifiers::NONE,
+        ))),
+    ];
+
+    typ_app::run::pump_input(&tx, || reads.pop().expect("read after the error"));
+
+    let events: Vec<AppEvent> = rx.try_iter().collect();
+    assert!(
+        matches!(events.first(), Some(AppEvent::Input(_))),
+        "{events:?}"
+    );
+    assert!(
+        matches!(events.last(), Some(AppEvent::InputClosed(_))),
+        "the pump died without a word, so the loop waits forever: {events:?}"
+    );
+}
+
+#[test]
+fn the_loop_ends_with_an_error_when_the_input_closes() {
+    // Invariant 10: an honest exit code. The terminal went away and the user
+    // did not finish; exiting 0 would tell `git commit` the edit was done.
+    let (mut app, _) = app_with_file("input-closed");
+
+    let result = step(&mut app, AppEvent::InputClosed("eof".to_string()), AREA);
+
+    let error = result.expect_err("the loop carried on with no input source");
+    assert!(error.to_string().contains("eof"), "{error:#}");
+}
+
+#[test]
 fn the_loop_wires_the_app_to_its_workers() {
     // **The test that was missing for four releases.** From M2.7 until v0.3.0
     // `event_loop` created the event channel, gave one end to the input pump
