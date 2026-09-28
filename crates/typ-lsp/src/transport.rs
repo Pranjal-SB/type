@@ -399,17 +399,27 @@ mod platform {
                 return Job(std::ptr::null_mut());
             }
 
+            // `Job` owns the handle from here, so an early return closes it.
+            let job = Job(job);
+
             let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
             limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            SetInformationJobObject(
-                job,
+            let limited = SetInformationJobObject(
+                job.0,
                 JobObjectExtendedLimitInformation,
                 (&raw const limits).cast(),
                 std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
             );
 
-            AssignProcessToJobObject(job, child.as_raw_handle() as HANDLE);
-            Job(job)
+            // **Both answers read.** A job that does not hold the child (the
+            // child is already in one that refuses nesting, as under some CI
+            // hosts) is worse than none: `kill_tree` would terminate the empty
+            // job and never reach `child.kill()`. Gap 95.
+            if limited == 0 || AssignProcessToJobObject(job.0, child.as_raw_handle() as HANDLE) == 0
+            {
+                return Job(std::ptr::null_mut());
+            }
+            job
         }
     }
 
@@ -421,6 +431,27 @@ mod platform {
             unsafe { TerminateJobObject(transport.job.0, 1) };
         } else {
             let _ = transport.child.kill();
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn a_process_the_job_could_not_take_gets_no_job() {
+            // A job that holds nothing must read as no job, or `kill_tree`
+            // terminates an empty job and never reaches `child.kill()`. An
+            // exited process cannot be assigned, which is the failure this
+            // stands in for: the nested-job refusal some CI hosts produce.
+            // Gap 95.
+            let mut child = std::process::Command::new("cmd")
+                .args(["/C", "exit"])
+                .spawn()
+                .expect("cmd starts");
+            child.wait().expect("cmd exits");
+            let job = confine(&child);
+            assert!(job.0.is_null(), "an empty job was kept");
         }
     }
 }
