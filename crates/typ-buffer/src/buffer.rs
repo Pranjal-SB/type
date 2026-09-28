@@ -29,6 +29,14 @@ pub struct TextBuffer {
     /// stop taking their own snapshots, so a multi-caret edit is one undo step
     /// rather than one per cursor.
     group_depth: usize,
+    /// What the open group will record, held until its first edit that
+    /// changes something.
+    ///
+    /// Lazy because a group does not know at `begin_edit_group` whether it will
+    /// mutate anything (Backspace at the start of the buffer opens one and
+    /// does nothing) and recording is not free of consequences: it clears
+    /// the redo stack. Gap 81.
+    pending_group: Option<(EditKind, Selections)>,
     /// Detected once at load. Recorded rather than recomputed because editing
     /// the file must not change the answer — a user deleting the first line
     /// does not thereby convert the file to LF.
@@ -60,6 +68,7 @@ impl TextBuffer {
             saved_state: 0,
             history: History::default(),
             group_depth: 0,
+            pending_group: None,
             line_ending: LineEnding::detect(s),
             revision: 0,
             edits: Vec::new(),
@@ -81,6 +90,7 @@ impl TextBuffer {
             saved_state: 0,
             history: History::default(),
             group_depth: 0,
+            pending_group: None,
             // Nothing to detect from, and a file TYPE is about to create has no
             // existing convention to honour.
             line_ending: LineEnding::default(),
@@ -116,6 +126,7 @@ impl TextBuffer {
             saved_state: 0,
             history: History::default(),
             group_depth: 0,
+            pending_group: None,
         })
     }
 
@@ -503,38 +514,49 @@ impl TextBuffer {
         std::mem::take(&mut self.edits)
     }
 
-    /// Take an undo snapshot unless an edit group is open.
+    /// Take the undo snapshot for an edit that is about to change the text.
     ///
-    /// Only the M1-era standalone helpers reach this. They have no selection set
-    /// and no edit kind to offer, so they record as `Other` at a caret placed
-    /// where they are editing — which reproduces their old one-step-per-call
-    /// behavior exactly. M2 Task 12 deletes their last callers.
+    /// Inside a group, the group's own snapshot, the first time only. Outside
+    /// one, the M1-era standalone helpers: they have no selection set and no
+    /// edit kind to offer, so they record as `Other` at a caret placed where
+    /// they are editing, which reproduces their old one-step-per-call behavior
+    /// exactly.
     fn record_snapshot(&mut self, at: Position) {
-        if self.group_depth == 0 {
-            let selections = Selections::single(Selection::caret(at));
-            self.history
-                .record(EditKind::Other, self.snapshot_with(&selections));
+        if self.group_depth > 0 {
+            if let Some((kind, selections)) = self.pending_group.take() {
+                self.history.record(kind, self.snapshot_with(&selections));
+            }
+            return;
         }
+        let selections = Selections::single(Selection::caret(at));
+        self.history
+            .record(EditKind::Other, self.snapshot_with(&selections));
     }
 
     /// Begin a group of edits that undo together.
     ///
-    /// One snapshot is taken up front and none during the group, so thirty
-    /// cursors typing one character is one undo step. Without this, undoing a
-    /// thirty-caret edit would take thirty presses and leave the buffer in
-    /// states the user never typed.
+    /// One snapshot for the whole group, so thirty cursors typing one
+    /// character is one undo step. Without this, undoing a thirty-caret edit
+    /// would take thirty presses and leave the buffer in states the user never
+    /// typed.
     ///
-    /// Whether that snapshot is actually pushed is `History`'s call: a group
-    /// continuing a run of the same kind folds into the one already there.
+    /// The snapshot is taken at the group's first edit that changes the text,
+    /// not here: a group that changes nothing leaves no undo step and keeps the
+    /// redo stack. The text is the same either way, since nothing ran between.
+    /// Whether it is then pushed is `History`'s call: a group continuing a run
+    /// of the same kind folds into the one already there.
     pub fn begin_edit_group(&mut self, kind: EditKind, selections: &Selections) {
         if self.group_depth == 0 {
-            self.history.record(kind, self.snapshot_with(selections));
+            self.pending_group = Some((kind, selections.clone()));
         }
         self.group_depth += 1;
     }
 
     pub fn end_edit_group(&mut self) {
         self.group_depth = self.group_depth.saturating_sub(1);
+        if self.group_depth == 0 {
+            self.pending_group = None;
+        }
     }
 
     /// How many undo steps are currently held.

@@ -244,6 +244,30 @@ fn redo_returns_the_cursor_to_where_the_edit_left_it() {
 }
 
 #[test]
+fn a_delete_with_nothing_to_delete_keeps_the_redo() {
+    // Backspace at the start of the buffer and Delete at its end both
+    // visibly do nothing, so neither may cost the user a pending redo.
+    for (at, direction) in [
+        (pos(0, 0), Direction::Backward),
+        (pos(0, 2), Direction::Forward),
+    ] {
+        let mut p = EditorPanel::from_str("ab");
+        p.set_selections_for_test(vec![Selection::caret(pos(0, 1))]);
+        p.apply_action(Action::InsertChar('-'));
+        p.apply_action(Action::Undo);
+
+        p.set_selections_for_test(vec![Selection::caret(at)]);
+        p.apply_action(del(direction, false));
+        p.apply_action(Action::Redo);
+        assert_eq!(
+            p.line_text(0),
+            "a-b",
+            "{direction:?} at {at:?} lost the redo"
+        );
+    }
+}
+
+#[test]
 fn an_edit_reports_a_redraw() {
     let mut p = EditorPanel::from_str("ab\n");
     assert_eq!(

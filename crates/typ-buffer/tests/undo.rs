@@ -246,3 +246,28 @@ fn the_save_point_moves_with_a_save() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_no_op_edit_group_keeps_the_redo_stack() {
+    let mut buffer = TextBuffer::from_str("abc");
+    type_at(&mut buffer, 3, "d");
+    buffer.undo(&caret(0, 4));
+    let depth = buffer.undo_depth();
+
+    // Backspace at (0,0): the group opens, and the edit inside it is a no-op.
+    let origin = Position { line: 0, col: 0 };
+    buffer.begin_edit_group(EditKind::Delete, &caret(0, 0));
+    buffer.replace_range(origin, origin, "");
+    buffer.end_edit_group();
+
+    assert_eq!(
+        buffer.undo_depth(),
+        depth,
+        "an edit that changed nothing must not leave an undo step"
+    );
+    assert!(
+        buffer.redo(&caret(0, 0)).is_some(),
+        "an edit that changed nothing must not throw away the redo"
+    );
+    assert_eq!(text(&buffer), "abcd");
+}
