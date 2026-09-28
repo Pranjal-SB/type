@@ -218,8 +218,13 @@ impl App {
     /// they take the same branch.
     fn panel_for(&self, path: &Path) -> Result<EditorPanel> {
         // The registry decides the handler. There is one content panel today,
-        // but the lookup runs from day one so adding viewers never touches this.
-        let _handler = self.registry.handler_for(path);
+        // so any other answer is a viewer that has registered and not been
+        // built: say so rather than open its file as text. This answer used
+        // to be computed and thrown away. Gap 116.
+        let handler = self.registry.handler_for(path);
+        if handler != typ_registry::EDITOR {
+            anyhow::bail!("no {} viewer is available yet", handler.0);
+        }
         if path.exists() {
             EditorPanel::from_path(path)
         } else {
@@ -247,6 +252,11 @@ impl App {
         self.watch_tab(self.active);
         self.warn_if_changed_on_disk();
         self.request_parse_if_stale();
+    }
+
+    /// Where a viewer registers the extensions it opens.
+    pub fn registry_mut(&mut self) -> &mut typ_registry::Registry {
+        &mut self.registry
     }
 
     /// Where the tab bar is, or a zero-height rect when there is not one.
