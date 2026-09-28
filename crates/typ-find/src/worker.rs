@@ -217,6 +217,15 @@ impl FindWorker {
         generation
     }
 
+    /// Whether the thread is still there to answer.
+    ///
+    /// False once a send has failed. A caller that does not check this after
+    /// asking waits forever on a generation nothing will send, with the picker
+    /// empty and nothing saying why. Gap 91.
+    pub fn is_alive(&self) -> bool {
+        self.jobs.is_some()
+    }
+
     /// The generation the most recent [`filter`](Self::filter) was given.
     pub fn generation(&self) -> u64 {
         self.generation

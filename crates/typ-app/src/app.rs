@@ -646,9 +646,17 @@ impl App {
             return;
         };
 
-        worker.request(language, tab.panel.buffer().snapshot());
+        let Some(generation) = worker.request(language, tab.panel.buffer().snapshot()) else {
+            // The thread is gone: a panic compiling a grammar's queries is
+            // how. Recording a request that was never delivered is what left
+            // highlighting dead while `is_wired` still said yes. Gap 91.
+            self.parse_worker = None;
+            crate::log_error!("the parse worker is gone; syntax highlighting is off");
+            self.status = Some("Syntax highlighting stopped: its worker thread died.".into());
+            return;
+        };
         tab.parsed_revision = Some(revision);
-        tab.awaited_generation = Some(worker.generation());
+        tab.awaited_generation = Some(generation);
     }
 
     /// A completed parse arrived. Returns whether the screen changed.

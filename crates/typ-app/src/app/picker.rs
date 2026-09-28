@@ -320,6 +320,7 @@ impl App {
         };
         let generation = worker.grep(root, query, GREP_HITS, overrides);
         self.awaited_filter = Some(generation);
+        self.notice_dead_find_worker();
         generation
     }
 
@@ -388,6 +389,7 @@ impl App {
         if let Some(worker) = &mut self.find_worker {
             worker.index(self.root.clone());
         }
+        self.notice_dead_find_worker();
     }
 
     /// Ask for the best `limit` matches, and return the generation to await.
@@ -402,7 +404,20 @@ impl App {
         };
         let generation = worker.filter(query, limit);
         self.awaited_filter = Some(generation);
+        self.notice_dead_find_worker();
         generation
+    }
+
+    /// Let go of a find worker whose thread is gone, and say so.
+    ///
+    /// Without this the picker waited on a generation nothing would send,
+    /// empty and silent, while `is_wired` still answered true. Gap 91.
+    fn notice_dead_find_worker(&mut self) {
+        if self.find_worker.as_ref().is_some_and(|w| !w.is_alive()) {
+            self.find_worker = None;
+            crate::log_error!("the find worker is gone; the picker and search are off");
+            self.status = Some("File search stopped: its worker thread died.".into());
+        }
     }
 
     /// A find result arrived. Returns whether anything changed on screen.
