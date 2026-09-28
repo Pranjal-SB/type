@@ -70,6 +70,7 @@ struct Flags {
     exit_now: bool,
     sleep: bool,
     spawn_child: bool,
+    close_stdin: bool,
     die_after: Option<usize>,
 }
 
@@ -103,6 +104,7 @@ impl Flags {
             exit_now: has("--exit-now"),
             sleep: has("--sleep"),
             spawn_child: has("--spawn-child"),
+            close_stdin: has("--close-stdin"),
             die_after: args
                 .iter()
                 .find_map(|a| a.strip_prefix("--die-after="))
@@ -200,11 +202,35 @@ fn publish(out: &mut impl Write, uri: &str, version: i64, items: &[(u32, i64, &s
     let _ = out.flush();
 }
 
+#[cfg(windows)]
+fn close_stdin() {
+    use std::os::windows::io::AsRawHandle;
+    // SAFETY: the handle is this process's stdin, nothing else reads it after
+    // this, and it is closed once.
+    unsafe { windows_sys::Win32::Foundation::CloseHandle(stdin().as_raw_handle()) };
+}
+
+#[cfg(unix)]
+fn close_stdin() {
+    // SAFETY: fd 0 is this process's stdin and nothing reads it after this.
+    unsafe { libc::close(0) };
+}
+
 /// Read frames from stdin and answer them until told to exit.
 pub fn run() {
     let flags = Flags::parse();
 
     if flags.exit_now {
+        return;
+    }
+
+    if flags.close_stdin {
+        // Break stdin while stdout stays open, so the client's writes fail and
+        // its reader never sees end of stream. Closed in-process rather than by
+        // exiting behind a grandchild: on Windows a grandchild inherits this
+        // process's stdin handle and keeps the pipe alive.
+        close_stdin();
+        std::thread::park();
         return;
     }
 

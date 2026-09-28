@@ -13,6 +13,7 @@
 
 use std::io::{BufReader, Write};
 use std::process::{Child, ChildStderr, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -156,6 +157,17 @@ impl Transport {
         let stderr = child.stderr.take().expect("stderr was piped");
 
         let (tx, rx) = mpsc::channel::<Pending>();
+        // Whichever thread learns first that the conversation is over reports
+        // it, and only that one: `Closed` is sent exactly once.
+        let closed = Arc::new(AtomicBool::new(false));
+        let close = {
+            let (closed, results) = (Arc::clone(&closed), results.clone());
+            move || {
+                if !closed.swap(true, Ordering::SeqCst) {
+                    let _ = results.send(E::from(Incoming::Closed(id)));
+                }
+            }
+        };
 
         thread::Builder::new()
             .name("typ-lsp-write".into())
@@ -165,6 +177,12 @@ impl Transport {
                 // dropped, which is how this thread learns to exit.
                 while let Ok(build) = rx.recv() {
                     if build().write(&mut stdin).is_err() || stdin.flush().is_err() {
+                        // **Said, not swallowed.** A server whose stdin broke
+                        // while its stdout stayed open never reaches the
+                        // reader's end of stream, so without this every later
+                        // notification went nowhere and the client believed
+                        // it healthy. Gap 92.
+                        close();
                         break;
                     }
                 }
@@ -206,7 +224,9 @@ impl Transport {
                         }
                     }
                 }
-                let _ = results.send(E::from(Incoming::Closed(id)));
+                if !closed.swap(true, Ordering::SeqCst) {
+                    let _ = results.send(E::from(Incoming::Closed(id)));
+                }
             })
             .expect("the OS can start a thread");
 
