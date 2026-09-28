@@ -82,9 +82,11 @@ pub fn load_settings(path: Option<&Path>) -> (Settings, Option<String>) {
     let Some(path) = path else {
         return (settings, None);
     };
-    let Ok(source) = std::fs::read_to_string(path) else {
+    let source = match super::read_config(path) {
+        Ok(Some(source)) => source,
         // No config is the normal case, not a problem worth a message.
-        return (settings, None);
+        Ok(None) => return (settings, None),
+        Err(warning) => return (settings, Some(warning)),
     };
 
     let table: toml::Table = match toml::from_str(&source) {

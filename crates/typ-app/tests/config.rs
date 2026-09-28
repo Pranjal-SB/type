@@ -116,3 +116,40 @@ fn one_bad_line_rejects_the_whole_file_rather_than_half_applying_it() {
          tell which half took effect"
     );
 }
+
+/// Two config files that exist and cannot be read: a directory where the file
+/// should be, and what Notepad writes when told to save as "Unicode".
+fn unreadable(name: &str, file: &str) -> Vec<PathBuf> {
+    let dir = std::env::temp_dir()
+        .join("typ-config-unreadable")
+        .join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    let as_dir = dir.join("as-dir").join(file);
+    std::fs::create_dir_all(&as_dir).unwrap();
+    let utf16 = dir.join("utf16").join(file);
+    std::fs::create_dir_all(utf16.parent().unwrap()).unwrap();
+    let mut bytes = vec![0xFF, 0xFE];
+    bytes.extend("theme = \"x\"".encode_utf16().flat_map(u16::to_le_bytes));
+    std::fs::write(&utf16, bytes).unwrap();
+    vec![as_dir, utf16]
+}
+
+#[test]
+fn a_keys_file_that_exists_and_cannot_be_read_is_reported() {
+    // Gap 97. Only `NotFound` means "there is no config"; everything else was
+    // silently read as absent, and the user's bindings did not apply.
+    for path in unreadable("keys", "keys.toml") {
+        let (_, warning) = load_keymap(Some(&path));
+        let warning = warning.unwrap_or_else(|| panic!("{} was read as absent", path.display()));
+        assert!(warning.contains("keys.toml"), "{warning}");
+    }
+}
+
+#[test]
+fn a_settings_file_that_exists_and_cannot_be_read_is_reported() {
+    for path in unreadable("settings", "config.toml") {
+        let (_, warning) = typ_app::config::load_settings(Some(&path));
+        let warning = warning.unwrap_or_else(|| panic!("{} was read as absent", path.display()));
+        assert!(warning.contains("config.toml"), "{warning}");
+    }
+}

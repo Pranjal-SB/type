@@ -10,9 +10,11 @@ pub fn load_keymap(path: Option<&Path>) -> (Keymap, Option<String>) {
     let Some(path) = path else {
         return (keymap, None);
     };
-    let Ok(source) = std::fs::read_to_string(path) else {
+    let source = match super::read_config(path) {
+        Ok(Some(source)) => source,
         // No config is the normal case, not a problem worth a message.
-        return (keymap, None);
+        Ok(None) => return (keymap, None),
+        Err(warning) => return (keymap, Some(warning)),
     };
     match keymap.merge_toml(&source) {
         Ok(()) => (keymap, None),
