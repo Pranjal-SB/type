@@ -2224,7 +2224,6 @@ dependencies = [
 name = "typ-lsp"
 version = "0.3.0"
 dependencies = [
- "anyhow",
  "gen-lsp-types",
  "libc",
  "lsp-server",
@@ -2281,7 +2280,6 @@ dependencies = [
 name = "typ-syntax"
 version = "0.3.0"
 dependencies = [
- "anyhow",
  "ropey",
  "tree-house",
  "tree-house-bindings",
