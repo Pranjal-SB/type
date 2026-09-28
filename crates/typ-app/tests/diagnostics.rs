@@ -229,12 +229,32 @@ fn diagnostics_reach_the_panel_through_render_context() {
     // them the way it moves both halves of the theme. `App::diagnostics` is the
     // call the frame itself makes, which is what makes this an assertion about
     // what the panel was handed rather than about a parallel accessor.
+    //
+    // **Reads the frame.** This used to draw and then re-assert what the setup
+    // had already asserted, so wiring the editor to one of the three contexts
+    // built with `diagnostics: &[]` still passed. Gap 133.
     let (mut app, _rx, _) = app_with_diagnostic("context", &["--push"]);
+    assert_eq!(app.diagnostics()[0].range.0.line, 5);
     let mut terminal =
         ratatui::Terminal::new(ratatui::backend::TestBackend::new(AREA.width, AREA.height))
             .unwrap();
     terminal.draw(|frame| app.render(frame)).unwrap();
-    assert_eq!(app.diagnostics().len(), 1);
+
+    let buffer = terminal.backend().buffer();
+    let rows: Vec<String> = (0..AREA.height)
+        .map(|y| (0..AREA.width).map(|x| buffer[(x, y)].symbol()).collect())
+        .collect();
+    let signed: Vec<&String> = rows.iter().filter(|row| row.contains('●')).collect();
+    assert_eq!(
+        signed.len(),
+        1,
+        "the gutter drew no diagnostic sign, or more than one: {rows:#?}"
+    );
+    assert!(
+        signed[0].contains("let e = 5;"),
+        "the sign is not on the diagnostic's line: {:?}",
+        signed[0]
+    );
 }
 
 #[test]
