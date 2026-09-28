@@ -71,7 +71,15 @@ fn the_count_sits_before_the_position() {
     // Read right to left, the bar goes from "where am I" outwards. The counts
     // belong with the file's state, not with the cursor's.
     let ids: Vec<SegmentId> = segments(&facts(1, 1)).into_iter().map(|s| s.id).collect();
-    let diagnostics = ids.iter().position(|id| *id == SegmentId::Diagnostics);
-    let position = ids.iter().position(|id| *id == SegmentId::Position);
+    // Unwrapped first: `None < Some(_)`, so comparing the `Option`s passed
+    // when the segment was missing altogether. Gap 137.
+    let diagnostics = ids
+        .iter()
+        .position(|id| *id == SegmentId::Diagnostics)
+        .unwrap_or_else(|| panic!("no diagnostics segment: {ids:?}"));
+    let position = ids
+        .iter()
+        .position(|id| *id == SegmentId::Position)
+        .unwrap_or_else(|| panic!("no position segment: {ids:?}"));
     assert!(diagnostics < position, "{ids:?}");
 }

@@ -121,3 +121,32 @@ fn a_clean_tab_is_not_shipped_to_the_worker() {
         .count();
     assert_eq!(a_hits, 1, "a.rs was searched twice: {:?}", app.grep_hits());
 }
+
+#[test]
+fn a_clean_tab_is_searched_on_disk_not_from_memory() {
+    // The test above asserts de-duplication, which holds whether or not a
+    // clean tab was shipped. Gap 137. This one can tell: the file changes on
+    // disk after it is opened, so its buffer is clean and stale, and only a
+    // search that reads the disk finds the new word. The keys are typed before
+    // any watcher event is pumped, so the request goes out with the stale
+    // buffer still in the tab.
+    let dir = fixture("clean-from-disk");
+    let (tx, rx) = channel();
+    let mut app = App::new(&dir).unwrap();
+    app.set_event_sender(tx);
+    app.open_path(&dir.join("a.rs")).unwrap();
+    app.open_path(&dir.join("b.rs")).unwrap();
+    std::fs::write(dir.join("a.rs"), "fn a() { zqxdisk() }\n").unwrap();
+
+    app.open_search();
+    for c in "zqxdisk".chars() {
+        app.handle_chord(ch(c)).unwrap();
+    }
+    pump_until_lines(&mut app, &rx);
+
+    assert!(
+        app.grep_hits().iter().any(|hit| hit.path.ends_with("a.rs")),
+        "a clean tab's stale buffer was searched instead of the file: {:?}",
+        app.grep_hits()
+    );
+}

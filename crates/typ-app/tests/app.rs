@@ -83,7 +83,10 @@ fn layout_gives_the_tree_a_fixed_width_sidebar() {
 
 #[test]
 fn layout_shrinks_the_sidebar_on_narrow_terminals() {
+    // Exact, not `< 30` and `> 0`, which a one-column sidebar satisfied.
+    // Gap 137. Under 60 columns the sidebar is a third of the width.
     let (tree, editor) = split(Rect::new(0, 0, 40, 30));
-    assert!(tree.width < 30);
-    assert!(editor.width > 0);
+    assert_eq!(tree.width, 13);
+    assert_eq!(editor.x, 12, "the editor starts on the tree's last column");
+    assert_eq!(editor.width, 28);
 }
