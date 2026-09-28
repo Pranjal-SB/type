@@ -116,7 +116,24 @@ impl Selections {
         self.normalize();
     }
 
+    /// Add several selections and make the last one primary.
+    ///
+    /// `push` for each of them, with one normalize at the end rather than one
+    /// per selection, which was quadratic in the count, and Ctrl+Shift+L on a
+    /// large file adds thousands. Gap 87.
+    pub fn extend(&mut self, selections: impl IntoIterator<Item = Selection>) {
+        let before = self.list.len();
+        self.list.extend(selections);
+        if self.list.len() > before {
+            self.primary = self.list.len() - 1;
+        }
+        self.normalize();
+    }
+
     /// Rewrite every selection, then restore the invariants.
+    ///
+    /// The primary stays the selection the user was steering, wherever the
+    /// rewrite sorts it to.
     pub fn map_in_place(&mut self, mut f: impl FnMut(Selection) -> Selection) {
         for selection in &mut self.list {
             *selection = f(*selection);

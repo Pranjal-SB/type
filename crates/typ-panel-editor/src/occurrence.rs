@@ -107,9 +107,9 @@ impl EditorPanel {
             return Some(Vec::new());
         };
         self.selections.set_single(*first);
-        for hit in rest {
-            self.selections.push(*hit);
-        }
+        // One normalize for the lot. A `push` per hit was one each, which is
+        // quadratic in the hit count. Gap 87.
+        self.selections.extend(rest.iter().copied());
         self.scroll_to_cursor();
         Some(vec![PanelEvent::NeedsRedraw])
     }

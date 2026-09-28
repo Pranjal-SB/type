@@ -212,11 +212,9 @@ impl EditorPanel {
     /// actions, so every path a user can take is one a test can take.
     #[doc(hidden)]
     pub fn set_selections_for_test(&mut self, list: Vec<Selection>) {
-        assert!(!list.is_empty(), "selections are never empty");
-        let mut selections = Selections::single(list[0]);
-        for selection in &list[1..] {
-            selections.push(*selection);
-        }
+        let (first, rest) = list.split_first().expect("selections are never empty");
+        let mut selections = Selections::single(*first);
+        selections.extend(rest.iter().copied());
         self.selections = selections;
     }
 
@@ -603,15 +601,10 @@ impl EditorPanel {
                 col: p.col.min(buffer.line_grapheme_count(line)),
             }
         };
-        let clamped: Vec<Selection> = self
-            .selections
-            .iter()
-            .map(|s| Selection {
-                anchor: clamp(s.anchor),
-                head: clamp(s.head),
-            })
-            .collect();
-        self.set_selections(clamped);
+        self.selections.map_in_place(|s| Selection {
+            anchor: clamp(s.anchor),
+            head: clamp(s.head),
+        });
         self.goal_col = None;
     }
 }

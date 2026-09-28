@@ -164,16 +164,6 @@ impl EditorPanel {
             .join("\n")
     }
 
-    /// Replace the selection set, preserving order and the primary.
-    pub(crate) fn set_selections(&mut self, list: Vec<Selection>) {
-        let mut iter = list.into_iter();
-        let first = iter.next().expect("selections are never empty");
-        self.selections.set_single(first);
-        for selection in iter {
-            self.selections.push(selection);
-        }
-    }
-
     /// Apply one described edit per selection, keeping every other selection
     /// pointing at the text it was aimed at.
     ///
@@ -219,7 +209,14 @@ impl EditorPanel {
 
         self.buffer.end_edit_group();
 
-        self.set_selections(heads.into_iter().map(Selection::caret).collect());
+        // A map over the set rather than a rebuild of it: one head per
+        // selection, in order, so the primary stays the caret the user was
+        // steering and the set is normalized once. Rebuilding by `push` made
+        // the document-last caret primary (gap 82) and cost one normalize per
+        // cursor (gap 87).
+        let mut heads = heads.into_iter();
+        self.selections
+            .map_in_place(|old| heads.next().map_or(old, Selection::caret));
         self.goal_col = None;
         self.scroll_to_cursor();
         Some(vec![PanelEvent::NeedsRedraw])
@@ -309,27 +306,20 @@ impl EditorPanel {
 
         // Move every selection by its own line's delta, so the selection ends
         // up around the same text it started around.
-        let shifted: Vec<Selection> = self
-            .selections
-            .iter()
-            .map(|selection| {
-                let move_position = |p: Position| {
-                    let delta = deltas
-                        .iter()
-                        .find(|(line, _)| *line == p.line)
-                        .map_or(0, |(_, d)| *d);
-                    Position {
-                        line: p.line,
-                        col: p.col.saturating_add_signed(delta),
-                    }
-                };
-                Selection {
-                    anchor: move_position(selection.anchor),
-                    head: move_position(selection.head),
-                }
-            })
-            .collect();
-        self.set_selections(shifted);
+        let move_position = |p: Position| {
+            let delta = deltas
+                .iter()
+                .find(|(line, _)| *line == p.line)
+                .map_or(0, |(_, d)| *d);
+            Position {
+                line: p.line,
+                col: p.col.saturating_add_signed(delta),
+            }
+        };
+        self.selections.map_in_place(|selection| Selection {
+            anchor: move_position(selection.anchor),
+            head: move_position(selection.head),
+        });
         self.goal_col = None;
         self.scroll_to_cursor();
         Some(vec![PanelEvent::NeedsRedraw])
@@ -373,14 +363,12 @@ impl EditorPanel {
                     self.goal_col = None;
                 }
 
-                // Read every selection before writing any: `move_selection`
-                // borrows self immutably, and the write needs it mutably.
-                let moved: Vec<Selection> = self
-                    .selections
-                    .iter()
-                    .map(|s| self.move_selection(*s, motion, extend))
-                    .collect();
-                self.set_selections(moved);
+                // Taken out for the map, because `move_selection` borrows all
+                // of self. A map keeps the primary where the user put it and
+                // normalizes once; see `edit_at_each_selection`.
+                let mut selections = std::mem::take(&mut self.selections);
+                selections.map_in_place(|s| self.move_selection(s, motion, extend));
+                self.selections = selections;
                 self.scroll_to_cursor();
                 Some(vec![PanelEvent::NeedsRedraw])
             }

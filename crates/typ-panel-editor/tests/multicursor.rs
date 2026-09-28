@@ -121,6 +121,33 @@ fn a_motion_that_merges_two_cursors_leaves_one() {
 }
 
 #[test]
+fn the_primary_survives_a_motion_an_edit_and_an_indent() {
+    // Adding a cursor above makes the upper caret primary. It has to stay the
+    // one the terminal cursor follows, not drift to the document-last caret on
+    // the next keystroke.
+    let mut p = EditorPanel::from_str("abc\ndef\n");
+    p.set_selections_for_test(vec![Selection::caret(pos(1, 1))]);
+    p.apply_action(Action::AddCursor(Direction::Backward));
+    assert_eq!(p.cursor(), pos(0, 1));
+
+    p.apply_action(Action::Move {
+        motion: Motion::Right,
+        extend: false,
+    });
+    assert_eq!(p.cursor(), pos(0, 2), "a motion moved the primary");
+
+    p.apply_action(Action::InsertChar('!'));
+    assert_eq!(p.cursor(), pos(0, 3), "an edit moved the primary");
+
+    p.apply_action(Action::Move {
+        motion: Motion::Left,
+        extend: true,
+    });
+    p.apply_action(Action::Indent);
+    assert_eq!(p.cursor().line, 0, "an indent moved the primary");
+}
+
+#[test]
 fn select_all_then_typing_replaces_the_document() {
     let mut p = EditorPanel::from_str("throw away\n");
     p.apply_action(Action::SelectAll);
