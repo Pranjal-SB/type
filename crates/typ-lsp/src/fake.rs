@@ -33,6 +33,9 @@ struct Flags {
     /// Publish on `didOpen` a payload one field off the protocol's shape, so the
     /// client's parse of it fails.
     push_malformed: bool,
+    /// Publish on `didOpen` against the URI lowercased: the same file on a
+    /// case-insensitive filesystem, and a different `PathBuf`.
+    push_respelled: bool,
     /// Answer `textDocument/definition` with a sibling file rather than with
     /// the document itself, so a test can tell "jumped within the file" from
     /// "opened another one".
@@ -78,6 +81,7 @@ impl Flags {
             push: has("--push") || has("--push-stale"),
             push_stale: has("--push-stale"),
             push_malformed: has("--push-malformed"),
+            push_respelled: has("--push-respelled"),
             definition_elsewhere: has("--definition-elsewhere"),
             definition_missing: has("--definition-missing"),
             hover_plain: has("--hover-plain"),
@@ -357,6 +361,10 @@ pub fn run() {
                         })
                         .write(&mut out);
                         let _ = out.flush();
+                    }
+                    "textDocument/didOpen" if flags.push_respelled => {
+                        let respelled = open_uri.to_lowercase();
+                        publish(&mut out, &respelled, version, &[(5, 1, "fake: respelled")]);
                     }
                     "textDocument/didOpen" if flags.push => {
                         publish(&mut out, &open_uri, version, &[(5, 1, "fake: on open")]);

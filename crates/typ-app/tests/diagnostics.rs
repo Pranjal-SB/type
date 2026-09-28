@@ -128,6 +128,19 @@ fn a_publish_that_will_not_parse_is_logged_with_its_sender_and_reason() {
     assert!(line.contains("invalid type"), "no reason: {line}");
 }
 
+/// A URI that spells the open file differently still lands on it.
+///
+/// The tab was found through a canonicalising lookup and the diagnostics were
+/// stored through the raw path, so the second missed and the publish vanished.
+/// Windows-only because lowercasing a path is a respelling only on a
+/// case-insensitive filesystem. Gap 114.
+#[cfg(windows)]
+#[test]
+fn a_publish_naming_the_file_in_another_spelling_still_lands() {
+    let (app, _rx, _) = app_with_diagnostic("respelled", &["--push-respelled"]);
+    assert_eq!(app.diagnostics()[0].message, "fake: respelled");
+}
+
 #[test]
 fn a_publish_reaches_the_tab_it_names() {
     let (app, _rx, _) = app_with_diagnostic("reaches", &["--push"]);

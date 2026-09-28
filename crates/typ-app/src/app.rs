@@ -442,7 +442,17 @@ impl App {
                     return false;
                 }
             };
-        let Some(path) = typ_lsp::uri_to_path(&published.uri) else {
+        let Some(named) = typ_lsp::uri_to_path(&published.uri) else {
+            return false;
+        };
+        // **The tab's spelling, not the server's.** `tab_for` canonicalises and
+        // the document map is keyed by the tab's raw path, so a URI naming the
+        // same file differently (a lowercase drive letter, a symlinked
+        // directory) found the tab and then missed the map. Gap 114.
+        let Some(index) = self.tab_for(&named) else {
+            return false;
+        };
+        let Some(path) = self.tabs[index].panel.path().map(Path::to_path_buf) else {
             return false;
         };
 
@@ -455,9 +465,6 @@ impl App {
             return false;
         }
 
-        let Some(index) = self.tab_for(&path) else {
-            return false;
-        };
         let encoding = self.lsp.encoding(server);
         let buffer = self.tabs[index].panel.buffer();
         let converted: Vec<typ_core::Diagnostic> = published
