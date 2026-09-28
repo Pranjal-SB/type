@@ -177,7 +177,14 @@ fn a_server_that_never_initializes_supports_nothing() {
 fn shutdown_lets_the_server_stop_on_its_own() {
     let (mut client, rx) = start(&[]);
     pump_until_initialized(&mut client, &rx);
-    client.shutdown(Duration::from_secs(10));
+    // The fake exits in milliseconds. A shutdown that only returns because the
+    // window ran out is the hang this is here to catch. Gap 134.
+    let started = std::time::Instant::now();
+    assert!(
+        client.shutdown(Duration::from_secs(5)),
+        "the server was still running when the window closed"
+    );
+    assert!(started.elapsed() < Duration::from_secs(2));
 }
 
 #[test]

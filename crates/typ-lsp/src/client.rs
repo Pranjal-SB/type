@@ -362,12 +362,13 @@ impl Client {
     /// `shutdown` then `exit` is the sequence the specification asks for, and
     /// rust-analyzer writes state on it. Dropping without this still works —
     /// the process tree is killed — but it is the difference between closing an
-    /// editor and pulling its plug.
-    pub fn shutdown(&mut self, within: std::time::Duration) {
+    /// editor and pulling its plug. Returns whether it stopped on its own
+    /// within the window.
+    pub fn shutdown(&mut self, within: std::time::Duration) -> bool {
         self.request("shutdown", serde_json::Value::Null);
         self.notify("exit", serde_json::Value::Null);
         self.transport.close_input();
-        self.transport.wait_for_exit(within);
+        self.transport.wait_for_exit(within)
     }
 }
 
