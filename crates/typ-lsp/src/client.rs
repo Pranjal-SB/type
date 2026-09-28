@@ -228,21 +228,36 @@ impl Client {
     }
 
     /// Tell the server about a document it has not seen. Whether it was sent.
-    pub fn did_open(&mut self, uri: &str, language_id: &str, version: i32, text: String) -> bool {
+    ///
+    /// A rope snapshot rather than text, for the reason [`did_change`] takes
+    /// one: this runs on the render thread, on the cold-start path, and the
+    /// text of a 50k-line file costs milliseconds to build. Gap 112.
+    ///
+    /// [`did_change`]: Self::did_change
+    pub fn did_open(
+        &mut self,
+        uri: &str,
+        language_id: &str,
+        version: i32,
+        rope: ropey::Rope,
+    ) -> bool {
         if !self.is_initialized() || !self.wants_open_close() {
             return false;
         }
-        self.notify(
-            "textDocument/didOpen",
-            serde_json::json!({
-                "textDocument": {
-                    "uri": uri,
-                    "languageId": language_id,
-                    "version": version,
-                    "text": text,
-                },
-            }),
-        );
+        let (uri, language_id) = (uri.to_string(), language_id.to_string());
+        self.transport.send_deferred(move || {
+            Message::Notification(Notification {
+                method: "textDocument/didOpen".to_string(),
+                params: serde_json::json!({
+                    "textDocument": {
+                        "uri": uri,
+                        "languageId": language_id,
+                        "version": version,
+                        "text": rope.to_string(),
+                    },
+                }),
+            })
+        });
         true
     }
 

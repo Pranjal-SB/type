@@ -533,8 +533,8 @@ impl Lsp {
                     return;
                 };
                 let sent = if reopened {
-                    let text = snapshot.rope.to_string();
-                    let opened = client.did_open(&uri, &language_id, version, text);
+                    let opened =
+                        client.did_open(&uri, &language_id, version, snapshot.rope.clone());
                     self.tally("textDocument/didOpen", opened);
                     opened
                 } else {
@@ -560,11 +560,10 @@ impl Lsp {
                     return;
                 };
                 let uri = uri.as_str().to_string();
-                let text = snapshot.rope.to_string();
                 let Some(client) = self.client(id) else {
                     return;
                 };
-                if !client.did_open(&uri, &language_id, 0, text) {
+                if !client.did_open(&uri, &language_id, 0, snapshot.rope.clone()) {
                     // Not initialized yet. Nothing is recorded, so the next
                     // pass tries again — which is how a document opened before
                     // the handshake finishes gets announced when it does.

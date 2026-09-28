@@ -84,6 +84,44 @@ fn spawning_a_server_never_blocks_the_caller() {
 
 #[test]
 #[ignore = "wall-clock budget; run with --release --ignored"]
+fn announcing_a_large_document_costs_the_caller_a_snapshot() {
+    // `did_open` runs on the render thread, on the cold-start path, and used to
+    // take the whole document as a `String`: the 1.3 ms per 50k lines that
+    // `did_change` was built to keep off that thread. Gap 112.
+    let _guard = exclusive();
+    let line = "    let editor = Editor::new(); // représentative ligne de code\n";
+    let rope = ropey::Rope::from_str(&line.repeat(50_000));
+
+    let (tx, rx) = channel::<Incoming>();
+    let mut client =
+        Client::start(ServerId(0), fake(), &[], Path::new("."), tx).expect("the double starts");
+    while !client.is_initialized() {
+        let incoming = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the handshake completes");
+        client.handle(incoming);
+    }
+
+    let mut best = u128::MAX;
+    for version in 0..5 {
+        let start = Instant::now();
+        client.did_open("file:///x.rs", "rust", version, rope.clone());
+        best = best.min(start.elapsed().as_micros());
+    }
+    let serialise = (0..5)
+        .map(|_| {
+            let start = Instant::now();
+            std::hint::black_box(rope.to_string());
+            start.elapsed().as_micros()
+        })
+        .min()
+        .unwrap_or(u128::MAX);
+    println!("did_open on the caller: {best} µs; serialising it there: {serialise} µs");
+    assert!(best < 200, "did_open cost the caller {best} µs");
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored"]
 fn a_server_that_is_not_installed_costs_almost_nothing() {
     // The default state on most machines: the binary named in config is not on
     // PATH. The failure has to be cheap, because it is the common path.
