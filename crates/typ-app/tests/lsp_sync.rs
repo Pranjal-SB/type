@@ -111,6 +111,45 @@ fn app_with_fake_server(name: &str) -> (App, AppReceiver, PathBuf) {
     (app, rx, path)
 }
 
+/// The text the server last said it received for the file on screen.
+///
+/// `--echo` publishes it back as a diagnostic message. Everything else in this
+/// file counts notifications; this reads one. Gap 136.
+fn echoed(app: &App) -> Option<String> {
+    app.diagnostics().first().map(|d| d.message.clone())
+}
+
+#[test]
+fn the_server_is_sent_the_text_on_screen_on_open_and_on_change() {
+    let dir = fixture("payload", "a.rs", "fn a() {}\n");
+    std::fs::write(dir.join("b.rs"), "fn b() {}\n").unwrap();
+    let (tx, rx) = channel();
+    let mut app = App::new(&dir).unwrap();
+    let mut server = rust_server(fake());
+    server.args = vec!["--echo".into()];
+    app.add_language_server(server);
+    app.set_event_sender(tx);
+    app.open_path(&dir.join("a.rs")).unwrap();
+    app.open_in_new_tab(&dir.join("b.rs")).unwrap();
+
+    assert!(
+        pump_until(&mut app, &rx, |a| echoed(a).as_deref()
+            == Some("fn b() {}\n")),
+        "didOpen carried {:?}",
+        echoed(&app)
+    );
+
+    // A change to the second tab carries the second tab's edited buffer,
+    // not the pre-edit rope, not the other tab's.
+    step_batch(&mut app, vec![key('x')], AREA).unwrap();
+    assert!(
+        pump_until(&mut app, &rx, |a| echoed(a).as_deref()
+            == Some("xfn b() {}\n")),
+        "didChange carried {:?}",
+        echoed(&app)
+    );
+}
+
 #[test]
 fn opening_a_file_sends_did_open_once() {
     let (mut app, rx, _) = app_with_fake_server("open-once");

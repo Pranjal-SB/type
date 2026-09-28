@@ -36,6 +36,9 @@ struct Flags {
     /// Publish on `didOpen` against the URI lowercased: the same file on a
     /// case-insensitive filesystem, and a different `PathBuf`.
     push_respelled: bool,
+    /// Publish on `didOpen` and `didChange` one diagnostic whose message is
+    /// the document text the notification carried.
+    echo: bool,
     /// Answer `textDocument/definition` with a sibling file rather than with
     /// the document itself, so a test can tell "jumped within the file" from
     /// "opened another one".
@@ -86,6 +89,7 @@ impl Flags {
             push_stale: has("--push-stale"),
             push_malformed: has("--push-malformed"),
             push_respelled: has("--push-respelled"),
+            echo: has("--echo"),
             definition_elsewhere: has("--definition-elsewhere"),
             definition_missing: has("--definition-missing"),
             hover_plain: has("--hover-plain"),
@@ -393,6 +397,16 @@ pub fn run() {
                         })
                         .write(&mut out);
                         let _ = out.flush();
+                    }
+                    // The text it was sent, back as a diagnostic message, so a
+                    // test can compare the payload rather than count frames.
+                    "textDocument/didOpen" | "textDocument/didChange" if flags.echo => {
+                        let text = params
+                            .pointer("/textDocument/text")
+                            .or_else(|| params.pointer("/contentChanges/0/text"))
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("<no text>");
+                        publish(&mut out, &open_uri, version, &[(0, 1, text)]);
                     }
                     "textDocument/didOpen" if flags.push_respelled => {
                         let respelled = open_uri.to_lowercase();
