@@ -5,7 +5,6 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use typ_core::{Panel, RenderContext, chrome};
 use typ_find::LineHit;
-use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{Mode, Picker};
 
@@ -171,16 +170,25 @@ fn draw_binding(
     ctx: &RenderContext,
     style: Style,
 ) {
-    let width = binding.graphemes(true).count() as u16;
+    let width = cells(binding);
     if binding.is_empty() || width >= inner.width {
         return;
     }
-    let start = inner.right() - width;
-    for (i, grapheme) in binding.graphemes(true).enumerate() {
-        buf[(start + i as u16, y)]
-            .set_symbol(grapheme)
-            .set_style(style.fg(ctx.theme.status_bar_inactive_fg));
-    }
+    write_clipped(
+        buf,
+        inner.right() - width,
+        y,
+        width,
+        binding,
+        style.fg(ctx.theme.status_bar_inactive_fg),
+        &[],
+        matched_placeholder(ctx),
+    );
+}
+
+/// Columns `text` occupies. Cells, not graphemes: a CJK grapheme is two.
+fn cells(text: &str) -> u16 {
+    u16::try_from(typ_buffer::display_width(text)).unwrap_or(u16::MAX)
 }
 
 /// `path:line  the matching text`, in two colours.
@@ -220,7 +228,7 @@ fn draw_search_row(
 
     // Two spaces, the same gap the status bar uses between segments.
     let gap = 2u16;
-    let used = location.graphemes(true).count() as u16 + gap;
+    let used = cells(&location).saturating_add(gap);
     if used >= inner.width {
         return;
     }
@@ -248,10 +256,9 @@ fn matched_placeholder(ctx: &RenderContext) -> Color {
 ///
 /// Grapheme by grapheme rather than by byte or char: a path can carry anything
 /// a filesystem allows, and slicing a `String` by a column count is how a CJK
-/// filename ends up half-drawn. Wide graphemes still occupy one cell here —
-/// full width-aware layout is `typ-buffer`'s job and the picker has no cursor to
-/// keep aligned, so the cost of getting it slightly wrong is a row that ends one
-/// column early rather than a mispositioned caret.
+/// filename ends up half-drawn. **Each grapheme advances by its width in
+/// cells.** This used to advance by one, so everything after a wide grapheme
+/// was drawn over that grapheme's second half. Gap 105.
 ///
 /// `matched_indices` names the graphemes the query hit, ascending. They are
 /// **grapheme** indices, which is what makes this a walk in step rather than a
@@ -272,12 +279,16 @@ fn write_clipped(
     // Both sequences are ascending, so one cursor into `matched_indices` walks
     // alongside the graphemes instead of searching it per cell.
     let mut next = matched_indices.iter().copied().peekable();
+    let end = x.saturating_add(width).min(buf.area.right());
+    let mut cell_x = x;
     // `printable`, not `graphemes`: a path from the walk and a matched line
     // from a searched file are both attacker-reachable, and `set_symbol` hands
     // whatever it is given straight to the terminal. Gap 69.
-    for (i, grapheme) in typ_core::printable(text).take(width as usize).enumerate() {
-        let cell_x = x + i as u16;
-        if cell_x >= buf.area.right() || y >= buf.area.bottom() {
+    for (i, grapheme) in typ_core::printable(text).enumerate() {
+        // At least one cell, so a zero-width grapheme cannot stack on the next.
+        let columns = cells(grapheme).max(1);
+        // A wide grapheme that would straddle the edge is dropped whole.
+        if cell_x.saturating_add(columns) > end || y >= buf.area.bottom() {
             break;
         }
         while next.peek().is_some_and(|&index| (index as usize) < i) {
@@ -290,5 +301,6 @@ fn write_clipped(
             style
         };
         buf[(cell_x, y)].set_symbol(grapheme).set_style(style);
+        cell_x += columns;
     }
 }

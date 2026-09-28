@@ -2264,6 +2264,7 @@ version = "0.3.0"
 dependencies = [
  "crossterm",
  "ratatui",
+ "typ-buffer",
  "typ-core",
  "typ-find",
  "unicode-segmentation",

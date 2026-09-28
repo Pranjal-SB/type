@@ -65,7 +65,15 @@ pub const PICKER_HEIGHT: u16 = 18;
 ///
 /// Clamped into the frame on both axes, because the alternative is a box that
 /// disappears off the right of the screen for anyone editing a long line.
-pub fn hover_area(frame: Rect, cursor: (u16, u16), lines: usize, longest: usize) -> Rect {
+pub fn hover_area(frame: Rect, cursor: (u16, u16), text: &str) -> Rect {
+    let lines = text.lines().count();
+    let longest = text
+        .lines()
+        // Cells, not chars: a CJK line counted by chars got a box half as
+        // wide as its text. Gap 105.
+        .map(typ_buffer::display_width)
+        .max()
+        .unwrap_or(0);
     // Clamped in `usize` before narrowing: both counts come from a server's
     // text, and `as u16` first wrapped a 65536-character line to a 3-cell box
     // and overflowed the `+ 2` at 65534. Gap 106.

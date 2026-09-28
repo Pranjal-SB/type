@@ -131,9 +131,12 @@ impl App {
             .bg(self.theme.status_bar_bg);
         let left = self.status_left();
         let right_segments = self.status_segments();
+        // Measured in cells, not chars. A CJK file name is one char and two
+        // cells per character, and counting chars pushed the right half's
+        // tail off the end of the bar. Gap 105.
         let right_width: usize = right_segments
             .iter()
-            .map(|s| s.text.chars().count())
+            .map(|s| typ_buffer::display_width(&s.text))
             .sum::<usize>()
             + SEGMENT_GAP.len() * right_segments.len().saturating_sub(1);
 
@@ -141,8 +144,8 @@ impl App {
         // is left over, so a long message never pushes the position off-screen.
         let width = area.width as usize;
         let room = width.saturating_sub(right_width + 2);
-        let left: String = left.chars().take(room).collect();
-        let gap = width.saturating_sub(left.chars().count() + right_width);
+        let left = clip_to_cells(&left, room);
+        let gap = width.saturating_sub(typ_buffer::display_width(&left) + right_width);
 
         // Each segment carries its own emphasis. This is where
         // `status_bar_inactive_fg` and `status_bar_accent` earn their place:
@@ -191,6 +194,18 @@ impl App {
     }
 }
 
+/// The longest prefix of `text` that fits in `room` cells, whole graphemes only.
+fn clip_to_cells(text: &str, room: usize) -> String {
+    use unicode_segmentation::UnicodeSegmentation;
+    let mut used = 0;
+    text.graphemes(true)
+        .take_while(|g| {
+            used += typ_buffer::display_width(g);
+            used <= room
+        })
+        .collect()
+}
+
 impl App {
     /// Draw the hover box, if a server has said something about the cursor.
     ///
@@ -206,12 +221,7 @@ impl App {
         };
 
         let lines: Vec<&str> = text.lines().collect();
-        let longest = lines
-            .iter()
-            .map(|line| line.chars().count())
-            .max()
-            .unwrap_or(0);
-        let area = crate::layout::hover_area(frame.area(), cursor, lines.len(), longest);
+        let area = crate::layout::hover_area(frame.area(), cursor, &text);
 
         let ctx = RenderContext {
             theme: &self.theme,
