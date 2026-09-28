@@ -324,6 +324,33 @@ impl App {
         generation
     }
 
+    /// The query moved: re-read the mode and ask for what it now means.
+    ///
+    /// The mode is read *after* the change, because the change may have been
+    /// the `>` that set it, or the backspace that took it away again.
+    fn picker_query_changed(&mut self, query: String) {
+        self.refresh_picker_mode();
+        let mode = self.picker.as_ref().map(Picker::mode).unwrap_or_default();
+        self.request_for_mode(mode, query);
+    }
+
+    /// A paste while the overlay is up is more query, never an edit to the
+    /// buffer behind it. Gap 79: the key route had this guard and the paste
+    /// route did not.
+    pub(crate) fn paste_into_picker(&mut self, text: &str) {
+        let Some(picker) = self.picker.as_mut() else {
+            return;
+        };
+        let pasted: String = text.chars().filter(|c| !c.is_control()).collect();
+        if pasted.is_empty() {
+            return;
+        }
+        let query = format!("{}{pasted}", picker.query());
+        picker.set_query(query.clone());
+        self.picker_query_changed(query);
+        self.dirty = true;
+    }
+
     /// Keys while the overlay is up.
     ///
     /// **The query is compared before and after rather than reported by the
@@ -340,12 +367,8 @@ impl App {
         let events = picker.handle_key(chord);
         let after = picker.query().to_string();
 
-        // The mode is read *after* the key, because the key may have been the
-        // `>` that changed it — or the backspace that took it away again.
         if before != after {
-            self.refresh_picker_mode();
-            let mode = self.picker.as_ref().map(Picker::mode).unwrap_or_default();
-            self.request_for_mode(mode, after);
+            self.picker_query_changed(after);
         }
         self.dirty = true;
 

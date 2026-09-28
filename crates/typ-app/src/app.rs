@@ -1076,6 +1076,12 @@ impl App {
     pub fn handle_paste(&mut self, text: String) -> Result<()> {
         self.clear_transient();
 
+        // Same order as `handle_chord`: the overlay is ahead of the prompt.
+        if self.picker.is_some() {
+            self.paste_into_picker(&text);
+            return Ok(());
+        }
+
         // A paste into an open prompt is a search term, not an edit.
         if let Some(prompt) = self.prompt.as_mut() {
             for ch in text.chars().filter(|c| !c.is_control()) {
