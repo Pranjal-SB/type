@@ -66,6 +66,48 @@ fn a_click_on_the_status_bar_under_the_tree_does_not_take_focus() {
     );
 }
 
+fn pointer(kind: MouseEventKind, x: u16, y: u16) -> AppEvent {
+    AppEvent::Input(Event::Mouse(MouseEvent {
+        kind,
+        column: x,
+        row: y,
+        modifiers: KeyModifiers::NONE,
+    }))
+}
+
+#[test]
+fn pointer_motion_over_the_picker_does_not_cost_a_frame() {
+    // Gap 124. Every motion report while the overlay was up marked the frame
+    // dirty, and one arrives per cell the pointer crosses: a full render pass
+    // each, for a widget that ignores everything but a left press.
+    let mut app = app_with_long_file("picker-motion");
+    app.open_picker();
+    app.take_dirty();
+
+    for x in 10..20 {
+        step(&mut app, pointer(MouseEventKind::Moved, x, 10), FRAME).unwrap();
+    }
+
+    assert!(
+        !app.take_dirty(),
+        "ten motion reports over the picker asked for a repaint"
+    );
+}
+
+#[test]
+fn a_click_away_from_the_picker_still_repaints() {
+    // The guard must not swallow an event the overlay does answer.
+    let mut app = app_with_long_file("picker-click");
+    app.open_picker();
+    app.take_dirty();
+
+    // Outside the overlay: a dismissal, which changes the screen.
+    step(&mut app, click(0, 0), FRAME).unwrap();
+
+    assert!(app.picker().is_none());
+    assert!(app.take_dirty());
+}
+
 #[test]
 fn a_click_inside_the_editor_still_moves_the_caret() {
     // The guard must not swallow the clicks it is not about.

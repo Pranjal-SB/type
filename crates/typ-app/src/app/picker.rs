@@ -193,7 +193,10 @@ impl App {
             self.close_picker();
             return vec![PanelEvent::NeedsRedraw];
         }
-        self.dirty = true;
+        // **Not marked dirty here.** `finish` repaints when there are events,
+        // and the picker answers nothing but a left press. Marking it anyway
+        // made every motion report (one per cell the pointer crosses) a full
+        // render pass. Gap 124.
         self.absolutise(events)
     }
 
