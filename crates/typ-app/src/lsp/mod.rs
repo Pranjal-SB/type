@@ -373,7 +373,7 @@ impl Lsp {
     /// with rustup — measured, not guessed.
     pub(crate) fn exit_reason(&self, id: ServerId) -> Option<String> {
         let server = self.servers.get(id.0 as usize)?;
-        let command = self.configs.get(server.config)?.command.clone();
+        let command = self.command(id)?;
         let last = server
             .last_stderr
             .iter()
@@ -386,6 +386,13 @@ impl Lsp {
             (true, None) => format!("{command} exited."),
             (false, None) => format!("{command} did not start."),
         })
+    }
+
+    /// The command a server was started with: its name, as far as a log line or
+    /// a status message is concerned.
+    pub(crate) fn command(&self, id: ServerId) -> Option<&str> {
+        let server = self.servers.get(id.0 as usize)?;
+        Some(&self.configs.get(server.config)?.command)
     }
 
     /// Whether a server has been given up on.

@@ -431,12 +431,17 @@ impl App {
         server: typ_lsp::ServerId,
         params: serde_json::Value,
     ) -> bool {
-        let Ok(published) =
-            serde_json::from_value::<typ_lsp::lsp_types::PublishDiagnosticsParams>(params)
-        else {
-            crate::log_warn!("a publishDiagnostics payload did not parse");
-            return false;
-        };
+        let published =
+            match serde_json::from_value::<typ_lsp::lsp_types::PublishDiagnosticsParams>(params) {
+                Ok(published) => published,
+                Err(e) => {
+                    crate::log_warn!(
+                        "a publishDiagnostics payload from {} did not parse: {e}",
+                        self.lsp.command(server).unwrap_or("a language server")
+                    );
+                    return false;
+                }
+            };
         let Some(path) = typ_lsp::uri_to_path(&published.uri) else {
             return false;
         };

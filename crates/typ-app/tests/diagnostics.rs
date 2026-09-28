@@ -98,6 +98,37 @@ fn app_with_diagnostic(name: &str, flags: &[&str]) -> (App, AppReceiver, PathBuf
 }
 
 #[test]
+fn a_publish_that_will_not_parse_is_logged_with_its_sender_and_reason() {
+    // One field off and every diagnostic that server will ever publish is
+    // gone. The log line is the only trace, so it has to say who and why.
+    // Gap 102. The log is process-global; no other test in this binary
+    // touches it.
+    let log = std::env::temp_dir().join("typ-lsp-diagnostics-malformed.log");
+    let _ = std::fs::remove_file(&log);
+    typ_app::log::init(Some(&log));
+
+    let dir = fixture("malformed");
+    let (tx, rx) = channel();
+    let mut app = App::new(&dir).unwrap();
+    app.add_language_server(server(&["--push-malformed"]));
+    app.set_event_sender(tx);
+    app.open_path(&dir.join("a.rs")).unwrap();
+    assert!(pump_until(&mut app, &rx, |a| a
+        .lsp_notifications_of("textDocument/didOpen")
+        == 1));
+    settle(&mut app, &rx);
+    typ_app::log::init(None);
+
+    let text = std::fs::read_to_string(&log).unwrap_or_default();
+    let line = text
+        .lines()
+        .find(|l| l.contains("publishDiagnostics"))
+        .unwrap_or_else(|| panic!("nothing logged: {text:?}"));
+    assert!(line.contains(fake()), "no sender: {line}");
+    assert!(line.contains("invalid type"), "no reason: {line}");
+}
+
+#[test]
 fn a_publish_reaches_the_tab_it_names() {
     let (app, _rx, _) = app_with_diagnostic("reaches", &["--push"]);
     let diagnostics = app.diagnostics();

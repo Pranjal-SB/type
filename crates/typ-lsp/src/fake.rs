@@ -30,6 +30,9 @@ struct Flags {
     /// Publish on `didChange` stamped with version 0, which is stale the
     /// moment anything has been typed. The client has to drop it.
     push_stale: bool,
+    /// Publish on `didOpen` a payload one field off the protocol's shape, so the
+    /// client's parse of it fails.
+    push_malformed: bool,
     /// Answer `textDocument/definition` with a sibling file rather than with
     /// the document itself, so a test can tell "jumped within the file" from
     /// "opened another one".
@@ -74,6 +77,7 @@ impl Flags {
             server_request: has("--server-request"),
             push: has("--push") || has("--push-stale"),
             push_stale: has("--push-stale"),
+            push_malformed: has("--push-malformed"),
             definition_elsewhere: has("--definition-elsewhere"),
             definition_missing: has("--definition-missing"),
             hover_plain: has("--hover-plain"),
@@ -342,6 +346,17 @@ pub fn run() {
                     // chooses rather than racing the server.
                     "fake/endProgress" if flags.progress => {
                         progress(&mut out, "indexing", serde_json::json!({ "kind": "end" }));
+                    }
+                    "textDocument/didOpen" if flags.push_malformed => {
+                        let _ = Message::Notification(Notification {
+                            method: "textDocument/publishDiagnostics".into(),
+                            params: serde_json::json!({
+                                "uri": open_uri,
+                                "diagnostics": [{ "range": "line five", "message": "x" }],
+                            }),
+                        })
+                        .write(&mut out);
+                        let _ = out.flush();
                     }
                     "textDocument/didOpen" if flags.push => {
                         publish(&mut out, &open_uri, version, &[(5, 1, "fake: on open")]);
