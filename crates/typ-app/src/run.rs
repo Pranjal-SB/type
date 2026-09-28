@@ -7,7 +7,7 @@ use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
     Event, KeyEventKind, MouseEvent, MouseEventKind,
 };
-use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, enable_raw_mode};
 use ratatui::Terminal;
 use ratatui::layout::Rect;
 use typ_core::{AppEvent, KeyChord, Panel, PanelEvent};
@@ -39,13 +39,23 @@ pub fn run(mut app: App) -> Result<()> {
     // TYPE's. So the three things `try_init` does happen here instead: raw
     // mode, the alternate screen, and a `Terminal` over the writer.
     enable_raw_mode()?;
-    stdout().execute(EnterAlternateScreen)?;
-    let backend = TypBackend::new(stdout(), crate::capability::detect_underlines());
-    let mut terminal = Terminal::new(backend)?;
-    stdout().execute(EnableMouseCapture)?;
-    // Without this a paste arrives as N keypresses, and any chord inside the
-    // pasted text runs as a command rather than being inserted.
-    stdout().execute(EnableBracketedPaste)?;
+    // Anything failing past here undoes the lot, rather than leaving the shell
+    // in raw mode on the alternate screen. Turning off what was never turned
+    // on is harmless.
+    let setup = || -> Result<Terminal<TypBackend<Stdout>>> {
+        stdout().execute(EnterAlternateScreen)?;
+        let backend = TypBackend::new(stdout(), crate::capability::detect_underlines());
+        let terminal = Terminal::new(backend)?;
+        stdout().execute(EnableMouseCapture)?;
+        // Without this a paste arrives as N keypresses, and any chord inside
+        // the pasted text runs as a command rather than being inserted.
+        stdout().execute(EnableBracketedPaste)?;
+        Ok(terminal)
+    };
+    let mut terminal = match setup() {
+        Ok(terminal) => terminal,
+        Err(e) => return teardown(Err(e), &mut restore_steps()),
+    };
 
     // **Everything this function turned on, turned off.** `ratatui::init` used
     // to install a hook that left raw mode and the alternate screen, and this
@@ -66,10 +76,40 @@ pub fn run(mut app: App) -> Result<()> {
     // a stale lock outlives the editor.
     app.shutdown_language_servers();
 
-    stdout().execute(DisableBracketedPaste)?;
-    stdout().execute(DisableMouseCapture)?;
-    ratatui::restore();
-    result
+    teardown(result, &mut restore_steps())
+}
+
+/// One piece of terminal cleanup.
+pub type Step = Box<dyn FnMut() -> std::io::Result<()>>;
+
+/// Everything `run` turned on, as steps that turn it off.
+fn restore_steps() -> [Step; 4] {
+    [
+        Box::new(|| stdout().execute(DisableBracketedPaste).map(drop)),
+        Box::new(|| stdout().execute(DisableMouseCapture).map(drop)),
+        Box::new(crossterm::terminal::disable_raw_mode),
+        Box::new(|| stdout().execute(LeaveAlternateScreen).map(drop)),
+    ]
+}
+
+/// Undo the terminal setup, and answer with the loop's own result.
+///
+/// **Every step runs whatever the others did.** This used to be three `?`s, so
+/// mouse capture failing to turn off skipped leaving raw mode, and the cleanup's
+/// error replaced the one that explains why the editor stopped. Gap 125.
+pub fn teardown(result: Result<()>, steps: &mut [Step]) -> Result<()> {
+    let mut first_failure = None;
+    for step in steps.iter_mut() {
+        if let Err(e) = step() {
+            first_failure.get_or_insert(e);
+        }
+    }
+    // The loop's error first: it is the one that says what happened.
+    result?;
+    match first_failure {
+        Some(e) => Err(anyhow::Error::from(e).context("restoring the terminal")),
+        None => Ok(()),
+    }
 }
 
 /// Run `restore` when a panic unwinds the thread that called this, then the
