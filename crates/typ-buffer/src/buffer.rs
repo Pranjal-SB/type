@@ -8,12 +8,22 @@ use crate::line_ending::LineEnding;
 use crate::position::Position;
 use crate::search::SearchQuery;
 use crate::selection::{Selection, Selections};
-use crate::undo::{EditKind, History};
+use crate::undo::{EditKind, History, Snapshot};
 
 pub struct TextBuffer {
     rope: Rope,
     path: Option<PathBuf>,
-    dirty: bool,
+    /// Which version of the text the rope holds.
+    ///
+    /// A fresh value on every edit (it is taken from `revision`, which never
+    /// repeats) and an *old* value when undo or redo brings an old version
+    /// back. That second half is the whole point: it is what lets undoing to
+    /// the saved text read as clean again. Every mature editor keeps a save
+    /// point this way; a bare `dirty` flag cannot, because it has no way to
+    /// recognise a version it has seen before.
+    state: u64,
+    /// The `state` that is on disk, as of the last load or save.
+    saved_state: u64,
     history: History,
     /// Nesting depth of `begin_edit_group`. While non-zero, individual edits
     /// stop taking their own snapshots, so a multi-caret edit is one undo step
@@ -46,7 +56,8 @@ impl TextBuffer {
         Self {
             rope: Rope::from_str(s),
             path: None,
-            dirty: false,
+            state: 0,
+            saved_state: 0,
             history: History::default(),
             group_depth: 0,
             line_ending: LineEnding::detect(s),
@@ -66,7 +77,8 @@ impl TextBuffer {
         Self {
             rope: Rope::new(),
             path: Some(path.to_path_buf()),
-            dirty: false,
+            state: 0,
+            saved_state: 0,
             history: History::default(),
             group_depth: 0,
             // Nothing to detect from, and a file TYPE is about to create has no
@@ -100,7 +112,8 @@ impl TextBuffer {
             edits: Vec::new(),
             rope: Rope::from_str(&text),
             path: Some(path.to_path_buf()),
-            dirty: false,
+            state: 0,
+            saved_state: 0,
             history: History::default(),
             group_depth: 0,
         })
@@ -163,8 +176,11 @@ impl TextBuffer {
         self.path.as_deref()
     }
 
+    /// Whether the text differs from what was last loaded or saved.
+    ///
+    /// Undo back to the saved text and this is false again.
     pub fn is_dirty(&self) -> bool {
-        self.dirty
+        self.state != self.saved_state
     }
 
     /// How many times the text has changed, ever.
@@ -177,14 +193,33 @@ impl TextBuffer {
         self.revision
     }
 
-    /// The text changed.
+    /// The text changed into a version never seen before.
     ///
-    /// Every mutation goes through here so `dirty` and `revision` cannot drift
+    /// Every mutation goes through here so `state` and `revision` cannot drift
     /// apart — the alternative was six call sites each remembering to set two
     /// fields, which is five chances to set one.
     fn touch(&mut self) {
-        self.dirty = true;
         self.revision += 1;
+        self.state = self.revision;
+    }
+
+    /// The text as it stands, for the undo history.
+    fn snapshot_with(&self, selections: &Selections) -> Snapshot {
+        Snapshot {
+            rope: self.rope.clone(),
+            selections: selections.clone(),
+            state: self.state,
+        }
+    }
+
+    /// Put back a version from the history. It is new text to anything that
+    /// parses, so `revision` moves; it is an old version, so `state` does not
+    /// take a fresh value.
+    fn restore(&mut self, snapshot: Snapshot) -> Selections {
+        self.rope = snapshot.rope;
+        self.revision += 1;
+        self.state = snapshot.state;
+        snapshot.selections
     }
 
     /// Call `f` with one line's text, borrowed from the rope when possible.
@@ -478,7 +513,7 @@ impl TextBuffer {
         if self.group_depth == 0 {
             let selections = Selections::single(Selection::caret(at));
             self.history
-                .record(EditKind::Other, self.rope.clone(), &selections);
+                .record(EditKind::Other, self.snapshot_with(&selections));
         }
     }
 
@@ -493,7 +528,7 @@ impl TextBuffer {
     /// continuing a run of the same kind folds into the one already there.
     pub fn begin_edit_group(&mut self, kind: EditKind, selections: &Selections) {
         if self.group_depth == 0 {
-            self.history.record(kind, self.rope.clone(), selections);
+            self.history.record(kind, self.snapshot_with(selections));
         }
         self.group_depth += 1;
     }
@@ -517,17 +552,13 @@ impl TextBuffer {
     /// `None` means there was nothing to undo, so the caller leaves its
     /// selections alone.
     pub fn undo(&mut self, current: &Selections) -> Option<Selections> {
-        let snapshot = self.history.undo(self.rope.clone(), current)?;
-        self.rope = snapshot.rope;
-        self.touch();
-        Some(snapshot.selections)
+        let snapshot = self.history.undo(self.snapshot_with(current))?;
+        Some(self.restore(snapshot))
     }
 
     pub fn redo(&mut self, current: &Selections) -> Option<Selections> {
-        let snapshot = self.history.redo(self.rope.clone(), current)?;
-        self.rope = snapshot.rope;
-        self.touch();
-        Some(snapshot.selections)
+        let snapshot = self.history.redo(self.snapshot_with(current))?;
+        Some(self.restore(snapshot))
     }
 
     /// Write the buffer to disk, atomically.
@@ -579,7 +610,7 @@ impl TextBuffer {
         // does this.
         sync_parent_dir(&target);
 
-        self.dirty = false;
+        self.saved_state = self.state;
         Ok(())
     }
 
