@@ -34,52 +34,17 @@ fn insert_marks_buffer_dirty() {
 }
 
 #[test]
-fn delete_before_removes_the_preceding_grapheme() {
-    let mut b = TextBuffer::from_str("abc\n");
-    b.delete_before(Position { line: 0, col: 2 });
-    assert_eq!(b.line_text(0), "ac");
-}
-
-#[test]
-fn delete_before_at_start_of_buffer_is_a_noop() {
-    let mut b = TextBuffer::from_str("abc\n");
-    b.delete_before(Position { line: 0, col: 0 });
-    assert_eq!(b.line_text(0), "abc");
-}
-
-#[test]
-fn delete_before_wide_char_removes_whole_grapheme() {
+fn a_range_of_one_wide_grapheme_removes_all_of_it() {
+    // Deletion is `replace_range` over grapheme positions. The removed
+    // `delete_before`/`delete_after` tested this per helper; one range covers
+    // both directions.
     let mut b = TextBuffer::from_str("日本語\n");
-    b.delete_before(Position { line: 0, col: 1 });
-    assert_eq!(b.line_text(0), "本語");
-}
-
-#[test]
-fn delete_after_removes_the_grapheme_under_the_cursor() {
-    let mut b = TextBuffer::from_str("abc\n");
-    b.delete_after(Position { line: 0, col: 1 });
-    assert_eq!(b.line_text(0), "ac");
-}
-
-#[test]
-fn delete_after_at_end_of_line_joins_the_next_line() {
-    let mut b = TextBuffer::from_str("ab\ncd\n");
-    b.delete_after(Position { line: 0, col: 2 });
-    assert_eq!(b.line_text(0), "abcd");
-}
-
-#[test]
-fn delete_after_at_end_of_buffer_is_a_noop() {
-    let mut b = TextBuffer::from_str("ab");
-    b.delete_after(Position { line: 0, col: 2 });
-    assert_eq!(b.line_text(0), "ab");
-}
-
-#[test]
-fn delete_after_removes_a_whole_wide_grapheme() {
-    let mut b = TextBuffer::from_str("日本語\n");
-    b.delete_after(Position { line: 0, col: 0 });
-    assert_eq!(b.line_text(0), "本語");
+    b.replace_range(
+        Position { line: 0, col: 1 },
+        Position { line: 0, col: 2 },
+        "",
+    );
+    assert_eq!(b.line_text(0), "日語");
 }
 
 #[test]

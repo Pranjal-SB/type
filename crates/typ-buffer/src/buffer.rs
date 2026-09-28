@@ -343,49 +343,15 @@ impl TextBuffer {
         line_start + chars_before
     }
 
-    pub fn insert_char(&mut self, pos: Position, ch: char) {
-        self.record_snapshot(pos);
-        let offset = self.char_offset(pos);
-        self.rope.insert_char(offset, ch);
-        self.touch();
-    }
-
-    /// Delete the grapheme immediately before `pos` (backspace).
-    pub fn delete_before(&mut self, pos: Position) {
-        let offset = self.char_offset(pos);
-        if offset == 0 {
-            return;
-        }
-        let n = if pos.col == 0 {
-            1 // joining with the previous line: remove the newline
-        } else {
-            self.with_line_str(pos.line, |text| {
-                text.graphemes(true)
-                    .nth(pos.col - 1)
-                    .map_or(1, |g| g.chars().count())
-            })
-        };
-        self.record_snapshot(pos);
-        self.rope.remove(offset - n..offset);
-        self.touch();
-    }
-
-    /// Delete the grapheme at `pos` (forward delete).
+    /// Insert one character: `replace_range` with an empty range.
     ///
-    /// At the end of a line this removes the newline, joining the next line up.
-    pub fn delete_after(&mut self, pos: Position) {
-        let offset = self.char_offset(pos);
-        if offset >= self.rope.len_chars() {
-            return;
-        }
-        let n = self.with_line_str(pos.line, |text| {
-            text.graphemes(true)
-                .nth(pos.col)
-                .map_or(1, |g| g.chars().count())
-        });
-        self.record_snapshot(pos);
-        self.rope.remove(offset..offset + n);
-        self.touch();
+    /// A convenience rather than a second path: it used to edit the rope
+    /// itself and record no `EditSpan`, so a caller would have stranded every
+    /// diagnostic held against the buffer. `delete_before` and `delete_after`
+    /// had the same flaw and no production caller, and are gone;
+    /// `Action::Delete` is the one deletion path. Gap 117.
+    pub fn insert_char(&mut self, pos: Position, ch: char) {
+        self.replace_range(pos, pos, ch.encode_utf8(&mut [0; 4]));
     }
 
     /// The text between two positions.
@@ -517,10 +483,9 @@ impl TextBuffer {
     /// Take the undo snapshot for an edit that is about to change the text.
     ///
     /// Inside a group, the group's own snapshot, the first time only. Outside
-    /// one, the M1-era standalone helpers: they have no selection set and no
-    /// edit kind to offer, so they record as `Other` at a caret placed where
-    /// they are editing, which reproduces their old one-step-per-call behavior
-    /// exactly.
+    /// one (an edit made straight on the buffer, which today is only tests)
+    /// there is no selection set and no edit kind to offer, so it records as
+    /// `Other` at a caret placed where the edit is: one step per call.
     fn record_snapshot(&mut self, at: Position) {
         if self.group_depth > 0 {
             if let Some((kind, selections)) = self.pending_group.take() {

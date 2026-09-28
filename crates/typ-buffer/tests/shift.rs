@@ -99,6 +99,15 @@ fn taking_the_edits_empties_the_record() {
 }
 
 #[test]
+fn every_editing_method_records_what_it_did() {
+    // An edit that records no span strands every diagnostic held against the
+    // buffer: nothing tells them the text moved.
+    let mut buffer = TextBuffer::from_str("one\n");
+    buffer.insert_char(at(0, 0), '\n');
+    assert_eq!(buffer.take_edits().len(), 1, "insert_char recorded nothing");
+}
+
+#[test]
 fn an_edit_that_changes_nothing_records_nothing() {
     let mut buffer = TextBuffer::from_str("one\n");
     buffer.replace_range(at(0, 1), at(0, 1), "");
