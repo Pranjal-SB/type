@@ -230,8 +230,9 @@ impl App {
     /// Everything that has to happen when a different buffer becomes visible.
     ///
     /// Called from opening *and* from switching, because the two leave the app
-    /// in the same place: config the new panel has never seen, a watch pointed
-    /// at the file being left, and a buffer that may want parsing.
+    /// in the same place: config the new panel has never seen, a file that may
+    /// not be watched yet or may have changed while hidden, and a buffer that
+    /// may want parsing.
     fn settle_active_tab(&mut self) {
         // Every path that makes a tab active lands here, which is what keeps
         // the stamp honest — a switch that forgot it would make the tab look
@@ -242,7 +243,9 @@ impl App {
         self.apply_indent_width();
         self.tabs[self.active].panel.set_whitespace(self.whitespace);
         self.focus = Focus::Editor;
-        self.rewatch();
+        // A no-op for a tab already watched, so a switch costs nothing here.
+        self.watch_tab(self.active);
+        self.warn_if_changed_on_disk();
         self.request_parse_if_stale();
     }
 

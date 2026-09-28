@@ -68,9 +68,6 @@ pub struct App {
     /// Handed to workers so they can wake the loop. `None` in tests that do not
     /// care, and in `App::new` before `run` wires it up.
     sender: Option<crate::run::AppSender>,
-    /// The watch on the open file. Dropping it stops the watching, so opening
-    /// another file replaces this rather than accumulating watches.
-    watch: Option<typ_buffer::FileWatch>,
     /// Something changed and the screen does not show it yet.
     ///
     /// Starts true: the first frame has to be painted.
@@ -175,6 +172,15 @@ struct Tab {
     /// jobs down to the newest: the newest request is always the one that runs
     /// and always arrives. Anything else was mid-parse when the buffer changed.
     awaited_generation: Option<u64>,
+    /// The watch on this tab's file. **One per tab, not one for the active
+    /// tab:** a single watch that followed the active tab never heard about a
+    /// write to any other open file, and switching back showed it stale. Gap
+    /// 85. Dropped with the tab, which is what stops the watching.
+    watch: Option<typ_buffer::FileWatch>,
+    /// The file changed on disk while this tab held unsaved work and was not
+    /// on screen. Said on arrival, because a status written while the user was
+    /// looking at another file is gone by the time they come back.
+    changed_on_disk: bool,
 }
 
 impl Tab {
@@ -184,6 +190,8 @@ impl Tab {
             parsed_revision: None,
             awaited_generation: None,
             last_used: 0,
+            watch: None,
+            changed_on_disk: false,
         }
     }
 }
@@ -240,7 +248,6 @@ impl App {
             prompt: None,
             last_query: None,
             sender: None,
-            watch: None,
             dirty: true,
             indent_width: None,
             whitespace: Whitespace::default(),
@@ -290,7 +297,9 @@ impl App {
         self.find_worker = Some(FindWorker::spawn(sender.clone()));
         self.lsp.set_sender(sender.clone());
         self.sender = Some(sender);
-        self.rewatch();
+        for index in 0..self.tabs.len() {
+            self.watch_tab(index);
+        }
         // Whatever is already open has never been parsed.
         self.request_parse_if_stale();
     }
@@ -702,23 +711,42 @@ impl App {
         index == self.active
     }
 
-    /// Watch whatever file is open now, and stop watching the last one.
+    /// Watch the file in the tab at `index`, if it has one and nothing is
+    /// watching it yet.
     ///
     /// A failure here is not worth interrupting anyone over: the editor keeps
     /// working, it just stops noticing outside writes. It goes to the log,
     /// which is where the answer will be looked for.
-    fn rewatch(&mut self) {
-        self.watch = None;
-        let (Some(sender), Some(path)) = (self.sender.clone(), self.tabs[self.active].panel.path())
-        else {
+    fn watch_tab(&mut self, index: usize) {
+        let tab = &mut self.tabs[index];
+        if tab.watch.is_some() {
+            return;
+        }
+        let (Some(sender), Some(path)) = (self.sender.clone(), tab.panel.path()) else {
             return;
         };
         let path = path.to_path_buf();
         match typ_buffer::watch_file(&path, move |changed| {
             let _ = sender.send(typ_core::AppEvent::FileChanged(changed));
         }) {
-            Ok(watch) => self.watch = Some(watch),
+            Ok(watch) => tab.watch = Some(watch),
             Err(e) => crate::log_warn!("watching {} failed: {e:#}", path.display()),
+        }
+    }
+
+    /// Say that a tab's file changed under unsaved work.
+    fn warn_changed_on_disk(&mut self, index: usize) {
+        self.tabs[index].changed_on_disk = false;
+        self.status = Some(format!(
+            "{} changed on disk. Your unsaved changes are kept; Ctrl+S overwrites it.",
+            self.tabs[index].panel.file_name()
+        ));
+    }
+
+    /// A tab that became active may have been written to while it was not.
+    fn warn_if_changed_on_disk(&mut self) {
+        if self.tabs[self.active].changed_on_disk {
+            self.warn_changed_on_disk(self.active);
         }
     }
 
@@ -729,31 +757,40 @@ impl App {
     /// matters, so the only thing to do is say so and touch nothing.
     /// Returns whether anything on screen changed, so the loop can decline to
     /// repaint for a watcher event that turned out to be our own save.
+    ///
+    /// **Any tab, not only the active one.** A clean background tab reloads in
+    /// place; a dirty one is flagged and warns when it is switched to. Gap 85.
     pub fn handle_external_change(&mut self, path: &Path) -> Result<bool> {
-        if self.tabs[self.active].panel.path() != Some(path) {
+        let Some(index) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.panel.path() == Some(path))
+        else {
             return Ok(false);
-        }
+        };
+        let on_screen = index == self.active;
 
         if !path.exists() {
             self.status = Some(format!(
                 "{} was deleted on disk. Ctrl+S writes it back.",
-                self.tabs[self.active].panel.file_name()
+                self.tabs[index].panel.file_name()
             ));
             return Ok(true);
         }
 
         // Covers our own save: the watcher reports the write, and what is on
         // disk is what we have, so there is nothing to do.
-        if self.tabs[self.active].panel.matches_disk() {
+        if self.tabs[index].panel.matches_disk() {
             return Ok(false);
         }
 
-        if self.tabs[self.active].panel.is_dirty() {
-            self.status = Some(format!(
-                "{} changed on disk. Your unsaved changes are kept; Ctrl+S overwrites it.",
-                self.tabs[self.active].panel.file_name()
-            ));
-            return Ok(true);
+        if self.tabs[index].panel.is_dirty() {
+            if on_screen {
+                self.warn_changed_on_disk(index);
+            } else {
+                self.tabs[index].changed_on_disk = true;
+            }
+            return Ok(on_screen);
         }
 
         // **Not `?`.** `reload` reads through `read_to_string`, so a build step
@@ -761,19 +798,20 @@ impl App {
         // here, and propagating that ends the process from `step_batch`,
         // discarding every *other* tab's unsaved work on a watcher event rather
         // than on anything the user did. Gap 70.
-        if let Err(e) = self.tabs[self.active].panel.reload() {
+        if let Err(e) = self.tabs[index].panel.reload() {
             self.status = Some(format!(
                 "Could not reload {}: {e:#}",
-                self.tabs[self.active].panel.file_name()
+                self.tabs[index].panel.file_name()
             ));
             return Ok(true);
         }
         // `reload` swaps in a fresh `TextBuffer`, so revisions restart and the
         // comparison in `request_parse_if_stale` would be against a number
-        // from a buffer that no longer exists.
-        self.tabs[self.active].parsed_revision = None;
+        // from a buffer that no longer exists. A background tab is parsed
+        // when it is next activated.
+        self.tabs[index].parsed_revision = None;
         self.request_parse_if_stale();
-        Ok(true)
+        Ok(on_screen)
     }
 
     pub fn status(&self) -> Option<&str> {
