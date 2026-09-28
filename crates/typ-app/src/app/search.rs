@@ -39,6 +39,12 @@ impl App {
             .modifiers
             .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
 
+        // Every key answers the last message, as in the editor: a rejection
+        // belongs to the Enter that caused it, and left standing it surfaced
+        // after Esc about an answer already abandoned. Gap 126. Anything this
+        // key has to say is set below, after this.
+        self.status = None;
+
         let Some(prompt) = self.prompt.as_mut() else {
             return Ok(());
         };

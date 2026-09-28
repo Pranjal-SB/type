@@ -822,8 +822,14 @@ impl App {
     pub fn status_left(&self) -> String {
         // The prompt outranks any message: while it is open it is the only
         // thing the user is looking at.
+        // A message beside it is about the prompt (a rejected answer) and
+        // is shown after the input rather than written somewhere nothing
+        // draws. Gap 126.
         if let Some(prompt) = &self.prompt {
-            return format!("{} {}", prompt.label(), prompt.input());
+            return match &self.status {
+                Some(message) => format!("{} {}  {message}", prompt.label(), prompt.input()),
+                None => format!("{} {}", prompt.label(), prompt.input()),
+            };
         }
         self.status.clone().unwrap_or_else(|| HINT.to_string())
     }

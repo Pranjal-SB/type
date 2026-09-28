@@ -96,6 +96,45 @@ fn line_zero_is_treated_as_line_one() {
 }
 
 #[test]
+fn the_rejection_is_on_screen_while_the_prompt_is_open() {
+    // Gap 126. The prompt outranks the status in `status_left`, and it stays
+    // open on a rejection, so the message went to a field nothing was drawing.
+    // Asserting on `status()` is why the test above passed regardless.
+    let mut app = app("rejection-shown");
+    open_goto(&mut app);
+    typed(&mut app, "abc");
+    enter(&mut app);
+
+    let shown = app.status_left();
+    assert!(shown.contains("abc"), "the input went missing: {shown:?}");
+    assert!(
+        shown.contains("Not a line number"),
+        "the rejection is not on screen: {shown:?}"
+    );
+}
+
+#[test]
+fn the_rejection_does_not_outlive_the_prompt() {
+    // It surfaced after Esc instead, describing something already abandoned.
+    let mut app = app("rejection-cleared");
+    open_goto(&mut app);
+    typed(&mut app, "abc");
+    enter(&mut app);
+    app.handle_chord(KeyChord::from_event(KeyEvent::new(
+        KeyCode::Esc,
+        KeyModifiers::NONE,
+    )))
+    .unwrap();
+
+    assert!(app.prompt().is_none());
+    assert!(
+        !app.status_left().contains("Not a line number"),
+        "status: {:?}",
+        app.status_left()
+    );
+}
+
+#[test]
 fn non_numeric_input_is_rejected_without_closing_the_prompt() {
     let mut app = app("garbage");
     open_goto(&mut app);
