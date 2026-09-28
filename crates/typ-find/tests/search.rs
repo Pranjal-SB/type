@@ -274,6 +274,31 @@ fn an_open_buffer_is_searched_instead_of_the_file_on_disk() {
 }
 
 #[test]
+fn an_open_buffer_wins_when_the_root_and_the_tab_spell_the_path_differently() {
+    // `typ notes.md` roots the project at `.`, so the walk yields
+    // `./notes.md` while the tab holds `notes.md`, and `Path`'s `Eq` keeps a
+    // leading `CurDir`. The override never fired and the file was read from
+    // disk. Relative on purpose: cargo runs integration tests from the package
+    // root, which is what makes this spelling reachable. Gap 109.
+    struct Here(PathBuf);
+    impl Drop for Here {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    let name = format!("tmp-search-spelling-{}", std::process::id());
+    let here = Here(PathBuf::from(&name));
+    fs::create_dir_all(&here.0).expect("fixture root");
+    fs::write(here.0.join("notes.md"), "saved\n").expect("fixture file");
+
+    let root = PathBuf::from(format!("./{name}"));
+    let overrides = [(here.0.join("notes.md"), "unsaved\n".to_string())];
+
+    let found = search(&root, "unsaved", 100, &overrides);
+    assert_eq!(found.hits.len(), 1, "the open buffer was not searched");
+}
+
+#[test]
 fn paths_are_relative_with_forward_slashes() {
     let fixture = Fixture::new("relpaths");
     fixture.file("deep/nested/a.rs", "needle\n");

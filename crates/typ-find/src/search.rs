@@ -82,6 +82,24 @@ pub fn search(root: &Path, query: &str, limit: usize, overrides: &[(PathBuf, Str
         };
     };
 
+    // **Matched by root-relative name, not by `PathBuf`.** `typ notes.md` roots
+    // the walk at `.`, so it yields `./notes.md` while the tab holds
+    // `notes.md`, and `Path`'s `Eq` keeps a leading `CurDir`: the override
+    // never fired. Canonicalised here, once per search and once per open
+    // buffer, so the walk itself compares strings. Gap 109.
+    let canonical_root = std::fs::canonicalize(root).ok();
+    let overrides: Vec<(String, &String)> = overrides
+        .iter()
+        .filter_map(|(path, text)| {
+            let named = canonical_root
+                .as_deref()
+                .zip(std::fs::canonicalize(path).ok())
+                .and_then(|(root, path)| relative_to(root, &path))
+                .or_else(|| relative_to(root, path))?;
+            Some((named, text))
+        })
+        .collect();
+
     let found = Mutex::new(Vec::<LineHit>::new());
     // Set when any worker hits the cap. Checked before starting a file, and
     // each file's sink stops at `limit + 1`, so the overshoot is bounded by the
@@ -106,6 +124,7 @@ pub fn search(root: &Path, query: &str, limit: usize, overrides: &[(PathBuf, Str
             let matcher = matcher.clone();
             let found = &found;
             let capped = &capped;
+            let overrides = &overrides;
 
             Box::new(move |entry| {
                 let Ok(entry) = entry else {
@@ -134,8 +153,8 @@ pub fn search(root: &Path, query: &str, limit: usize, overrides: &[(PathBuf, Str
                 // The open buffer wins over the file on disk.
                 let overridden = overrides
                     .iter()
-                    .find(|(path, _)| path == entry.path())
-                    .map(|(_, text)| text);
+                    .find(|(named, _)| *named == relative)
+                    .map(|(_, text)| *text);
                 let result = match overridden {
                     Some(text) => searcher.search_slice(&matcher, text.as_bytes(), sink),
                     None => searcher.search_path(&matcher, entry.path(), sink),
