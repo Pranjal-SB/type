@@ -288,6 +288,11 @@ fn the_hover_is_a_float_without_the_keys() {
     );
     assert_eq!(buf[(left, top - 1)].bg, theme.bg, "no gutter above the box");
     assert_eq!(buf[(left, top - 1)].symbol(), " ");
+    for y in 0..AREA.height {
+        for x in 0..AREA.width {
+            assert_ne!(buf[(x, y)].bg, theme.scrim, "a hover is not modal: {x},{y}");
+        }
+    }
 }
 
 #[test]

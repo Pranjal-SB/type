@@ -22,6 +22,7 @@ name = "Rosé Pine"
 kind = "dark"
 
 [palette]
+scrim = "#110f1a"  # below base: the modal backdrop
 base = "#191724"
 surface = "#211f30"
 rule = "#7f7b99"   # upstream muted #6e6a86 lifted until it holds 3:1 at 256, the border: 3:1 against both surfaces
@@ -59,6 +60,7 @@ chrome_bg = "surface"
 border = "rule"
 border_focused = "foam"
 float_border = "foam"
+scrim = "scrim"
 status_bar_bg = "surface"
 status_bar_fg = "text"
 status_bar_inactive_fg = "subtle"

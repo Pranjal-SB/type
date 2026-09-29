@@ -27,6 +27,7 @@ name = "Tokyo Night Storm"
 kind = "dark"
 
 [palette]
+scrim = "#1b1e2d"  # below bg and bg_dark: the modal backdrop
 bg = "#24283b"
 bg_dark = "#262a3c"
 bg_highlight = "#1a1f32"
@@ -67,6 +68,7 @@ chrome_bg = "bg_dark"
 border = "rule"
 border_focused = "blue"
 float_border = "blue"
+scrim = "scrim"
 status_bar_bg = "bg_dark"
 status_bar_fg = "fg"
 status_bar_inactive_fg = "fg_dark"

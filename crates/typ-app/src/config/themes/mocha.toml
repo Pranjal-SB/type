@@ -18,6 +18,7 @@ name = "Catppuccin Mocha"
 kind = "dark"
 
 [palette]
+crust = "#11111b"  # upstream crust: the modal backdrop
 base = "#1e1e2e"
 mantle = "#20202d"
 surface0 = "#1f1f30"
@@ -56,6 +57,7 @@ chrome_bg = "mantle"
 border = "rule"
 border_focused = "blue"
 float_border = "blue"
+scrim = "crust"
 status_bar_bg = "mantle"
 status_bar_fg = "text"
 status_bar_inactive_fg = "subtext0"

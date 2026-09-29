@@ -40,6 +40,8 @@ use crate::{KeyChord, PanelEvent};
 mod palette {
     use ratatui::style::Color;
 
+    /// Below the page: what a modal float repaints the screen behind it to.
+    pub const SCRIM: Color = Color::Rgb(0x0a, 0x0d, 0x12);
     pub const BASE_00: Color = Color::Rgb(0x10, 0x14, 0x1b);
     pub const BASE_01: Color = Color::Rgb(0x16, 0x1c, 0x25);
     pub const BASE_02: Color = Color::Rgb(0x1a, 0x21, 0x2c);
@@ -140,6 +142,9 @@ pub struct ThemeColors {
     /// The rounded border of a float that has the keyboard (interface §3).
     /// A float without the keys, like the hover box, draws in `border`.
     pub float_border: Color,
+    /// The ground a modal float repaints everything behind it to, the status
+    /// bar excepted (interface §3). One step darker than both surfaces.
+    pub scrim: Color,
 
     pub status_bar_bg: Color,
     pub status_bar_fg: Color,
@@ -207,6 +212,7 @@ impl Default for ThemeColors {
             border: p::BASE_03,
             border_focused: p::ACCENT,
             float_border: p::ACCENT,
+            scrim: p::SCRIM,
 
             status_bar_bg: p::BASE_02,
             status_bar_fg: p::BASE_07,

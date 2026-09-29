@@ -82,6 +82,7 @@ fn light_fixture() -> ThemeColors {
         // Darker than the unfocused border, for the same reason.
         border_focused: Color::Rgb(0x1f, 0x5f, 0xa8),
         float_border: Color::Rgb(0x1f, 0x5f, 0xa8),
+        scrim: Color::Rgb(0xd8, 0xd8, 0xd4),
 
         chrome_bg: Color::Rgb(0xf0, 0xf0, 0xed),
         status_bar_bg: Color::Rgb(0xf0, 0xf0, 0xed),
@@ -243,6 +244,35 @@ fn a_float_border_under_three_to_one_is_reported_on_either_ground() {
             "{rule} has to be reported, got: {bad:?}"
         );
     }
+}
+
+#[test]
+fn a_scrim_that_does_not_darken_both_surfaces_is_reported() {
+    // Interface §3: a modal float repaints what is behind it one step darker.
+    // Both surfaces are behind it, so it has to be darker than both.
+    let theme = ThemeColors::default();
+    assert!(
+        audit(
+            &ThemeColors {
+                scrim: theme.chrome_bg,
+                ..theme
+            },
+            Kind::Dark
+        )
+        .iter()
+        .any(|f| f.starts_with("scrim vs chrome_bg")),
+    );
+    assert!(
+        audit(
+            &ThemeColors {
+                scrim: theme.bg,
+                ..theme
+            },
+            Kind::Dark
+        )
+        .iter()
+        .any(|f| f.starts_with("scrim vs bg")),
+    );
 }
 
 #[test]

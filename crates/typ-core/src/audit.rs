@@ -364,6 +364,12 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         3.0,
     );
 
+    // A modal float repaints both surfaces behind it to this, so it has to be
+    // darker than both. Darker on a light theme too: a backdrop that lightens
+    // reads as a glare over the page rather than the page stepping back.
+    darker(&mut bad, "scrim vs bg", theme.scrim, theme.bg);
+    darker(&mut bad, "scrim vs chrome_bg", theme.scrim, theme.chrome_bg);
+
     emphasised(
         &mut bad,
         "border_focused",
@@ -525,6 +531,15 @@ fn below(bad: &mut Vec<String>, name: &str, a: Color, b: Color, ceiling: f64, wh
     if ratio >= ceiling {
         bad.push(format!(
             "{name}: contrast {ratio:.2} is at or above {ceiling:.1}, {why}"
+        ));
+    }
+}
+
+/// `a` has to be strictly darker than `b`, on either kind of ground.
+fn darker(bad: &mut Vec<String>, name: &str, a: Color, b: Color) {
+    if luminance(a) >= luminance(b) {
+        bad.push(format!(
+            "{name}: {a:?} is not darker than {b:?}, and a backdrop has to step back"
         ));
     }
 }

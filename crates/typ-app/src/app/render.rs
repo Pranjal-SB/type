@@ -94,6 +94,9 @@ impl App {
         // clipped by it. `chrome::frame` fills every cell of its rect, which is
         // what stops the editor showing through.
         if self.picker.is_some() {
+            // Modal, so everything behind it steps back. `body` is the frame
+            // minus the status bar, which stays as it is.
+            typ_core::chrome::scrim(frame.buffer_mut(), body, self.theme.scrim);
             let area = crate::layout::picker_area(frame.area());
             let ctx = RenderContext {
                 theme: &self.theme,

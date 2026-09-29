@@ -25,6 +25,7 @@ name = "Dracula"
 kind = "dark"
 
 [palette]
+scrim = "#1a1b23"  # below background: the modal backdrop, clear of it at 256 too
 background = "#282a36"
 # One step off the page. Any further and the current line becomes a stripe;
 # any closer and it collapses onto the page at 256 colours.
@@ -70,6 +71,7 @@ chrome_bg = "chrome"
 border = "rule"
 border_focused = "purple"
 float_border = "purple"
+scrim = "scrim"
 
 status_bar_bg = "chrome"
 status_bar_fg = "foreground"

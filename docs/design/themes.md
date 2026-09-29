@@ -58,7 +58,7 @@ key and left alone.
 | Whitespace | `whitespace` |
 | Selection | `selection_fg` `selection_bg` `selection_primary_bg` |
 | Brackets | `bracket_match_fg` `bracket_match_bg` |
-| Chrome | `chrome_bg` `border` `border_focused` `float_border` |
+| Chrome | `chrome_bg` `border` `border_focused` `float_border` `scrim` |
 | Status bar | `status_bar_bg` `status_bar_fg` `status_bar_inactive_fg` `status_bar_accent` |
 | Tree | `tree_directory_fg` `tree_file_fg` |
 | Focus | `receded_fg` |
@@ -81,6 +81,12 @@ still has to be said.
 `float_border` is the rounded border of a float that has the keyboard, the picker for one
 (interface §3). A float without the keys, like the hover box, is bordered in the rule. Every
 shipped theme points it at its focus accent.
+
+`scrim` is what a modal float (the picker) repaints the screen behind it to: the ground becomes
+`scrim` and the text takes SGR dim. The status bar is never repainted. It is darker than both
+surfaces on a light theme as well, since a backdrop that lightens reads as glare. At 256 colours
+it has to land on a different cube cell from both, which moved Latte's and Dracula's off their
+first choices.
 
 `selection_primary_bg` exists because with thirty cursors something has to say which one
 every motion is relative to.
@@ -135,6 +141,7 @@ The rules with no ratio, which do not vary by ground:
 | `fg` over `indent_guide` | further from `bg` — a guide is decoration, not content |
 | `border` on `bg` and on `chrome_bg` | ≥ 3.0: a rule is non-text (WCAG 1.4.11) and runs between the two surfaces |
 | `float_border` on `bg` and on `chrome_bg` | ≥ 3.0: the rule of a float that has the keyboard |
+| `scrim` vs `bg` and vs `chrome_bg` | darker than both, on either kind of ground: a modal backdrop steps back |
 | `border_focused` vs `border` | further from `bg` — focus is gained attention, not lost |
 | `status_bar_fg` over `status_bar_inactive_fg` | further from `status_bar_bg` |
 | `fg` over `receded_fg` | further from `bg`: without focus a panel steps back |

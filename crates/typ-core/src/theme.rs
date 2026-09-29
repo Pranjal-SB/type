@@ -314,7 +314,7 @@ fn parse_palette(table: &toml::Table) -> Result<BTreeMap<String, Color>> {
 /// Destructured exhaustively and without `..` on purpose: a field added to
 /// `ThemeColors` fails to compile here until it is given a name, which is what
 /// stops a new colour from being unreachable from a theme file.
-pub(crate) fn ui_pairs(colors: &ThemeColors) -> [(&'static str, Color); 29] {
+pub(crate) fn ui_pairs(colors: &ThemeColors) -> [(&'static str, Color); 30] {
     let ThemeColors {
         fg,
         bg,
@@ -334,6 +334,7 @@ pub(crate) fn ui_pairs(colors: &ThemeColors) -> [(&'static str, Color); 29] {
         border,
         border_focused,
         float_border,
+        scrim,
         status_bar_bg,
         status_bar_fg,
         status_bar_inactive_fg,
@@ -366,6 +367,7 @@ pub(crate) fn ui_pairs(colors: &ThemeColors) -> [(&'static str, Color); 29] {
         ("border", border),
         ("border_focused", border_focused),
         ("float_border", float_border),
+        ("scrim", scrim),
         ("status_bar_bg", status_bar_bg),
         ("status_bar_fg", status_bar_fg),
         ("status_bar_inactive_fg", status_bar_inactive_fg),
@@ -400,6 +402,7 @@ fn assign(colors: &mut ThemeColors, key: &str, colour: Color) -> bool {
         "border" => colors.border = colour,
         "border_focused" => colors.border_focused = colour,
         "float_border" => colors.float_border = colour,
+        "scrim" => colors.scrim = colour,
         "status_bar_bg" => colors.status_bar_bg = colour,
         "status_bar_fg" => colors.status_bar_fg = colour,
         "status_bar_inactive_fg" => colors.status_bar_inactive_fg = colour,

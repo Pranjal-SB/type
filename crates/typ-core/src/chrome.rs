@@ -270,3 +270,15 @@ pub fn float_exit(area: Rect, name: &str, exit: &str) -> Option<(u16, u16)> {
     }
     Some((area.right() - 3 - width, width))
 }
+
+/// Repaint `area` one step back, behind a modal float (interface §3).
+///
+/// The ground becomes `scrim` and the text takes SGR dim, so what was there
+/// stays legible enough to keep your place and plainly is not where the keys
+/// go. The symbols are left alone. The caller passes the area, and it never
+/// includes the status bar: that still says what the editor is doing.
+pub fn scrim(buf: &mut Buffer, area: Rect, scrim: Color) {
+    let area = area.intersection(buf.area);
+    let style = Style::default().bg(scrim).add_modifier(Modifier::DIM);
+    buf.set_style(area, style);
+}

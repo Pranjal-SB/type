@@ -16,6 +16,7 @@ name = "Catppuccin Latte"
 kind = "light"
 
 [palette]
+scrim = "#ccd0d8"  # below crust: the modal backdrop, clear of mantle at 256
 base = "#eff1f5"
 mantle = "#e6e9ef"
 crust = "#dce0e8"
@@ -56,6 +57,7 @@ chrome_bg = "mantle"
 border = "overlay2"
 border_focused = "blue"
 float_border = "blue"
+scrim = "scrim"
 status_bar_bg = "mantle"
 status_bar_fg = "text"
 status_bar_inactive_fg = "subtext0"

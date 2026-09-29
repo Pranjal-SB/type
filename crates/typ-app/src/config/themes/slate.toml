@@ -19,11 +19,12 @@ kind = "dark"
 
 [palette]
 # Dark to light, each step with a job.
+scrim = "#0a0d12"   # below the page: what a modal float dims the screen to
 base00 = "#10141b"  # the page
 base01 = "#161c25"  # the cursor's line — one step, felt rather than seen
 base02 = "#1a212c"  # raised surfaces: the status bar
-base03 = "#626e87"  # borders and rules, 3:1 against both surfaces
 guide = "#3b4557"   # indent guides: decoration, quieter than a rule
+base03 = "#626e87"  # borders and rules, 3:1 against both surfaces
 base04 = "#7889a0"  # furniture text: line numbers
 base05 = "#8495ac"  # quiet content: inactive status segments
 receded = "#9aa5b5" # text in a panel without focus
@@ -83,6 +84,7 @@ chrome_bg = "base02"
 border = "base03"
 border_focused = "accent"
 float_border = "accent"
+scrim = "scrim"
 
 status_bar_bg = "base02"
 status_bar_fg = "base07"
