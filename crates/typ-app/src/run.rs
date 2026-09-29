@@ -7,7 +7,7 @@ use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
     Event, KeyEventKind, MouseEvent, MouseEventKind,
 };
-use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, enable_raw_mode};
 use ratatui::Terminal;
 use ratatui::layout::Rect;
 use typ_core::{AppEvent, KeyChord, Panel, PanelEvent};
@@ -39,13 +39,23 @@ pub fn run(mut app: App) -> Result<()> {
     // TYPE's. So the three things `try_init` does happen here instead: raw
     // mode, the alternate screen, and a `Terminal` over the writer.
     enable_raw_mode()?;
-    stdout().execute(EnterAlternateScreen)?;
-    let backend = TypBackend::new(stdout(), crate::capability::detect_underlines());
-    let mut terminal = Terminal::new(backend)?;
-    stdout().execute(EnableMouseCapture)?;
-    // Without this a paste arrives as N keypresses, and any chord inside the
-    // pasted text runs as a command rather than being inserted.
-    stdout().execute(EnableBracketedPaste)?;
+    // Anything failing past here undoes the lot, rather than leaving the shell
+    // in raw mode on the alternate screen. Turning off what was never turned
+    // on is harmless.
+    let setup = || -> Result<Terminal<TypBackend<Stdout>>> {
+        stdout().execute(EnterAlternateScreen)?;
+        let backend = TypBackend::new(stdout(), crate::capability::detect_underlines());
+        let terminal = Terminal::new(backend)?;
+        stdout().execute(EnableMouseCapture)?;
+        // Without this a paste arrives as N keypresses, and any chord inside
+        // the pasted text runs as a command rather than being inserted.
+        stdout().execute(EnableBracketedPaste)?;
+        Ok(terminal)
+    };
+    let mut terminal = match setup() {
+        Ok(terminal) => terminal,
+        Err(e) => return teardown(Err(e), &mut restore_steps()),
+    };
 
     // **Everything this function turned on, turned off.** `ratatui::init` used
     // to install a hook that left raw mode and the alternate screen, and this
@@ -53,13 +63,11 @@ pub fn run(mut app: App) -> Result<()> {
     // by hand means the whole job lands here: without it a panic drops the user
     // back to a shell in raw mode, on the alternate screen, still emitting
     // mouse escape sequences and wrapping every paste in markers. FINDINGS §6.
-    let previous = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
+    install_panic_hook(|| {
         let _ = stdout().execute(DisableBracketedPaste);
         let _ = stdout().execute(DisableMouseCapture);
         ratatui::restore();
-        previous(info);
-    }));
+    });
 
     let result = event_loop(&mut terminal, &mut app);
 
@@ -68,10 +76,69 @@ pub fn run(mut app: App) -> Result<()> {
     // a stale lock outlives the editor.
     app.shutdown_language_servers();
 
-    stdout().execute(DisableBracketedPaste)?;
-    stdout().execute(DisableMouseCapture)?;
-    ratatui::restore();
-    result
+    teardown(result, &mut restore_steps())
+}
+
+/// One piece of terminal cleanup.
+pub type Step = Box<dyn FnMut() -> std::io::Result<()>>;
+
+/// Everything `run` turned on, as steps that turn it off.
+fn restore_steps() -> [Step; 4] {
+    [
+        Box::new(|| stdout().execute(DisableBracketedPaste).map(drop)),
+        Box::new(|| stdout().execute(DisableMouseCapture).map(drop)),
+        Box::new(crossterm::terminal::disable_raw_mode),
+        Box::new(|| stdout().execute(LeaveAlternateScreen).map(drop)),
+    ]
+}
+
+/// Undo the terminal setup, and answer with the loop's own result.
+///
+/// **Every step runs whatever the others did.** This used to be three `?`s, so
+/// mouse capture failing to turn off skipped leaving raw mode, and the cleanup's
+/// error replaced the one that explains why the editor stopped. Gap 125.
+pub fn teardown(result: Result<()>, steps: &mut [Step]) -> Result<()> {
+    let mut first_failure = None;
+    for step in steps.iter_mut() {
+        if let Err(e) = step() {
+            first_failure.get_or_insert(e);
+        }
+    }
+    // The loop's error first: it is the one that says what happened.
+    result?;
+    match first_failure {
+        Some(e) => Err(anyhow::Error::from(e).context("restoring the terminal")),
+        None => Ok(()),
+    }
+}
+
+/// Run `restore` when a panic unwinds the thread that called this, then the
+/// previous hook.
+///
+/// **Only that thread.** The hook is process-wide and runs on whichever thread
+/// panicked, and there are six others: parse, find, three per language server,
+/// the input pump. Restoring on a worker's panic left raw mode and the
+/// alternate screen while the loop carried on drawing into a cooked terminal:
+/// keys stopped arriving and every dirty buffer became unreachable. Gap 90.
+///
+/// A worker's panic goes to the log rather than to the previous hook, because
+/// that hook prints to stderr and stderr is the alternate screen the editor is
+/// still drawing on.
+pub fn install_panic_hook(restore: impl Fn() + Send + Sync + 'static) {
+    let loop_thread = std::thread::current().id();
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let current = std::thread::current();
+        if current.id() != loop_thread {
+            crate::log_error!(
+                "thread {} panicked: {info}",
+                current.name().unwrap_or("<unnamed>")
+            );
+            return;
+        }
+        restore();
+        previous(info);
+    }));
 }
 
 /// Feed terminal events into the channel from a thread of their own.
@@ -84,13 +151,28 @@ pub fn run(mut app: App) -> Result<()> {
 /// It ends on its own when the receiver is dropped and the send fails, which is
 /// what stops it outliving the editor.
 fn spawn_input_pump(tx: AppSender) {
-    std::thread::spawn(move || {
-        while let Ok(event) = event::read() {
-            if tx.send(AppEvent::Input(event)).is_err() {
+    std::thread::spawn(move || pump_input(&tx, event::read));
+}
+
+/// The pump's body, over any reader, so a test can hand it one that fails.
+///
+/// A failed read (a closed tty, EOF on the input) is the last thing it says.
+/// The channel cannot say it by disconnecting, because the app holds a sender
+/// of its own. Gap 83.
+pub fn pump_input(tx: &AppSender, mut read: impl FnMut() -> std::io::Result<Event>) {
+    loop {
+        match read() {
+            Ok(event) => {
+                if tx.send(AppEvent::Input(event)).is_err() {
+                    return;
+                }
+            }
+            Err(e) => {
+                let _ = tx.send(AppEvent::InputClosed(e.to_string()));
                 return;
             }
         }
-    });
+    }
 }
 
 /// Give the app the channel its workers report through, and start the pump.
@@ -140,8 +222,8 @@ fn event_loop(terminal: &mut Terminal<TypBackend<Stdout>>, app: &mut App) -> Res
             return Ok(());
         }
 
-        // Every sender is gone only when the pump thread has died, which means
-        // the terminal is gone too. Nothing left to wait for.
+        // Unreachable in practice: the app holds a sender, so this never
+        // disconnects. A dead pump says so with `InputClosed` instead.
         let Ok(first) = rx.recv() else {
             return Ok(());
         };
@@ -293,9 +375,15 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
 
     match event {
         AppEvent::FileChanged(path) => changed = app.handle_external_change(&path)?,
+        AppEvent::WatchFailed { path, reason } => {
+            changed = app.handle_watch_failure(&path, &reason);
+        }
         AppEvent::Parsed(parsed) => changed = app.handle_parsed(parsed),
         AppEvent::Found(found) => changed = app.handle_found(found),
         AppEvent::Lsp(incoming) => changed = app.handle_lsp(incoming),
+        // An error rather than a quit: the user did not finish, and exiting 0
+        // tells whoever ran `typ` as `$EDITOR` that they did. Invariant 10.
+        AppEvent::InputClosed(reason) => anyhow::bail!("the terminal's input closed: {reason}"),
         AppEvent::Input(input) => match input {
             // Every binding lives in the keymap now, so there is nothing left
             // here to special-case. The dispatcher owns the order.
@@ -344,6 +432,14 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
 
                 let (tree_area, editor_area) = app.areas(area);
                 let in_tree = m.column < tree_area.width;
+
+                // A press on the status bar belongs to neither panel. Both
+                // hit tests clamp a row past their bottom to their last line,
+                // so without this a click there moved the caret. Gap 84. Only
+                // a press: a drag that runs off the bottom is still selecting.
+                if matches!(m.kind, MouseEventKind::Down(_)) && m.row >= tree_area.bottom() {
+                    return finish(app, events, changed);
+                }
 
                 match m.kind {
                     MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {

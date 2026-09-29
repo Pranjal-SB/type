@@ -79,6 +79,45 @@ fn a_chorded_key_is_never_text() {
 }
 
 #[test]
+fn changing_the_query_puts_the_selection_back_at_the_top() {
+    // Gap 122. The list re-ranks completely on every keystroke, so row 3 after
+    // `n` has nothing to do with row 3 before it, and Enter opened whatever
+    // now sat there. fzf, telescope and VS Code all reset to the top.
+    let mut picker = open(&["a.rs", "b.rs", "c.rs", "d.rs", "e.rs"]);
+    for _ in 0..3 {
+        picker.handle_key(chord(KeyCode::Down));
+    }
+    assert_eq!(picker.selected(), 3);
+
+    picker.handle_key(typed('n'));
+    assert_eq!(picker.selected(), 0, "typing kept the old row");
+
+    for _ in 0..3 {
+        picker.handle_key(chord(KeyCode::Down));
+    }
+    picker.handle_key(chord(KeyCode::Backspace));
+    assert_eq!(picker.selected(), 0, "backspace kept the old row");
+
+    for _ in 0..3 {
+        picker.handle_key(chord(KeyCode::Down));
+    }
+    picker.set_query("pasted".to_string());
+    assert_eq!(picker.selected(), 0, "a paste kept the old row");
+}
+
+#[test]
+fn a_key_that_leaves_the_query_alone_keeps_the_selection() {
+    let mut picker = open(&["a.rs", "b.rs", "c.rs"]);
+    picker.handle_key(chord(KeyCode::Down));
+    picker.handle_key(chord(KeyCode::Backspace));
+    assert_eq!(
+        picker.selected(),
+        1,
+        "backspace on an empty query is not a change"
+    );
+}
+
+#[test]
 fn down_moves_the_selection_and_stops_at_the_end() {
     let mut picker = open(&["a.rs", "b.rs", "c.rs"]);
     assert_eq!(picker.selected(), 0);
@@ -126,7 +165,7 @@ fn enter_opens_the_selected_hit() {
     let events = picker.handle_key(chord(KeyCode::Enter));
 
     let opened = events.iter().find_map(|event| match event {
-        PanelEvent::OpenFile { path, line, col } => Some((path.clone(), *line, *col)),
+        PanelEvent::OpenFile { path, at } => Some((path.clone(), at.line, at.col)),
         _ => None,
     });
     let (path, line, col) = opened.expect("expected an OpenFile");
@@ -337,4 +376,48 @@ fn an_index_past_the_end_of_a_path_does_not_panic() {
     };
     let mut buf = Buffer::empty(area);
     picker.render(area, &mut buf, &ctx);
+}
+
+// --- control characters -----------------------------------------------------
+//
+// `Cell::set_symbol` is ratatui's low-level API and does not filter; the two
+// that do are `Span::styled_graphemes` and `Buffer::set_stringn`, and the
+// picker uses neither. Both of the strings it paints are attacker-reachable
+// (a path comes from the walk, a search row's text comes from a file's bytes)
+// and `TypBackend` prints a cell's symbol to the terminal verbatim. A filename
+// is any byte but `/` and NUL on POSIX, and git checks one out happily.
+
+/// `README<ESC>]52;c;ZXZpbA==<BEL>.md`: an OSC 52 clipboard write.
+const HOSTILE: &str = "README\u{1b}]52;c;ZXZpbA==\u{7}.md";
+
+fn control_cells(buf: &Buffer, area: Rect) -> Vec<(u16, u16)> {
+    (0..area.height)
+        .flat_map(|y| (0..area.width).map(move |x| (x, y)))
+        .filter(|&(x, y)| buf[(x, y)].symbol().contains(|c: char| c.is_control()))
+        .collect()
+}
+
+#[test]
+fn an_escape_sequence_in_a_path_never_reaches_a_cell() {
+    let theme = ThemeColors::default();
+    let mut picker = open(&[HOSTILE]);
+    let area = Rect::new(0, 0, 60, 12);
+    let ctx = RenderContext {
+        theme: &theme,
+        syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
+        is_focused: true,
+        panel_index: 0,
+        terminal_width: 60,
+        terminal_height: 24,
+    };
+    let mut buf = Buffer::empty(area);
+    picker.render(area, &mut buf, &ctx);
+
+    let escaped = control_cells(&buf, area);
+    assert!(
+        escaped.is_empty(),
+        "raw control characters reached {} cells: {escaped:?}",
+        escaped.len()
+    );
 }

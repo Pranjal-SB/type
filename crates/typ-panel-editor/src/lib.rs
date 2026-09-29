@@ -212,11 +212,9 @@ impl EditorPanel {
     /// actions, so every path a user can take is one a test can take.
     #[doc(hidden)]
     pub fn set_selections_for_test(&mut self, list: Vec<Selection>) {
-        assert!(!list.is_empty(), "selections are never empty");
-        let mut selections = Selections::single(list[0]);
-        for selection in &list[1..] {
-            selections.push(*selection);
-        }
+        let (first, rest) = list.split_first().expect("selections are never empty");
+        let mut selections = Selections::single(*first);
+        selections.extend(rest.iter().copied());
         self.selections = selections;
     }
 
@@ -390,6 +388,7 @@ impl EditorPanel {
     /// plain.
     pub(crate) fn is_cursor_line(&self, line: usize) -> bool {
         self.selections
+            .touching_line(line)
             .iter()
             .any(|s| s.is_empty() && s.head.line == line)
     }
@@ -603,15 +602,10 @@ impl EditorPanel {
                 col: p.col.min(buffer.line_grapheme_count(line)),
             }
         };
-        let clamped: Vec<Selection> = self
-            .selections
-            .iter()
-            .map(|s| Selection {
-                anchor: clamp(s.anchor),
-                head: clamp(s.head),
-            })
-            .collect();
-        self.set_selections(clamped);
+        self.selections.map_in_place(|s| Selection {
+            anchor: clamp(s.anchor),
+            head: clamp(s.head),
+        });
         self.goal_col = None;
     }
 }
@@ -650,7 +644,6 @@ impl Panel for EditorPanel {
 
         let line_count = self.buffer.line_count();
         let end = (self.top_line + self.height).min(line_count);
-        let selections: Vec<Selection> = self.selections.iter().copied().collect();
         let left_col = self.left_col;
         let cursor_line = self.cursor().line;
 
@@ -734,7 +727,7 @@ impl Panel for EditorPanel {
                         left_col,
                         width: text_width,
                         tab_width: self.tab_width,
-                        selections: &selections,
+                        selections: self.selections.touching_line(i),
                         primary,
                         cursor_line,
                         brackets,

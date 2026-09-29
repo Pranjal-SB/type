@@ -111,6 +111,45 @@ fn app_with_fake_server(name: &str) -> (App, AppReceiver, PathBuf) {
     (app, rx, path)
 }
 
+/// The text the server last said it received for the file on screen.
+///
+/// `--echo` publishes it back as a diagnostic message. Everything else in this
+/// file counts notifications; this reads one. Gap 136.
+fn echoed(app: &App) -> Option<String> {
+    app.diagnostics().first().map(|d| d.message.clone())
+}
+
+#[test]
+fn the_server_is_sent_the_text_on_screen_on_open_and_on_change() {
+    let dir = fixture("payload", "a.rs", "fn a() {}\n");
+    std::fs::write(dir.join("b.rs"), "fn b() {}\n").unwrap();
+    let (tx, rx) = channel();
+    let mut app = App::new(&dir).unwrap();
+    let mut server = rust_server(fake());
+    server.args = vec!["--echo".into()];
+    app.add_language_server(server);
+    app.set_event_sender(tx);
+    app.open_path(&dir.join("a.rs")).unwrap();
+    app.open_in_new_tab(&dir.join("b.rs")).unwrap();
+
+    assert!(
+        pump_until(&mut app, &rx, |a| echoed(a).as_deref()
+            == Some("fn b() {}\n")),
+        "didOpen carried {:?}",
+        echoed(&app)
+    );
+
+    // A change to the second tab carries the second tab's edited buffer,
+    // not the pre-edit rope, not the other tab's.
+    step_batch(&mut app, vec![key('x')], AREA).unwrap();
+    assert!(
+        pump_until(&mut app, &rx, |a| echoed(a).as_deref()
+            == Some("xfn b() {}\n")),
+        "didChange carried {:?}",
+        echoed(&app)
+    );
+}
+
 #[test]
 fn opening_a_file_sends_did_open_once() {
     let (mut app, rx, _) = app_with_fake_server("open-once");
@@ -242,4 +281,43 @@ fn a_server_that_is_not_installed_is_silent_and_editing_continues() {
     settle(&mut app, &rx);
     assert_eq!(app.lsp_notifications_of("textDocument/didOpen"), 0);
     assert_eq!(app.editor().buffer().line_text(0), "xfn main() {}");
+}
+
+#[test]
+fn reopening_a_closed_file_announces_it_again() {
+    // `close_absent` sends `didClose` and clears `synced`, but keeps the `Doc`:
+    // the only removal anywhere is on server exit. So a reopened file took
+    // the "known document" branch and was announced with `didChange` for
+    // something the server had closed. rust-analyzer logs that and drops it,
+    // and nothing re-announces the file, so it has no diagnostics for the rest
+    // of the session. Gap 77.
+    let (mut app, rx, path) = app_with_fake_server("reopen");
+
+    // `close_tab` marks the frame dirty but pushes no event, so nothing would
+    // drive `step_batch`, and the reconciliation pass that notices a document
+    // is no longer open lives at the end of it. The loop reaches this on its
+    // next pass; a test with no input has to ask.
+    app.close_tab(0);
+    app.sync_language_servers();
+    assert_eq!(
+        app.lsp_notifications_of("textDocument/didClose"),
+        1,
+        "closing the tab never reached the server"
+    );
+
+    let changes_before = app.lsp_notifications_of("textDocument/didChange");
+    app.open_path(&path).unwrap();
+    app.sync_language_servers();
+    assert!(
+        pump_until(&mut app, &rx, |a| a
+            .lsp_notifications_of("textDocument/didOpen")
+            == 2),
+        "the reopened file was never announced; didOpen is still {}",
+        app.lsp_notifications_of("textDocument/didOpen")
+    );
+    assert_eq!(
+        app.lsp_notifications_of("textDocument/didChange"),
+        changes_before,
+        "the reopen was sent as a change to a document the server had closed"
+    );
 }

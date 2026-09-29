@@ -113,3 +113,21 @@ fn control_characters_never_reach_the_prompt() {
         "a one-line prompt cannot hold a newline, so it must not pretend to"
     );
 }
+
+#[test]
+fn pasting_while_the_picker_is_open_types_into_its_query() {
+    // Gap 79. Pasting a path into a fuzzy finder is an ordinary gesture, and
+    // it used to go to the buffer behind the overlay instead.
+    let _guard = exclusive();
+    let mut app = app_with_file("into-picker");
+    app.open_picker();
+
+    app.handle_paste("src/ma\nin".to_string()).unwrap();
+
+    assert_eq!(
+        app.editor_mut().line_text(0),
+        "",
+        "a paste into the picker edited the buffer behind it"
+    );
+    assert_eq!(app.picker().unwrap().query(), "src/main");
+}

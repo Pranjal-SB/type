@@ -180,3 +180,20 @@ fn dropping_the_worker_ends_the_thread() {
     // channel closes and `recv` errors rather than blocking forever.
     assert!(rx.recv_timeout(Duration::from_secs(10)).is_err());
 }
+
+#[test]
+fn a_dead_worker_says_so() {
+    // The thread exits once nobody receives its results, which stands in for a
+    // panic. A caller with no way to ask waits on a generation nothing will
+    // send, with the picker empty and nothing saying why. Gap 91.
+    let (tx, rx) = mpsc::channel::<TestEvent>();
+    drop(rx);
+    let mut worker = FindWorker::spawn(tx);
+    assert!(worker.is_alive());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while worker.is_alive() {
+        worker.filter("x".into(), 10);
+        assert!(Instant::now() < deadline, "the thread never exited");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}

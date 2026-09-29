@@ -43,8 +43,7 @@ fn open_file_event_loads_the_file_into_the_editor() {
     let mut app = App::new(&dir).unwrap();
     app.apply(vec![PanelEvent::OpenFile {
         path: dir.join("hello.rs"),
-        line: 0,
-        col: 0,
+        at: typ_core::Position::default(),
     }])
     .unwrap();
     assert_eq!(app.editor_title(), "hello.rs");
@@ -56,8 +55,7 @@ fn opening_a_file_moves_focus_to_the_editor() {
     let mut app = App::new(&dir).unwrap();
     app.apply(vec![PanelEvent::OpenFile {
         path: dir.join("hello.rs"),
-        line: 0,
-        col: 0,
+        at: typ_core::Position::default(),
     }])
     .unwrap();
     assert_eq!(app.focused_name(), "editor");
@@ -83,7 +81,10 @@ fn layout_gives_the_tree_a_fixed_width_sidebar() {
 
 #[test]
 fn layout_shrinks_the_sidebar_on_narrow_terminals() {
+    // Exact, not `< 30` and `> 0`, which a one-column sidebar satisfied.
+    // Gap 137. Under 60 columns the sidebar is a third of the width.
     let (tree, editor) = split(Rect::new(0, 0, 40, 30));
-    assert!(tree.width < 30);
-    assert!(editor.width > 0);
+    assert_eq!(tree.width, 13);
+    assert_eq!(editor.x, 12, "the editor starts on the tree's last column");
+    assert_eq!(editor.width, 28);
 }

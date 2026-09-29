@@ -50,8 +50,8 @@ fn enter_in_search_mode_opens_at_the_line_and_column() {
 
     let events = picker.handle_key(chord(KeyCode::Enter));
     let opened = events.iter().find_map(|event| match event {
-        PanelEvent::OpenFile { path, line, col } => {
-            Some((path.to_string_lossy().to_string(), *line, *col))
+        PanelEvent::OpenFile { path, at } => {
+            Some((path.to_string_lossy().to_string(), at.line, at.col))
         }
         _ => None,
     });
@@ -70,9 +70,7 @@ fn the_selection_moves_through_line_hits_too() {
     picker.handle_key(chord(KeyCode::Down));
     let events = picker.handle_key(chord(KeyCode::Enter));
     let opened = events.iter().find_map(|event| match event {
-        PanelEvent::OpenFile { path, line, .. } => {
-            Some((path.to_string_lossy().to_string(), *line))
-        }
+        PanelEvent::OpenFile { path, at } => Some((path.to_string_lossy().to_string(), at.line)),
         _ => None,
     });
     assert_eq!(opened, Some(("src/lib.rs".to_string(), 7)));
@@ -114,9 +112,7 @@ fn a_click_in_search_mode_opens_at_the_line() {
         AREA,
     );
     let opened = events.iter().find_map(|event| match event {
-        PanelEvent::OpenFile { path, line, .. } => {
-            Some((path.to_string_lossy().to_string(), *line))
-        }
+        PanelEvent::OpenFile { path, at } => Some((path.to_string_lossy().to_string(), at.line)),
         _ => None,
     });
     assert_eq!(

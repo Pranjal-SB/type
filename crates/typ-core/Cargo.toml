@@ -19,3 +19,4 @@ typ-buffer.workspace = true
 typ-find.workspace = true
 typ-lsp.workspace = true
 typ-syntax.workspace = true
+unicode-segmentation.workspace = true

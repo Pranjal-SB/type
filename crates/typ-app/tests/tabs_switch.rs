@@ -267,3 +267,33 @@ fn switching_tabs_moves_the_watcher_to_the_file_on_screen() {
         }
     }
 }
+
+#[test]
+fn a_confirmed_close_does_not_arm_the_tab_that_takes_its_index() {
+    // `close_pending` is an index, and an index is not a handle: closing a tab
+    // in the middle of the list slides another one into the number that was
+    // just confirmed. Ctrl+W twice on `b.rs` is an answer about `b.rs` and must
+    // not also be an answer about whatever lands at index 1 afterwards.
+    let (mut app, _dir) = three("close-does-not-arm-the-next");
+    for index in 0..3 {
+        app.activate_tab(index);
+        app.handle_chord(KeyChord::from_event(KeyEvent::new(
+            KeyCode::Char('X'),
+            KeyModifiers::NONE,
+        )))
+        .unwrap();
+    }
+    app.activate_tab(1);
+
+    app.handle_chord(chord("ctrl+w")).unwrap(); // asks
+    app.handle_chord(chord("ctrl+w")).unwrap(); // answers
+    assert_eq!(app.tab_count(), 2, "the confirmed close did not go through");
+
+    app.handle_chord(chord("ctrl+w")).unwrap();
+    assert_eq!(
+        app.tab_count(),
+        2,
+        "one Ctrl+W discarded unsaved work without asking; status was {:?}",
+        app.status()
+    );
+}

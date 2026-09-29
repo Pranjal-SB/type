@@ -16,6 +16,7 @@ use std::time::Instant;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
+use typ_buffer::{Position, Selection};
 use typ_core::{Action, Motion, Panel, RenderContext, ThemeColors};
 use typ_panel_editor::EditorPanel;
 
@@ -372,4 +373,134 @@ fn four_hundred_diagnostics_outside_the_viewport_cost_one_pass() {
     }
     println!("paint with 400 off-screen diagnostics: {best} µs");
     assert!(best < 2_000, "off-screen diagnostics cost {best} µs");
+}
+
+// --- many cursors, long lines ------------------------------------------------
+
+/// 50k lines with `needle` on every twelfth (4167 of them, the v0.3.0 audit's
+/// 4000-cursor point) and a caret on the first, ready for Ctrl+Shift+L.
+///
+/// Every fixture above holds one cursor, which is how an O(N²) motion and an
+/// O(cells × N) paint both went unmeasured.
+fn needle_editor() -> EditorPanel {
+    let plain = "    let editor = Editor::new(); // a representative line of code\n";
+    let needle = "    let needle = Editor::new(); // a representative line of code\n";
+    let text: String = (0..50_000)
+        .map(|i| if i % 12 == 0 { needle } else { plain })
+        .collect();
+    let mut editor = EditorPanel::from_str(&text);
+    editor.set_selections_for_test(vec![Selection::caret(Position { line: 0, col: 9 })]);
+    editor
+}
+
+fn many_cursor_editor() -> EditorPanel {
+    let mut editor = needle_editor();
+    editor.perform(Action::SelectAllOccurrences);
+    assert!(
+        editor.selections().len() > 4_000,
+        "the fixture lost its cursors"
+    );
+    editor
+}
+
+/// Best of five: noise on a wall clock is additive, so the fastest run is the
+/// one least contaminated by things that are not the code.
+fn best_of_five(mut f: impl FnMut()) -> std::time::Duration {
+    (0..5)
+        .map(|_| {
+            let start = Instant::now();
+            f();
+            start.elapsed()
+        })
+        .min()
+        .unwrap()
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored"]
+fn selecting_four_thousand_occurrences_fits_in_a_frame() {
+    let _guard = exclusive();
+    let mut editor = needle_editor();
+    let best = best_of_five(|| {
+        editor.set_selections_for_test(vec![Selection::caret(Position { line: 0, col: 9 })]);
+        editor.perform(Action::SelectAllOccurrences);
+    });
+    let n = editor.selections().len();
+    println!("SelectAllOccurrences, {n} hits in 50k lines: {best:?}");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "Ctrl+Shift+L cost {best:?}, over the 16ms budget"
+    );
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored"]
+fn moving_four_thousand_cursors_fits_in_a_frame() {
+    let _guard = exclusive();
+    let mut editor = many_cursor_editor();
+    let mut right = true;
+    let best = best_of_five(|| {
+        let motion = if right { Motion::Right } else { Motion::Left };
+        right = !right;
+        editor.perform(Action::Move {
+            motion,
+            extend: false,
+        });
+    });
+    let n = editor.selections().len();
+    println!("Move, {n} cursors: {best:?}");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "one arrow key cost {best:?}, over the 16ms budget"
+    );
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored"]
+fn typing_at_four_thousand_cursors_fits_in_a_frame() {
+    let _guard = exclusive();
+    let mut editor = many_cursor_editor();
+    let best = best_of_five(|| {
+        editor.perform(Action::InsertChar('x'));
+    });
+    let n = editor.selections().len();
+    println!("InsertChar, {n} cursors: {best:?}");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "one keystroke cost {best:?}, over the 16ms budget"
+    );
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored"]
+fn drawing_a_frame_with_four_thousand_cursors_fits_in_a_frame() {
+    let _guard = exclusive();
+    let mut editor = many_cursor_editor();
+    let area = Rect::new(0, 0, 120, 40);
+    draw_frame(&mut editor, area); // warm
+    let best = best_of_five(|| draw_frame(&mut editor, area));
+    let n = editor.selections().len();
+    println!("render, {n} cursors, most of them off screen: {best:?} per frame");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "one frame cost {best:?}, over the 16ms budget"
+    );
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored"]
+fn drawing_a_half_megabyte_line_fits_in_a_frame() {
+    // A minified bundle is one line. Every other fixture in this file uses
+    // 65-character lines, which is how a paint that walks the whole line
+    // rather than the visible part of it went unmeasured.
+    let _guard = exclusive();
+    let mut editor = EditorPanel::from_str(&"var a=1;".repeat(62_500));
+    let area = Rect::new(0, 0, 120, 40);
+    draw_frame(&mut editor, area); // warm
+    let best = best_of_five(|| draw_frame(&mut editor, area));
+    println!("render, one 500k-character line: {best:?} per frame");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "one frame cost {best:?}, over the 16ms budget"
+    );
 }

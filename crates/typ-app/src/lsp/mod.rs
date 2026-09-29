@@ -70,6 +70,11 @@ const MAX_RESTARTS: usize = 4;
 /// The span VS Code measures a crash loop over.
 const CRASH_WINDOW: Duration = Duration::from_secs(3 * 60);
 
+/// JSON-RPC `MethodNotFound`. The answer to a server request TYPE does not
+/// implement: an answer being the point, since the alternative is silence and
+/// the spec has no silence in it.
+const METHOD_NOT_FOUND: i32 = -32601;
+
 /// What one server has been told about one document.
 struct Doc {
     server: ServerId,
@@ -150,7 +155,20 @@ pub(crate) struct Pending {
     /// that arrives after the cursor moved describes somewhere the user is no
     /// longer asking about, and acting on it is a jump nobody requested.
     pub asked_at: (PathBuf, typ_buffer::Position),
+    /// How many times this question has already been asked and cancelled.
+    pub retries: u8,
 }
+
+/// Ask again this many times before giving up on a cancelled request.
+///
+/// The retry is paced by the round trip (the next one is not sent until the
+/// last is answered) so no timer is involved and a spinning client is not
+/// possible. The bound is against a server that cancels every time.
+pub(crate) const MAX_RETRIES: u8 = 3;
+
+/// `ContentModified`. Not a refusal: the server cancelled its own work and is
+/// telling the client the question is still open.
+pub(crate) const CONTENT_MODIFIED: i32 = -32801;
 
 /// What was asked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -188,7 +206,8 @@ impl Lsp {
         self.sender = Some(sender);
     }
 
-    /// How many of a notification have been sent, over the app's whole life.
+    /// How many of a notification or request have been sent, over the app's
+    /// whole life.
     pub(crate) fn notifications_of(&self, method: &str) -> usize {
         self.sent.get(method).copied().unwrap_or(0)
     }
@@ -354,7 +373,7 @@ impl Lsp {
     /// with rustup — measured, not guessed.
     pub(crate) fn exit_reason(&self, id: ServerId) -> Option<String> {
         let server = self.servers.get(id.0 as usize)?;
-        let command = self.configs.get(server.config)?.command.clone();
+        let command = self.command(id)?;
         let last = server
             .last_stderr
             .iter()
@@ -367,6 +386,13 @@ impl Lsp {
             (true, None) => format!("{command} exited."),
             (false, None) => format!("{command} did not start."),
         })
+    }
+
+    /// The command a server was started with: its name, as far as a log line or
+    /// a status message is concerned.
+    pub(crate) fn command(&self, id: ServerId) -> Option<&str> {
+        let server = self.servers.get(id.0 as usize)?;
+        Some(&self.configs.get(server.config)?.command)
     }
 
     /// Whether a server has been given up on.
@@ -495,11 +521,32 @@ impl Lsp {
             Some(doc) if doc.synced == Some(snapshot.revision) => {}
             Some(doc) => {
                 let (uri, version) = (doc.uri.clone(), doc.version + 1);
+                // **Closed and opened again is an open.** `close_absent` sends
+                // `didClose` and clears `synced` but keeps the `Doc` (the only
+                // removal anywhere is on server exit) so a reopened file
+                // landed here and was announced with `didChange` for a document
+                // the server had closed. rust-analyzer logs that and drops it,
+                // and nothing ever re-announces the file, so it has no
+                // diagnostics for the rest of the session. Gap 77.
+                let reopened = doc.synced.is_none();
                 let Some(client) = self.client(id) else {
                     return;
                 };
-                let sent = client.did_change(&uri, version, snapshot.rope.clone());
-                self.tally("textDocument/didChange", sent);
+                let sent = if reopened {
+                    let opened =
+                        client.did_open(&uri, &language_id, version, snapshot.rope.clone());
+                    self.tally("textDocument/didOpen", opened);
+                    opened
+                } else {
+                    let changed = client.did_change(&uri, version, snapshot.rope.clone());
+                    self.tally("textDocument/didChange", changed);
+                    changed
+                };
+                if !sent {
+                    // Not initialized yet. Record nothing, so the next pass
+                    // tries again: the same rule the first open follows.
+                    return;
+                }
                 if let Some(doc) = self.docs.get_mut(&snapshot.path) {
                     doc.version = version;
                     doc.synced = Some(snapshot.revision);
@@ -513,11 +560,10 @@ impl Lsp {
                     return;
                 };
                 let uri = uri.as_str().to_string();
-                let text = snapshot.rope.to_string();
                 let Some(client) = self.client(id) else {
                     return;
                 };
-                if !client.did_open(&uri, &language_id, 0, text) {
+                if !client.did_open(&uri, &language_id, 0, snapshot.rope.clone()) {
                     // Not initialized yet. Nothing is recorded, so the next
                     // pass tries again — which is how a document opened before
                     // the handshake finishes gets announced when it does.
@@ -634,14 +680,34 @@ impl Lsp {
                         }
                         None
                     }
-                    _ => Some((
-                        id,
-                        LspEvent::ServerRequest {
-                            id: req,
-                            method,
-                            params,
-                        },
-                    )),
+                    // **Accepting is a null result.** TYPE advertises
+                    // `window.workDoneProgress`, which is exactly what makes
+                    // rust-analyzer send this, and then nothing answered it.
+                    // The spec requires a response to every request, so an
+                    // unanswered one sits in the server's outgoing queue for
+                    // the life of the session, one per progress token.
+                    "window/workDoneProgress/create" => {
+                        if let Some(client) = self.client(id) {
+                            client.respond(req, serde_json::Value::Null);
+                        }
+                        None
+                    }
+                    // **Answered, not merely reported.** This used to pass the
+                    // request up to `App`, whose arm for it was `=> false`, so
+                    // every request TYPE does not implement went unanswered,
+                    // and `Client::respond_error` had no callers at all.
+                    // `MethodNotFound` is the honest answer for a capability
+                    // that was never advertised. Gap 78.
+                    _ => {
+                        if let Some(client) = self.client(id) {
+                            client.respond_error(
+                                req,
+                                METHOD_NOT_FOUND,
+                                &format!("{method} is not supported"),
+                            );
+                        }
+                        None
+                    }
                 }
             }
             other => Some((id, other)),
@@ -659,9 +725,10 @@ impl Lsp {
         path: &Path,
         char_index: usize,
         rope: &Rope,
+        retries: u8,
     ) -> Result<(), NoAnswer> {
         let Some(doc) = self.docs.get(path) else {
-            return Err(NoAnswer::NoServer);
+            return Err(self.why_not_open(path));
         };
         let (id, uri) = (doc.server, doc.uri.clone());
         let encoding = self.encoding(id);
@@ -692,13 +759,38 @@ impl Lsp {
                 "position": { "line": position.line, "character": position.character },
             }),
         );
+        self.tally(method, true);
         self.pending.push(Pending {
             id: request,
             server: id,
             kind,
             asked_at: (path.to_path_buf(), typ_buffer::Position::default()),
+            retries,
         });
         Ok(())
+    }
+
+    /// Why a path has no document on any server.
+    ///
+    /// A document is only recorded once the handshake completes, so "no
+    /// document" covers a server still starting and one that refused the
+    /// workspace as well as there being none. Gap 93.
+    fn why_not_open(&self, path: &Path) -> NoAnswer {
+        let started = self
+            .configs
+            .iter()
+            .position(|c| c.handles(path))
+            .and_then(|index| {
+                let root = config::root_for(path, &self.configs[index].roots, &self.root);
+                self.servers
+                    .iter()
+                    .find(|s| s.config == index && s.root == root)
+            });
+        match started.and_then(|s| s.client.as_deref()) {
+            Some(client) if client.refusal().is_some() => NoAnswer::Refused,
+            Some(client) if !client.is_initialized() => NoAnswer::NotReady,
+            _ => NoAnswer::NoServer,
+        }
     }
 
     /// Record where the cursor was for the request just sent.
@@ -730,8 +822,18 @@ impl Lsp {
     }
 
     /// Take the question an answer belongs to, if anyone is still waiting.
-    pub(crate) fn take_pending(&mut self, id: &RequestId) -> Option<Pending> {
-        let at = self.pending.iter().position(|p| &p.id == id)?;
+    ///
+    /// **A `RequestId` is only unique within one conversation.** Every `Client`
+    /// numbers from zero, so rust-analyzer and taplo in one repository both
+    /// issue `RequestId(2)`, and matching on the id alone handed one server's
+    /// answer to the other server's question, running a hover payload through
+    /// the goto-definition handler. `cancel` has always carried `p.server`;
+    /// this had the field and did not read it. Gap 76.
+    pub(crate) fn take_pending(&mut self, server: ServerId, id: &RequestId) -> Option<Pending> {
+        let at = self
+            .pending
+            .iter()
+            .position(|p| p.server == server && &p.id == id)?;
         Some(self.pending.remove(at))
     }
 
@@ -907,6 +1009,14 @@ pub(crate) enum NoAnswer {
     NotReady,
     /// It answered the handshake and does not offer this.
     Unsupported,
+    /// It answered `initialize` with an error. Waiting will not help.
+    Refused,
+    /// It answered, and the answer was `null` or an empty list.
+    ///
+    /// A fourth case rather than silence. The first three happen before a
+    /// request is sent and this one after, but from the keyboard they are the
+    /// same event: a key was pressed and nothing appeared.
+    Empty(Ask),
 }
 
 impl NoAnswer {
@@ -916,6 +1026,9 @@ impl NoAnswer {
             NoAnswer::NoServer => "No language server for this file.",
             NoAnswer::NotReady => "The language server is still starting.",
             NoAnswer::Unsupported => "This language server does not offer that.",
+            NoAnswer::Refused => "The language server refused this workspace.",
+            NoAnswer::Empty(Ask::Definition) => "No definition found.",
+            NoAnswer::Empty(Ask::Hover) => "No hover information here.",
         }
     }
 }
@@ -1033,5 +1146,51 @@ fn describe(title: &str, value: &serde_json::Value) -> String {
     match value.get("message").and_then(|m| m.as_str()) {
         Some(message) if !message.is_empty() => format!("{title} {message}"),
         _ => title.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `Pending` is only ever built by `ask`, which needs a live server, so
+    /// the correlation itself is reached by hand.
+    fn pending(server: u32, id: i32, kind: Ask) -> Pending {
+        Pending {
+            id: RequestId::from(id),
+            server: ServerId(server),
+            kind,
+            asked_at: (PathBuf::from("a.rs"), typ_buffer::Position::default()),
+            retries: 0,
+        }
+    }
+
+    #[test]
+    fn an_answer_is_correlated_by_server_as_well_as_id() {
+        // Every `Client` numbers its requests from zero, so two servers in one
+        // repository (rust-analyzer for `.rs`, taplo for `.toml`) both issue
+        // `RequestId(2)`. Matching on the id alone handed taplo's hover payload
+        // to rust-analyzer's goto-definition handler. Gap 76.
+        let mut lsp = Lsp::new(Path::new("."));
+        lsp.pending.push(pending(0, 2, Ask::Definition));
+        lsp.pending.push(pending(1, 2, Ask::Hover));
+
+        let first = lsp
+            .take_pending(ServerId(1), &RequestId::from(2))
+            .expect("server 1 asked this");
+        assert_eq!(first.kind, Ask::Hover, "took the other server's question");
+
+        let second = lsp
+            .take_pending(ServerId(0), &RequestId::from(2))
+            .expect("server 0 is still waiting");
+        assert_eq!(second.kind, Ask::Definition);
+    }
+
+    #[test]
+    fn an_answer_from_a_server_nobody_asked_is_ignored() {
+        let mut lsp = Lsp::new(Path::new("."));
+        lsp.pending.push(pending(0, 2, Ask::Definition));
+        assert!(lsp.take_pending(ServerId(9), &RequestId::from(2)).is_none());
+        assert_eq!(lsp.pending.len(), 1, "the real question was consumed");
     }
 }

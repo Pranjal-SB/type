@@ -241,3 +241,51 @@ fn a_cell_knows_which_tab_it_is() {
         "the bar scrolled but the cells still claim to start at tab 0"
     );
 }
+
+#[test]
+fn an_escape_sequence_in_a_file_name_never_reaches_a_cell() {
+    // A tab label is `panel.title()`, i.e. the file's name, and `write_cell`
+    // paints it through `Cell::set_symbol`: the one ratatui API that does not
+    // filter control characters. `TypBackend` then prints the symbol verbatim.
+    // The picker has the same defect against the same byte; see gap 69.
+    let hostile = "README\u{1b}]52;c;ZXZpbA==\u{7}.md".to_string();
+    let area = Rect::new(0, 0, 40, 1);
+    let mut buf = Buffer::empty(area);
+    let theme = typ_core::ThemeColors::default();
+
+    tabbar::draw(&mut buf, area, &[hostile, "b.rs".to_string()], 0, &theme);
+
+    let drawn = row(&buf, 0);
+    assert!(
+        !drawn.contains(|c: char| c.is_control()),
+        "a control character reached the tab bar: {drawn:?}"
+    );
+}
+
+#[test]
+fn a_close_box_is_drawn_exactly_where_the_hit_test_finds_one() {
+    // Gap 86. `write_cell` painted a close box on a clipped cell while
+    // `close_box_x` said it had none, so clicking the glyph activated the tab.
+    // Bind what `draw` puts on screen to what the hit test believes, at every
+    // width where the last cell gets clipped somewhere.
+    let names = labels(&["main.rs", "highlight.rs", "render.rs"]);
+    let theme = typ_core::ThemeColors::default();
+    for width in 1..=45 {
+        let area = Rect::new(3, 0, width, 1);
+        let mut buf = Buffer::empty(area);
+        tabbar::draw(&mut buf, area, &names, 0, &theme);
+
+        let drawn: Vec<u16> = (0..width)
+            .filter(|x| buf[(area.x + x, 0)].symbol() == "×")
+            .collect();
+        let hit: Vec<u16> = tabbar::cells(&names, 0, width)
+            .iter()
+            .filter_map(|cell| tabbar::close_box_x(cell, &names[cell.index]))
+            .collect();
+
+        assert_eq!(
+            drawn, hit,
+            "at width {width} the bar drew close boxes at {drawn:?} and the hit test has them at {hit:?}"
+        );
+    }
+}

@@ -68,9 +68,6 @@ pub struct App {
     /// Handed to workers so they can wake the loop. `None` in tests that do not
     /// care, and in `App::new` before `run` wires it up.
     sender: Option<crate::run::AppSender>,
-    /// The watch on the open file. Dropping it stops the watching, so opening
-    /// another file replaces this rather than accumulating watches.
-    watch: Option<typ_buffer::FileWatch>,
     /// Something changed and the screen does not show it yet.
     ///
     /// Starts true: the first frame has to be painted.
@@ -175,6 +172,15 @@ struct Tab {
     /// jobs down to the newest: the newest request is always the one that runs
     /// and always arrives. Anything else was mid-parse when the buffer changed.
     awaited_generation: Option<u64>,
+    /// The watch on this tab's file. **One per tab, not one for the active
+    /// tab:** a single watch that followed the active tab never heard about a
+    /// write to any other open file, and switching back showed it stale. Gap
+    /// 85. Dropped with the tab, which is what stops the watching.
+    watch: Option<typ_buffer::FileWatch>,
+    /// The file changed on disk while this tab held unsaved work and was not
+    /// on screen. Said on arrival, because a status written while the user was
+    /// looking at another file is gone by the time they come back.
+    changed_on_disk: bool,
 }
 
 impl Tab {
@@ -184,6 +190,8 @@ impl Tab {
             parsed_revision: None,
             awaited_generation: None,
             last_used: 0,
+            watch: None,
+            changed_on_disk: false,
         }
     }
 }
@@ -204,6 +212,18 @@ fn diagnostics_for<'a>(lsp: &'a crate::lsp::Lsp, tab: &Tab) -> &'a [typ_core::Di
 /// Between status segments. Two spaces rather than a glyph separator: a
 /// separator needs a colour decision of its own and a Nerd Font question at
 /// M6, and whitespace has neither.
+/// The two actions whose confirmation is the next press of the same thing.
+///
+/// Both dispatch paths have to make the same exception, because clearing
+/// transient state on the way in erases the answer these two are about to
+/// read. It is a function rather than a `matches!` in each of them because it
+/// was already wrong in one: the palette cleared the flag it then set, so on a
+/// dirty buffer `quit` and `close_tab` could never complete from it: the
+/// message just came back forever. Gap 68.
+fn answers_its_own_confirmation(action: Action) -> bool {
+    matches!(action, Action::Quit | Action::CloseTab)
+}
+
 const SEGMENT_GAP: &str = "  ";
 
 /// Shown when there is nothing more urgent to say. Discoverability is part of
@@ -228,7 +248,6 @@ impl App {
             prompt: None,
             last_query: None,
             sender: None,
-            watch: None,
             dirty: true,
             indent_width: None,
             whitespace: Whitespace::default(),
@@ -278,7 +297,9 @@ impl App {
         self.find_worker = Some(FindWorker::spawn(sender.clone()));
         self.lsp.set_sender(sender.clone());
         self.sender = Some(sender);
-        self.rewatch();
+        for index in 0..self.tabs.len() {
+            self.watch_tab(index);
+        }
         // Whatever is already open has never been parsed.
         self.request_parse_if_stale();
     }
@@ -326,6 +347,11 @@ impl App {
 
     /// How many of a notification have gone to language servers this session.
     pub fn lsp_notifications_of(&self, method: &str) -> usize {
+        self.lsp.notifications_of(method)
+    }
+
+    /// How many of a request have gone to language servers this session.
+    pub fn lsp_requests_of(&self, method: &str) -> usize {
         self.lsp.notifications_of(method)
     }
 
@@ -387,7 +413,7 @@ impl App {
             // the first one the status bar; until then a server talking about
             // itself changes nothing on screen.
             typ_lsp::LspEvent::Notification { .. } => false,
-            typ_lsp::LspEvent::Response { id, result } => self.handle_answer(id, result),
+            typ_lsp::LspEvent::Response { id, result } => self.handle_answer(server, id, result),
             typ_lsp::LspEvent::ServerRequest { .. } => false,
             // **Say why, in the server's own words.** A rustup shim for a
             // component that is not installed is on `PATH`, spawns fine, and
@@ -414,13 +440,28 @@ impl App {
         server: typ_lsp::ServerId,
         params: serde_json::Value,
     ) -> bool {
-        let Ok(published) =
-            serde_json::from_value::<typ_lsp::lsp_types::PublishDiagnosticsParams>(params)
-        else {
-            crate::log_warn!("a publishDiagnostics payload did not parse");
+        let published =
+            match serde_json::from_value::<typ_lsp::lsp_types::PublishDiagnosticsParams>(params) {
+                Ok(published) => published,
+                Err(e) => {
+                    crate::log_warn!(
+                        "a publishDiagnostics payload from {} did not parse: {e}",
+                        self.lsp.command(server).unwrap_or("a language server")
+                    );
+                    return false;
+                }
+            };
+        let Some(named) = typ_lsp::uri_to_path(&published.uri) else {
             return false;
         };
-        let Some(path) = typ_lsp::uri_to_path(&published.uri) else {
+        // **The tab's spelling, not the server's.** `tab_for` canonicalises and
+        // the document map is keyed by the tab's raw path, so a URI naming the
+        // same file differently (a lowercase drive letter, a symlinked
+        // directory) found the tab and then missed the map. Gap 114.
+        let Some(index) = self.tab_for(&named) else {
+            return false;
+        };
+        let Some(path) = self.tabs[index].panel.path().map(Path::to_path_buf) else {
             return false;
         };
 
@@ -433,9 +474,6 @@ impl App {
             return false;
         }
 
-        let Some(index) = self.tab_for(&path) else {
-            return false;
-        };
         let encoding = self.lsp.encoding(server);
         let buffer = self.tabs[index].panel.buffer();
         let converted: Vec<typ_core::Diagnostic> = published
@@ -453,6 +491,15 @@ impl App {
     /// The one place both requests are made, so cancellation, staleness and the
     /// four ways there is no answer are decided once rather than twice.
     fn ask_server(&mut self, kind: crate::lsp::Ask) {
+        self.ask_server_again(kind, 0);
+    }
+
+    /// The same question, carrying how many times it has already been cancelled.
+    ///
+    /// Asked from the cursor's position *now* rather than from where the first
+    /// attempt was aimed: if the caret moved while the server was cancelling,
+    /// the answer the user wants is about where they are.
+    fn ask_server_again(&mut self, kind: crate::lsp::Ask, retries: u8) {
         // A second question of the same kind abandons the first. Most are
         // superseded before they are answered.
         self.lsp.cancel(kind);
@@ -466,7 +513,7 @@ impl App {
         let char_index = tab.panel.buffer().char_index(cursor);
         let rope = tab.panel.buffer().snapshot();
 
-        match self.lsp.ask(kind, &path, char_index, &rope) {
+        match self.lsp.ask(kind, &path, char_index, &rope, retries) {
             Ok(()) => self.lsp.stamp_last(cursor),
             Err(reason) => self.status = Some(reason.message().to_string()),
         }
@@ -475,16 +522,38 @@ impl App {
     /// An answer arrived. Returns whether the screen changed.
     fn handle_answer(
         &mut self,
+        server: typ_lsp::ServerId,
         id: typ_lsp::RequestId,
         result: Result<serde_json::Value, typ_lsp::ResponseError>,
     ) -> bool {
         // Nobody is waiting: it was cancelled, or its tab closed under it.
-        let Some(pending) = self.lsp.take_pending(&id) else {
+        // Keyed on the server too: a `RequestId` is unique within one
+        // conversation and not across them. Gap 76.
+        let Some(pending) = self.lsp.take_pending(server, &id) else {
             return false;
         };
-        let Ok(result) = result else {
-            crate::log_warn!("the language server refused a request");
-            return false;
+        let result = match result {
+            Ok(result) => result,
+            // **Not a refusal.** The server cancelled its own work (its state
+            // changed under the request) and the question is still open. Ask
+            // it again rather than answering the user with nothing.
+            Err(error) if error.code == crate::lsp::CONTENT_MODIFIED => {
+                if pending.retries < crate::lsp::MAX_RETRIES {
+                    self.ask_server_again(pending.kind, pending.retries + 1);
+                }
+                return false;
+            }
+            // Said on the status bar like every neighbouring arm: `TYP_LOG` is
+            // unset by default, so a log line alone is a key that did nothing.
+            Err(error) => {
+                crate::log_warn!(
+                    "language server {server:?} refused a request: {} ({})",
+                    error.message,
+                    error.code
+                );
+                self.status = Some(format!("Language server: {}", error.message));
+                return true;
+            }
         };
 
         // **Stale.** The question was about a position the cursor has left, and
@@ -499,7 +568,14 @@ impl App {
             crate::lsp::Ask::Definition => self.jump_to_definition(pending.server, result),
             crate::lsp::Ask::Hover => {
                 self.hover = crate::lsp::hover_text(&result);
-                self.hover.is_some()
+                if self.hover.is_none() {
+                    self.status = Some(
+                        crate::lsp::NoAnswer::Empty(crate::lsp::Ask::Hover)
+                            .message()
+                            .into(),
+                    );
+                }
+                true
             }
         }
     }
@@ -508,8 +584,14 @@ impl App {
     fn jump_to_definition(&mut self, server: typ_lsp::ServerId, result: serde_json::Value) -> bool {
         let Some((path, position)) = crate::lsp::definition_target(&result) else {
             // A server with nothing to say is the ordinary state for the first
-            // minute of any real project.
-            return false;
+            // minute of any real project, and saying so is the difference
+            // between "not yet" and "this key does nothing".
+            self.status = Some(
+                crate::lsp::NoAnswer::Empty(crate::lsp::Ask::Definition)
+                    .message()
+                    .into(),
+            );
+            return true;
         };
         if !path.exists() {
             // The index is older than the tree. Saying so beats opening an
@@ -518,8 +600,7 @@ impl App {
             return true;
         }
 
-        if let Err(e) = self.open_path(&path) {
-            self.status = Some(format!("Could not open {}: {e:#}", path.display()));
+        if !self.open_or_report(&path) {
             return true;
         }
 
@@ -574,9 +655,17 @@ impl App {
             return;
         };
 
-        worker.request(language, tab.panel.buffer().snapshot());
+        let Some(generation) = worker.request(language, tab.panel.buffer().snapshot()) else {
+            // The thread is gone: a panic compiling a grammar's queries is
+            // how. Recording a request that was never delivered is what left
+            // highlighting dead while `is_wired` still said yes. Gap 91.
+            self.parse_worker = None;
+            crate::log_error!("the parse worker is gone; syntax highlighting is off");
+            self.status = Some("Syntax highlighting stopped: its worker thread died.".into());
+            return;
+        };
         tab.parsed_revision = Some(revision);
-        tab.awaited_generation = Some(worker.generation());
+        tab.awaited_generation = Some(generation);
     }
 
     /// A completed parse arrived. Returns whether the screen changed.
@@ -590,6 +679,22 @@ impl App {
     /// leave the buffer unhighlighted for as long as it stays open: nothing
     /// would ever ask again.
     pub fn handle_parsed(&mut self, parsed: typ_syntax::Parsed) -> bool {
+        // **Anything older will never come.** The worker answers in generation
+        // order and drops whatever is queued behind the job it is running,
+        // which with tabs includes other tabs' requests. A tab still waiting on
+        // an older generation is forgotten, so the next pass that finds it
+        // active asks again rather than trusting a revision nobody parsed.
+        // Gap 111.
+        for tab in &mut self.tabs {
+            if tab
+                .awaited_generation
+                .is_some_and(|g| g < parsed.generation)
+            {
+                tab.awaited_generation = None;
+                tab.parsed_revision = None;
+            }
+        }
+
         // Not a parse anyone is still waiting for. It describes a buffer that
         // has since been replaced, and its byte offsets index text that is gone.
         let Some(index) = self
@@ -606,23 +711,49 @@ impl App {
         index == self.active
     }
 
-    /// Watch whatever file is open now, and stop watching the last one.
+    /// Watch the file in the tab at `index`, if it has one and nothing is
+    /// watching it yet.
     ///
     /// A failure here is not worth interrupting anyone over: the editor keeps
     /// working, it just stops noticing outside writes. It goes to the log,
     /// which is where the answer will be looked for.
-    fn rewatch(&mut self) {
-        self.watch = None;
-        let (Some(sender), Some(path)) = (self.sender.clone(), self.tabs[self.active].panel.path())
-        else {
+    fn watch_tab(&mut self, index: usize) {
+        let tab = &mut self.tabs[index];
+        if tab.watch.is_some() {
+            return;
+        }
+        let (Some(sender), Some(path)) = (self.sender.clone(), tab.panel.path()) else {
             return;
         };
         let path = path.to_path_buf();
-        match typ_buffer::watch_file(&path, move |changed| {
-            let _ = sender.send(typ_core::AppEvent::FileChanged(changed));
+        match typ_buffer::watch_file(&path, move |changed, what| {
+            let event = match what {
+                typ_buffer::WatchEvent::Changed => typ_core::AppEvent::FileChanged(changed),
+                typ_buffer::WatchEvent::Failed(reason) => typ_core::AppEvent::WatchFailed {
+                    path: changed,
+                    reason,
+                },
+            };
+            let _ = sender.send(event);
         }) {
-            Ok(watch) => self.watch = Some(watch),
+            Ok(watch) => tab.watch = Some(watch),
             Err(e) => crate::log_warn!("watching {} failed: {e:#}", path.display()),
+        }
+    }
+
+    /// Say that a tab's file changed under unsaved work.
+    fn warn_changed_on_disk(&mut self, index: usize) {
+        self.tabs[index].changed_on_disk = false;
+        self.status = Some(format!(
+            "{} changed on disk. Your unsaved changes are kept; Ctrl+S overwrites it.",
+            self.tabs[index].panel.file_name()
+        ));
+    }
+
+    /// A tab that became active may have been written to while it was not.
+    fn warn_if_changed_on_disk(&mut self) {
+        if self.tabs[self.active].changed_on_disk {
+            self.warn_changed_on_disk(self.active);
         }
     }
 
@@ -633,40 +764,74 @@ impl App {
     /// matters, so the only thing to do is say so and touch nothing.
     /// Returns whether anything on screen changed, so the loop can decline to
     /// repaint for a watcher event that turned out to be our own save.
+    ///
+    /// **Any tab, not only the active one.** A clean background tab reloads in
+    /// place; a dirty one is flagged and warns when it is switched to. Gap 85.
     pub fn handle_external_change(&mut self, path: &Path) -> Result<bool> {
-        if self.tabs[self.active].panel.path() != Some(path) {
+        let Some(index) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.panel.path() == Some(path))
+        else {
             return Ok(false);
-        }
+        };
+        let on_screen = index == self.active;
 
         if !path.exists() {
             self.status = Some(format!(
                 "{} was deleted on disk. Ctrl+S writes it back.",
-                self.tabs[self.active].panel.file_name()
+                self.tabs[index].panel.file_name()
             ));
             return Ok(true);
         }
 
         // Covers our own save: the watcher reports the write, and what is on
         // disk is what we have, so there is nothing to do.
-        if self.tabs[self.active].panel.matches_disk() {
+        if self.tabs[index].panel.matches_disk() {
             return Ok(false);
         }
 
-        if self.tabs[self.active].panel.is_dirty() {
+        if self.tabs[index].panel.is_dirty() {
+            if on_screen {
+                self.warn_changed_on_disk(index);
+            } else {
+                self.tabs[index].changed_on_disk = true;
+            }
+            return Ok(on_screen);
+        }
+
+        // **Not `?`.** `reload` reads through `read_to_string`, so a build step
+        // or a `git checkout` that leaves non-UTF-8 bytes at the path fails
+        // here, and propagating that ends the process from `step_batch`,
+        // discarding every *other* tab's unsaved work on a watcher event rather
+        // than on anything the user did. Gap 70.
+        if let Err(e) = self.tabs[index].panel.reload() {
             self.status = Some(format!(
-                "{} changed on disk. Your unsaved changes are kept; Ctrl+S overwrites it.",
-                self.tabs[self.active].panel.file_name()
+                "Could not reload {}: {e:#}",
+                self.tabs[index].panel.file_name()
             ));
             return Ok(true);
         }
-
-        self.tabs[self.active].panel.reload()?;
         // `reload` swaps in a fresh `TextBuffer`, so revisions restart and the
         // comparison in `request_parse_if_stale` would be against a number
-        // from a buffer that no longer exists.
-        self.tabs[self.active].parsed_revision = None;
+        // from a buffer that no longer exists. A background tab is parsed
+        // when it is next activated.
+        self.tabs[index].parsed_revision = None;
         self.request_parse_if_stale();
-        Ok(true)
+        Ok(on_screen)
+    }
+
+    /// The watch on a file failed. Say so: until it is re-established an
+    /// outside write goes unnoticed, and Ctrl+S would overwrite it.
+    pub fn handle_watch_failure(&mut self, path: &Path, reason: &str) -> bool {
+        if self.tabs[self.active].panel.path() != Some(path) {
+            return false;
+        }
+        self.status = Some(format!(
+            "No longer watching {} for outside changes: {reason}",
+            self.tabs[self.active].panel.file_name()
+        ));
+        true
     }
 
     pub fn status(&self) -> Option<&str> {
@@ -677,8 +842,14 @@ impl App {
     pub fn status_left(&self) -> String {
         // The prompt outranks any message: while it is open it is the only
         // thing the user is looking at.
+        // A message beside it is about the prompt (a rejected answer) and
+        // is shown after the input rather than written somewhere nothing
+        // draws. Gap 126.
         if let Some(prompt) = &self.prompt {
-            return format!("{} {}", prompt.label(), prompt.input());
+            return match &self.status {
+                Some(message) => format!("{} {}  {message}", prompt.label(), prompt.input()),
+                None => format!("{} {}", prompt.label(), prompt.input()),
+            };
         }
         self.status.clone().unwrap_or_else(|| HINT.to_string())
     }
@@ -755,7 +926,9 @@ impl App {
     /// an action reachable one way and not the other is exactly the split the
     /// palette exists to close.
     pub fn apply_named_action(&mut self, action: Action) -> Result<()> {
-        self.clear_transient();
+        if !answers_its_own_confirmation(action) {
+            self.clear_transient();
+        }
         if let Some(events) = self.focused_mut().apply_action(action) {
             return self.apply(events);
         }
@@ -917,7 +1090,7 @@ impl App {
         // Keyed on the action rather than on the chord: this used to compare
         // `chord.canonical` against the literal `"ctrl+q"`, which meant
         // rebinding quit silently broke its own confirmation.
-        if !matches!(bound, Some(Action::Quit) | Some(Action::CloseTab)) {
+        if !bound.is_some_and(answers_its_own_confirmation) {
             self.clear_transient();
         }
 
@@ -966,6 +1139,12 @@ impl App {
     /// way payloads already go.
     pub fn handle_paste(&mut self, text: String) -> Result<()> {
         self.clear_transient();
+
+        // Same order as `handle_chord`: the overlay is ahead of the prompt.
+        if self.picker.is_some() {
+            self.paste_into_picker(&text);
+            return Ok(());
+        }
 
         // A paste into an open prompt is a search term, not an edit.
         if let Some(prompt) = self.prompt.as_mut() {
@@ -1061,24 +1240,42 @@ impl App {
         true
     }
 
+    /// Open a file, putting the reason on the status bar if it will not open.
+    ///
+    /// Returns whether a tab was opened, and **never an `Err`**. Every caller
+    /// is an ordinary gesture (Enter on a tree entry, a picker result, a
+    /// goto-definition) and a path that is not UTF-8 is one a user can point
+    /// at by accident. Propagating instead ran out through `apply` to
+    /// `step_batch` and ended the process, discarding every other tab's unsaved
+    /// work because someone pressed Enter on a PNG. Gap 71.
+    fn open_or_report(&mut self, path: &Path) -> bool {
+        match self.open_path(path) {
+            Ok(()) => true,
+            Err(e) => {
+                self.status = Some(format!("Could not open {}: {e:#}", path.display()));
+                false
+            }
+        }
+    }
+
     /// Process events emitted by panels.
     pub fn apply(&mut self, events: Vec<PanelEvent>) -> Result<()> {
         for event in events {
             match event {
                 PanelEvent::Quit => self.request_quit(),
-                PanelEvent::OpenFile { path, line, col } => {
-                    self.open_path(&path)?;
+                PanelEvent::OpenFile { path, at } => {
+                    let (line, col) = (at.line, at.col);
                     // **The event has carried `line` and `col` since M1 and
                     // nothing read them until M2.8.** Harmless while the only
                     // producer was the file tree, which always means the top of
                     // the file; a project-search result that opens at line 0 has
                     // thrown away the only thing the search found out.
-                    if line > 0 || col > 0 {
+                    if self.open_or_report(&path) && (line > 0 || col > 0) {
                         self.tabs[self.active].panel.goto(line, col);
                     }
                 }
                 PanelEvent::OpenWith { path, .. } => {
-                    self.open_path(&path)?;
+                    self.open_or_report(&path);
                 }
                 // Redraw happens every loop pass in the walking skeleton.
                 PanelEvent::NeedsRedraw => {}

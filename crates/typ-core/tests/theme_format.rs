@@ -5,7 +5,7 @@
 
 use ratatui::style::{Color, Modifier};
 use typ_core::ThemeColors;
-use typ_core::theme::{Kind, Theme};
+use typ_core::theme::{Kind, SyntaxTheme, Theme};
 
 #[test]
 fn a_theme_names_itself_and_says_which_ground_it_is_for() {
@@ -70,10 +70,42 @@ fn every_ui_key_the_editor_has_can_be_set_from_a_file() {
     // ships, or the shipped theme cannot become a file — which is the whole
     // point of the exercise. Round-tripped through the writer so this cannot
     // drift as fields are added.
-    let source = Theme::write_toml("Round trip", Kind::Dark, &ThemeColors::default());
+    let source = Theme {
+        name: "Round trip".into(),
+        kind: Kind::Dark,
+        colors: ThemeColors::default(),
+        syntax: SyntaxTheme::default(),
+    }
+    .to_toml();
     let parsed = Theme::from_toml(&source).unwrap();
 
     assert_eq!(parsed.colors, ThemeColors::default());
+}
+
+#[test]
+fn a_theme_written_out_reads_back_as_the_same_theme() {
+    // Syntax colours included. The writer used to emit `[ui]` alone, so a
+    // theme that went through it came back with every capture uncoloured.
+    let theme = Theme::from_toml(
+        r##"
+        name = "Round trip"
+        kind = "light"
+
+        [palette]
+        ink = "#112233"
+
+        [ui]
+        fg = "ink"
+
+        [syntax]
+        keyword = "#aa0000"
+        comment = { fg = "ink", bg = "#fafafa", modifiers = ["italic", "bold"] }
+        "##,
+    )
+    .unwrap();
+
+    let parsed = Theme::from_toml(&theme.to_toml()).unwrap();
+    assert_eq!(parsed, theme);
 }
 
 // ---------------------------------------------------------------------------

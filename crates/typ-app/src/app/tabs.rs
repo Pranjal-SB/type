@@ -141,6 +141,13 @@ impl App {
             return;
         }
 
+        // **The answer dies with the question.** `close_pending` is an index and
+        // an index is not a handle: closing a tab in the middle of the list
+        // slides another one into the number just confirmed, and `handle_chord`
+        // deliberately does not `clear_transient` for `CloseTab`, so without
+        // this, one more Ctrl+W discards the new occupant with no prompt.
+        self.close_pending = None;
+
         // Never zero tabs: `editor()` would have to return an `Option` and
         // every one of its callers would handle a state with no meaning. The
         // last one closing leaves the empty buffer the editor starts in.
@@ -211,8 +218,13 @@ impl App {
     /// they take the same branch.
     fn panel_for(&self, path: &Path) -> Result<EditorPanel> {
         // The registry decides the handler. There is one content panel today,
-        // but the lookup runs from day one so adding viewers never touches this.
-        let _handler = self.registry.handler_for(path);
+        // so any other answer is a viewer that has registered and not been
+        // built: say so rather than open its file as text. This answer used
+        // to be computed and thrown away. Gap 116.
+        let handler = self.registry.handler_for(path);
+        if handler != typ_registry::EDITOR {
+            anyhow::bail!("no {} viewer is available yet", handler.0);
+        }
         if path.exists() {
             EditorPanel::from_path(path)
         } else {
@@ -223,8 +235,9 @@ impl App {
     /// Everything that has to happen when a different buffer becomes visible.
     ///
     /// Called from opening *and* from switching, because the two leave the app
-    /// in the same place: config the new panel has never seen, a watch pointed
-    /// at the file being left, and a buffer that may want parsing.
+    /// in the same place: config the new panel has never seen, a file that may
+    /// not be watched yet or may have changed while hidden, and a buffer that
+    /// may want parsing.
     fn settle_active_tab(&mut self) {
         // Every path that makes a tab active lands here, which is what keeps
         // the stamp honest — a switch that forgot it would make the tab look
@@ -235,8 +248,15 @@ impl App {
         self.apply_indent_width();
         self.tabs[self.active].panel.set_whitespace(self.whitespace);
         self.focus = Focus::Editor;
-        self.rewatch();
+        // A no-op for a tab already watched, so a switch costs nothing here.
+        self.watch_tab(self.active);
+        self.warn_if_changed_on_disk();
         self.request_parse_if_stale();
+    }
+
+    /// Where a viewer registers the extensions it opens.
+    pub fn registry_mut(&mut self) -> &mut typ_registry::Registry {
+        &mut self.registry
     }
 
     /// Where the tab bar is, or a zero-height rect when there is not one.

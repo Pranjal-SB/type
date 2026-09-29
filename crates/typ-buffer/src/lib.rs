@@ -22,5 +22,5 @@ pub use position::{
 pub use search::{SearchQuery, find_in_line};
 pub use selection::{Selection, Selections};
 pub use undo::EditKind;
-pub use watch::{FileWatch, watch_file};
-pub use word::{next_word_boundary, previous_word_boundary, word_at};
+pub use watch::{FileWatch, WatchEvent, watch_file};
+pub use word::{is_word_grapheme, next_word_boundary, previous_word_boundary, word_at};

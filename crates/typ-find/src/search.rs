@@ -59,7 +59,8 @@ const MAX_LINE: usize = 512;
 /// matches at every position, which here means every line of every file.
 /// An unparsable one returns nothing too — the query is whatever has been typed
 /// *so far*, so half-written patterns arrive on every keystroke and `[` is not
-/// an error worth reporting, just a pattern that is not finished.
+/// an error worth reporting, just a pattern that is not finished. It is marked
+/// incomplete, though: no search ran, so no count is being claimed.
 pub fn search(root: &Path, query: &str, limit: usize, overrides: &[(PathBuf, String)]) -> Search {
     if query.is_empty() || limit == 0 {
         return Search {
@@ -71,17 +72,38 @@ pub fn search(root: &Path, query: &str, limit: usize, overrides: &[(PathBuf, Str
     // Smart case: the same rule `SearchQuery` and `rank` use. Three parts of
     // "find" disagreeing about what a capital means would be worse than any one
     // of them choosing wrong.
+    // **Not complete.** Nothing was searched, and `complete: true` with no hits
+    // is the claim that the project holds none, which is what a literal `foo(`
+    // got. The picker shows the qualifier. Gap 98.
     let Ok(matcher) = RegexMatcherBuilder::new().case_smart(true).build(query) else {
         return Search {
             hits: Vec::new(),
-            complete: true,
+            complete: false,
         };
     };
 
+    // **Matched by root-relative name, not by `PathBuf`.** `typ notes.md` roots
+    // the walk at `.`, so it yields `./notes.md` while the tab holds
+    // `notes.md`, and `Path`'s `Eq` keeps a leading `CurDir`: the override
+    // never fired. Canonicalised here, once per search and once per open
+    // buffer, so the walk itself compares strings. Gap 109.
+    let canonical_root = std::fs::canonicalize(root).ok();
+    let overrides: Vec<(String, &String)> = overrides
+        .iter()
+        .filter_map(|(path, text)| {
+            let named = canonical_root
+                .as_deref()
+                .zip(std::fs::canonicalize(path).ok())
+                .and_then(|(root, path)| relative_to(root, &path))
+                .or_else(|| relative_to(root, path))?;
+            Some((named, text))
+        })
+        .collect();
+
     let found = Mutex::new(Vec::<LineHit>::new());
-    // Set when any worker hits the cap. Checked before starting a file, so the
-    // overshoot is bounded by one file rather than by the number of threads
-    // times the size of the project.
+    // Set when any worker hits the cap. Checked before starting a file, and
+    // each file's sink stops at `limit + 1`, so the overshoot is bounded by the
+    // number of threads times the limit rather than by the size of any file.
     let capped = Mutex::new(false);
 
     WalkBuilder::new(root)
@@ -102,6 +124,7 @@ pub fn search(root: &Path, query: &str, limit: usize, overrides: &[(PathBuf, Str
             let matcher = matcher.clone();
             let found = &found;
             let capped = &capped;
+            let overrides = &overrides;
 
             Box::new(move |entry| {
                 let Ok(entry) = entry else {
@@ -118,16 +141,20 @@ pub fn search(root: &Path, query: &str, limit: usize, overrides: &[(PathBuf, Str
                 };
 
                 let mut local = Vec::new();
+                // **The cap holds inside a file too.** Between files alone, one
+                // lockfile built a hit for every matching line before the limit
+                // was consulted. `limit + 1` for the reason given below: the
+                // extra hit is what says there were more. Gap 108.
                 let sink = UTF8(|line_number, line| {
                     local.push(hit_of(&relative, line_number, line, &matcher));
-                    Ok(true)
+                    Ok(local.len() <= limit)
                 });
 
                 // The open buffer wins over the file on disk.
                 let overridden = overrides
                     .iter()
-                    .find(|(path, _)| path == entry.path())
-                    .map(|(_, text)| text);
+                    .find(|(named, _)| *named == relative)
+                    .map(|(_, text)| *text);
                 let result = match overridden {
                     Some(text) => searcher.search_slice(&matcher, text.as_bytes(), sink),
                     None => searcher.search_path(&matcher, entry.path(), sink),
@@ -141,7 +168,11 @@ pub fn search(root: &Path, query: &str, limit: usize, overrides: &[(PathBuf, Str
 
                 let mut found = found.lock().expect("search mutex");
                 found.append(&mut local);
-                if found.len() >= limit {
+                // **One past the limit**, not at it. Stopping at exactly
+                // `limit` cannot tell "there were ten" from "there were ten
+                // and then more", and `complete` below reported the second as
+                // the first. The extra hit is what proves the `+`. Gap 107.
+                if found.len() > limit {
                     *capped.lock().expect("cap mutex") = true;
                     return WalkState::Quit;
                 }

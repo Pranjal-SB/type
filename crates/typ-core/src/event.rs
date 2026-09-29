@@ -19,6 +19,9 @@ pub enum AppEvent {
     Input(crossterm::event::Event),
     /// The file at this path changed on disk.
     FileChanged(PathBuf),
+    /// The watch on this path reported a failure and may have stopped, so an
+    /// outside write can now go unnoticed.
+    WatchFailed { path: PathBuf, reason: String },
     /// A worker finished parsing a snapshot of a buffer.
     ///
     /// The generation inside is what makes an out-of-order result harmless:
@@ -35,6 +38,13 @@ pub enum AppEvent {
     /// on the app's thread; growing a variant per LSP feature is how this enum
     /// would become the chokepoint `PanelEvent` is deliberately not.
     Lsp(typ_lsp::Incoming),
+    /// The terminal stopped delivering input, and why. Nothing will ever send
+    /// another `Input`.
+    ///
+    /// An event rather than the channel disconnecting, because it cannot
+    /// disconnect: the app holds a sender of its own for its workers, so the
+    /// pump dying left `recv()` blocked forever. Gap 83.
+    InputClosed(String),
 }
 
 /// So `ParseWorker::spawn` can take the app's own sender.
@@ -97,10 +107,14 @@ pub enum PanelEvent {
     /// Move focus to another panel.
     Focus(PanelId),
     /// Open a path in whichever panel the registry says owns it.
+    ///
+    /// `at` is a `Position` rather than a bare line and column so the column
+    /// is typed as the grapheme index invariant 4 says it is. As two `usize`s,
+    /// a producer writing an LSP character offset or a byte offset compiled,
+    /// and `goto` clamped it to a plausible wrong column. Gap 141.
     OpenFile {
         path: PathBuf,
-        line: usize,
-        col: usize,
+        at: typ_buffer::Position,
     },
     /// Open a path with an explicitly chosen handler.
     OpenWith { handler: HandlerId, path: PathBuf },

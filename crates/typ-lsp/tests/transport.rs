@@ -115,6 +115,32 @@ fn a_server_that_exits_reports_it_rather_than_hanging() {
 }
 
 #[test]
+fn a_broken_stdin_is_reported_even_while_stdout_stays_open() {
+    // The writer thread used to exit on a failed write and say nothing. The
+    // reader, still attached to a live stdout, never sent `Closed` either, so
+    // every later notification went nowhere while the client believed the
+    // server healthy. Gap 92.
+    let (transport, rx) = start(&["--close-stdin"]);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let closed = loop {
+        transport.send(initialize());
+        match rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(Incoming::Closed(_)) => break true,
+            Ok(Incoming::Message(..)) => {}
+            Err(_) if std::time::Instant::now() > deadline => break false,
+            Err(_) => {}
+        }
+    };
+    assert!(closed, "writes failed and nothing said so");
+    // Exactly once: the reader must not report it a second time.
+    drop(transport);
+    assert!(
+        !rx.iter().any(|i| matches!(i, Incoming::Closed(_))),
+        "closed was reported twice"
+    );
+}
+
+#[test]
 fn a_server_request_reaches_the_client() {
     // The half clients forget. rust-analyzer sends workspace/configuration,
     // and one that never answers leaves the server waiting forever.

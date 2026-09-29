@@ -8,17 +8,35 @@ use crate::line_ending::LineEnding;
 use crate::position::Position;
 use crate::search::SearchQuery;
 use crate::selection::{Selection, Selections};
-use crate::undo::{EditKind, History};
+use crate::undo::{EditKind, History, Snapshot};
 
 pub struct TextBuffer {
     rope: Rope,
     path: Option<PathBuf>,
-    dirty: bool,
+    /// Which version of the text the rope holds.
+    ///
+    /// A fresh value on every edit (it is taken from `revision`, which never
+    /// repeats) and an *old* value when undo or redo brings an old version
+    /// back. That second half is the whole point: it is what lets undoing to
+    /// the saved text read as clean again. Every mature editor keeps a save
+    /// point this way; a bare `dirty` flag cannot, because it has no way to
+    /// recognise a version it has seen before.
+    state: u64,
+    /// The `state` that is on disk, as of the last load or save.
+    saved_state: u64,
     history: History,
     /// Nesting depth of `begin_edit_group`. While non-zero, individual edits
     /// stop taking their own snapshots, so a multi-caret edit is one undo step
     /// rather than one per cursor.
     group_depth: usize,
+    /// What the open group will record, held until its first edit that
+    /// changes something.
+    ///
+    /// Lazy because a group does not know at `begin_edit_group` whether it will
+    /// mutate anything (Backspace at the start of the buffer opens one and
+    /// does nothing) and recording is not free of consequences: it clears
+    /// the redo stack. Gap 81.
+    pending_group: Option<(EditKind, Selections)>,
     /// Detected once at load. Recorded rather than recomputed because editing
     /// the file must not change the answer — a user deleting the first line
     /// does not thereby convert the file to LF.
@@ -46,9 +64,11 @@ impl TextBuffer {
         Self {
             rope: Rope::from_str(s),
             path: None,
-            dirty: false,
+            state: 0,
+            saved_state: 0,
             history: History::default(),
             group_depth: 0,
+            pending_group: None,
             line_ending: LineEnding::detect(s),
             revision: 0,
             edits: Vec::new(),
@@ -66,9 +86,11 @@ impl TextBuffer {
         Self {
             rope: Rope::new(),
             path: Some(path.to_path_buf()),
-            dirty: false,
+            state: 0,
+            saved_state: 0,
             history: History::default(),
             group_depth: 0,
+            pending_group: None,
             // Nothing to detect from, and a file TYPE is about to create has no
             // existing convention to honour.
             line_ending: LineEnding::default(),
@@ -100,9 +122,11 @@ impl TextBuffer {
             edits: Vec::new(),
             rope: Rope::from_str(&text),
             path: Some(path.to_path_buf()),
-            dirty: false,
+            state: 0,
+            saved_state: 0,
             history: History::default(),
             group_depth: 0,
+            pending_group: None,
         })
     }
 
@@ -163,8 +187,11 @@ impl TextBuffer {
         self.path.as_deref()
     }
 
+    /// Whether the text differs from what was last loaded or saved.
+    ///
+    /// Undo back to the saved text and this is false again.
     pub fn is_dirty(&self) -> bool {
-        self.dirty
+        self.state != self.saved_state
     }
 
     /// How many times the text has changed, ever.
@@ -177,14 +204,33 @@ impl TextBuffer {
         self.revision
     }
 
-    /// The text changed.
+    /// The text changed into a version never seen before.
     ///
-    /// Every mutation goes through here so `dirty` and `revision` cannot drift
+    /// Every mutation goes through here so `state` and `revision` cannot drift
     /// apart — the alternative was six call sites each remembering to set two
     /// fields, which is five chances to set one.
     fn touch(&mut self) {
-        self.dirty = true;
         self.revision += 1;
+        self.state = self.revision;
+    }
+
+    /// The text as it stands, for the undo history.
+    fn snapshot_with(&self, selections: &Selections) -> Snapshot {
+        Snapshot {
+            rope: self.rope.clone(),
+            selections: selections.clone(),
+            state: self.state,
+        }
+    }
+
+    /// Put back a version from the history. It is new text to anything that
+    /// parses, so `revision` moves; it is an old version, so `state` does not
+    /// take a fresh value.
+    fn restore(&mut self, snapshot: Snapshot) -> Selections {
+        self.rope = snapshot.rope;
+        self.revision += 1;
+        self.state = snapshot.state;
+        snapshot.selections
     }
 
     /// Call `f` with one line's text, borrowed from the rope when possible.
@@ -297,49 +343,15 @@ impl TextBuffer {
         line_start + chars_before
     }
 
-    pub fn insert_char(&mut self, pos: Position, ch: char) {
-        self.record_snapshot(pos);
-        let offset = self.char_offset(pos);
-        self.rope.insert_char(offset, ch);
-        self.touch();
-    }
-
-    /// Delete the grapheme immediately before `pos` (backspace).
-    pub fn delete_before(&mut self, pos: Position) {
-        let offset = self.char_offset(pos);
-        if offset == 0 {
-            return;
-        }
-        let n = if pos.col == 0 {
-            1 // joining with the previous line: remove the newline
-        } else {
-            self.with_line_str(pos.line, |text| {
-                text.graphemes(true)
-                    .nth(pos.col - 1)
-                    .map_or(1, |g| g.chars().count())
-            })
-        };
-        self.record_snapshot(pos);
-        self.rope.remove(offset - n..offset);
-        self.touch();
-    }
-
-    /// Delete the grapheme at `pos` (forward delete).
+    /// Insert one character: `replace_range` with an empty range.
     ///
-    /// At the end of a line this removes the newline, joining the next line up.
-    pub fn delete_after(&mut self, pos: Position) {
-        let offset = self.char_offset(pos);
-        if offset >= self.rope.len_chars() {
-            return;
-        }
-        let n = self.with_line_str(pos.line, |text| {
-            text.graphemes(true)
-                .nth(pos.col)
-                .map_or(1, |g| g.chars().count())
-        });
-        self.record_snapshot(pos);
-        self.rope.remove(offset..offset + n);
-        self.touch();
+    /// A convenience rather than a second path: it used to edit the rope
+    /// itself and record no `EditSpan`, so a caller would have stranded every
+    /// diagnostic held against the buffer. `delete_before` and `delete_after`
+    /// had the same flaw and no production caller, and are gone;
+    /// `Action::Delete` is the one deletion path. Gap 117.
+    pub fn insert_char(&mut self, pos: Position, ch: char) {
+        self.replace_range(pos, pos, ch.encode_utf8(&mut [0; 4]));
     }
 
     /// The text between two positions.
@@ -468,38 +480,48 @@ impl TextBuffer {
         std::mem::take(&mut self.edits)
     }
 
-    /// Take an undo snapshot unless an edit group is open.
+    /// Take the undo snapshot for an edit that is about to change the text.
     ///
-    /// Only the M1-era standalone helpers reach this. They have no selection set
-    /// and no edit kind to offer, so they record as `Other` at a caret placed
-    /// where they are editing — which reproduces their old one-step-per-call
-    /// behavior exactly. M2 Task 12 deletes their last callers.
+    /// Inside a group, the group's own snapshot, the first time only. Outside
+    /// one (an edit made straight on the buffer, which today is only tests)
+    /// there is no selection set and no edit kind to offer, so it records as
+    /// `Other` at a caret placed where the edit is: one step per call.
     fn record_snapshot(&mut self, at: Position) {
-        if self.group_depth == 0 {
-            let selections = Selections::single(Selection::caret(at));
-            self.history
-                .record(EditKind::Other, self.rope.clone(), &selections);
+        if self.group_depth > 0 {
+            if let Some((kind, selections)) = self.pending_group.take() {
+                self.history.record(kind, self.snapshot_with(&selections));
+            }
+            return;
         }
+        let selections = Selections::single(Selection::caret(at));
+        self.history
+            .record(EditKind::Other, self.snapshot_with(&selections));
     }
 
     /// Begin a group of edits that undo together.
     ///
-    /// One snapshot is taken up front and none during the group, so thirty
-    /// cursors typing one character is one undo step. Without this, undoing a
-    /// thirty-caret edit would take thirty presses and leave the buffer in
-    /// states the user never typed.
+    /// One snapshot for the whole group, so thirty cursors typing one
+    /// character is one undo step. Without this, undoing a thirty-caret edit
+    /// would take thirty presses and leave the buffer in states the user never
+    /// typed.
     ///
-    /// Whether that snapshot is actually pushed is `History`'s call: a group
-    /// continuing a run of the same kind folds into the one already there.
+    /// The snapshot is taken at the group's first edit that changes the text,
+    /// not here: a group that changes nothing leaves no undo step and keeps the
+    /// redo stack. The text is the same either way, since nothing ran between.
+    /// Whether it is then pushed is `History`'s call: a group continuing a run
+    /// of the same kind folds into the one already there.
     pub fn begin_edit_group(&mut self, kind: EditKind, selections: &Selections) {
         if self.group_depth == 0 {
-            self.history.record(kind, self.rope.clone(), selections);
+            self.pending_group = Some((kind, selections.clone()));
         }
         self.group_depth += 1;
     }
 
     pub fn end_edit_group(&mut self) {
         self.group_depth = self.group_depth.saturating_sub(1);
+        if self.group_depth == 0 {
+            self.pending_group = None;
+        }
     }
 
     /// How many undo steps are currently held.
@@ -517,17 +539,13 @@ impl TextBuffer {
     /// `None` means there was nothing to undo, so the caller leaves its
     /// selections alone.
     pub fn undo(&mut self, current: &Selections) -> Option<Selections> {
-        let snapshot = self.history.undo(self.rope.clone(), current)?;
-        self.rope = snapshot.rope;
-        self.touch();
-        Some(snapshot.selections)
+        let snapshot = self.history.undo(self.snapshot_with(current))?;
+        Some(self.restore(snapshot))
     }
 
     pub fn redo(&mut self, current: &Selections) -> Option<Selections> {
-        let snapshot = self.history.redo(self.rope.clone(), current)?;
-        self.rope = snapshot.rope;
-        self.touch();
-        Some(snapshot.selections)
+        let snapshot = self.history.redo(self.snapshot_with(current))?;
+        Some(self.restore(snapshot))
     }
 
     /// Write the buffer to disk, atomically.
@@ -554,23 +572,27 @@ impl TextBuffer {
 
         // Same directory, so the rename never crosses a filesystem boundary —
         // across devices it would silently become a copy, which is not atomic.
-        let temp = temp_path_beside(&target);
-        write_all_and_sync(&temp, &self.rope, self.line_ending)
-            .with_context(|| format!("writing {}", temp.display()))?;
+        let (temp, file) = create_temp(&target)
+            .with_context(|| format!("creating a temporary file beside {}", target.display()))?;
 
-        // Carry the original's mode onto the temp file *before* the rename, so
-        // the file is never briefly world-readable and an executable script
-        // does not stop being executable because somebody edited it.
-        if let Err(e) = copy_permissions(&target, &temp) {
+        let written = (|| -> Result<()> {
+            // The original's mode goes on *before* the contents do, so a
+            // private file's text is never on disk under a wider mode, and an
+            // executable script stays executable. Gap 103.
+            copy_permissions(&target, &temp)
+                .with_context(|| format!("preserving the mode of {}", target.display()))?;
+            write_all_and_sync(file, &self.rope, self.line_ending)
+                .with_context(|| format!("writing {}", temp.display()))?;
+            std::fs::rename(&temp, &target)
+                .with_context(|| format!("replacing {}", target.display()))
+        })();
+        if written.is_err() {
+            // One cleanup for every step after the temp exists. The write
+            // used to return through `?` and leave the temp beside the source
+            // on a full disk. Gap 99. The original is untouched either way.
             let _ = std::fs::remove_file(&temp);
-            return Err(e).with_context(|| format!("preserving the mode of {}", target.display()));
         }
-
-        if let Err(e) = std::fs::rename(&temp, &target) {
-            // Leave nothing behind on failure; the original is untouched.
-            let _ = std::fs::remove_file(&temp);
-            return Err(e).with_context(|| format!("replacing {}", target.display()));
-        }
+        written?;
 
         // A rename is not durable until the directory entry naming it is. Skip
         // this and a power loss can leave the directory pointing at neither
@@ -579,7 +601,7 @@ impl TextBuffer {
         // does this.
         sync_parent_dir(&target);
 
-        self.dirty = false;
+        self.saved_state = self.state;
         Ok(())
     }
 
@@ -620,13 +642,56 @@ fn trim_line_ending(s: &str) -> &str {
 /// a fixed temp name race: one truncates the other's half-written file and
 /// renames whichever won, and the loser's content is gone. A kill mid-save also
 /// leaves the file behind, and a pid-suffixed one is at least attributable.
-fn temp_path_beside(path: &Path) -> PathBuf {
+fn temp_path_beside(path: &Path, attempt: u32) -> PathBuf {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "buffer".to_string());
     let parent = path.parent().unwrap_or(Path::new("."));
-    parent.join(format!(".{name}.{}.typ-tmp", std::process::id()))
+    let pid = std::process::id();
+    match attempt {
+        0 => parent.join(format!(".{name}.{pid}.typ-tmp")),
+        n => parent.join(format!(".{name}.{pid}.{n}.typ-tmp")),
+    }
+}
+
+/// How many names `create_temp` tries before giving up.
+const TEMP_ATTEMPTS: u32 = 16;
+
+/// Create the temp file for a save of `target`, refusing anything already
+/// there.
+///
+/// **Exclusive.** The name is predictable (file name plus pid) so anyone
+/// with write access to the directory can put something at it first, and on
+/// Unix that something can be a symlink to a file of the user's. A plain
+/// create would truncate and write through it. `create_new` fails instead, on
+/// a file and on a symlink alike, and the next name is tried. Gap 104.
+///
+/// **Private until told otherwise.** On Unix a file that replaces an existing
+/// one starts at 0600 and is given the original's mode before any content is
+/// written, so a 0600 file's text is never readable under the umask's 0644 in
+/// between. A file saved for the first time has no mode to protect and gets
+/// the ordinary default. Gap 103.
+fn create_temp(target: &Path) -> std::io::Result<(PathBuf, std::fs::File)> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    if target.exists() {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    for attempt in 0..TEMP_ATTEMPTS {
+        let temp = temp_path_beside(target, attempt);
+        match options.open(&temp) {
+            Ok(file) => return Ok((temp, file)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "every temporary file name for this save is already taken",
+    ))
 }
 
 /// Write the rope out and flush it to the device before returning.
@@ -634,10 +699,16 @@ fn temp_path_beside(path: &Path) -> PathBuf {
 /// Without the flush, the rename can be durable while the contents are not —
 /// which produces an empty file after a power loss, the exact failure the
 /// atomic write exists to prevent.
-fn write_all_and_sync(path: &Path, rope: &Rope, ending: LineEnding) -> std::io::Result<()> {
+///
+/// Takes the file by value so it is closed before the rename: Windows will
+/// not rename a file that is still open.
+fn write_all_and_sync(
+    mut file: std::fs::File,
+    rope: &Rope,
+    ending: LineEnding,
+) -> std::io::Result<()> {
     use std::io::Write;
 
-    let mut file = std::fs::File::create(path)?;
     for chunk in rope.chunks() {
         match ending {
             // The rope holds LF. A chunk boundary cannot split a `\n`, so
@@ -691,5 +762,27 @@ fn sync_parent_dir(path: &Path) {
     };
     if let Ok(dir) = std::fs::File::open(parent) {
         let _ = dir.sync_all();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn the_temp_for_a_private_file_is_private_before_anything_is_written() {
+        let dir = std::env::temp_dir().join(format!("typ-temp-mode-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("id_ed25519");
+        std::fs::write(&target, "secret\n").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        let (temp, _file) = create_temp(&target).unwrap();
+        let mode = std::fs::metadata(&temp).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "the temp was readable under the umask");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

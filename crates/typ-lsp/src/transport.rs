@@ -13,6 +13,7 @@
 
 use std::io::{BufReader, Write};
 use std::process::{Child, ChildStderr, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -156,6 +157,17 @@ impl Transport {
         let stderr = child.stderr.take().expect("stderr was piped");
 
         let (tx, rx) = mpsc::channel::<Pending>();
+        // Whichever thread learns first that the conversation is over reports
+        // it, and only that one: `Closed` is sent exactly once.
+        let closed = Arc::new(AtomicBool::new(false));
+        let close = {
+            let (closed, results) = (Arc::clone(&closed), results.clone());
+            move || {
+                if !closed.swap(true, Ordering::SeqCst) {
+                    let _ = results.send(E::from(Incoming::Closed(id)));
+                }
+            }
+        };
 
         thread::Builder::new()
             .name("typ-lsp-write".into())
@@ -165,6 +177,12 @@ impl Transport {
                 // dropped, which is how this thread learns to exit.
                 while let Ok(build) = rx.recv() {
                     if build().write(&mut stdin).is_err() || stdin.flush().is_err() {
+                        // **Said, not swallowed.** A server whose stdin broke
+                        // while its stdout stayed open never reaches the
+                        // reader's end of stream, so without this every later
+                        // notification went nowhere and the client believed
+                        // it healthy. Gap 92.
+                        close();
                         break;
                     }
                 }
@@ -206,7 +224,9 @@ impl Transport {
                         }
                     }
                 }
-                let _ = results.send(E::from(Incoming::Closed(id)));
+                if !closed.swap(true, Ordering::SeqCst) {
+                    let _ = results.send(E::from(Incoming::Closed(id)));
+                }
             })
             .expect("the OS can start a thread");
 
@@ -379,17 +399,27 @@ mod platform {
                 return Job(std::ptr::null_mut());
             }
 
+            // `Job` owns the handle from here, so an early return closes it.
+            let job = Job(job);
+
             let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
             limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            SetInformationJobObject(
-                job,
+            let limited = SetInformationJobObject(
+                job.0,
                 JobObjectExtendedLimitInformation,
                 (&raw const limits).cast(),
                 std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
             );
 
-            AssignProcessToJobObject(job, child.as_raw_handle() as HANDLE);
-            Job(job)
+            // **Both answers read.** A job that does not hold the child (the
+            // child is already in one that refuses nesting, as under some CI
+            // hosts) is worse than none: `kill_tree` would terminate the empty
+            // job and never reach `child.kill()`. Gap 95.
+            if limited == 0 || AssignProcessToJobObject(job.0, child.as_raw_handle() as HANDLE) == 0
+            {
+                return Job(std::ptr::null_mut());
+            }
+            job
         }
     }
 
@@ -401,6 +431,27 @@ mod platform {
             unsafe { TerminateJobObject(transport.job.0, 1) };
         } else {
             let _ = transport.child.kill();
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn a_process_the_job_could_not_take_gets_no_job() {
+            // A job that holds nothing must read as no job, or `kill_tree`
+            // terminates an empty job and never reaches `child.kill()`. An
+            // exited process cannot be assigned, which is the failure this
+            // stands in for: the nested-job refusal some CI hosts produce.
+            // Gap 95.
+            let mut child = std::process::Command::new("cmd")
+                .args(["/C", "exit"])
+                .spawn()
+                .expect("cmd starts");
+            child.wait().expect("cmd exits");
+            let job = confine(&child);
+            assert!(job.0.is_null(), "an empty job was kept");
         }
     }
 }

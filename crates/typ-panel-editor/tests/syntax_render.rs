@@ -127,11 +127,34 @@ fn an_indent_guide_outranks_syntax() {
 fn a_line_with_no_syntax_renders_exactly_as_before() {
     // The regression gate for every buffer without a grammar, which is most of
     // them on day one.
+    //
+    // This compared two calls on the same `plain()` input, which could not
+    // fail. Gap 135. "As before" is stated outright now: the whole text, in
+    // the theme's own foreground, and nothing else.
     let theme = ThemeColors::default();
-    let with = styled_line("let x = 1;", &plain(&theme));
-    let without = styled_line("let x = 1;", &plain(&theme));
-    assert_eq!(with.spans.len(), without.spans.len());
-    assert_eq!(with.spans[0].style, without.spans[0].style);
+    let line = styled_line("let x = 1;", &plain(&theme));
+
+    let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+    assert_eq!(text, "let x = 1;");
+    for span in &line.spans {
+        assert_eq!(
+            span.style.fg,
+            Some(theme.fg),
+            "{:?} was coloured with no syntax to colour it",
+            span.content
+        );
+    }
+}
+
+#[test]
+fn a_capture_outside_the_line_colours_nothing() {
+    // The half of "as before" that involves a grammar: a capture ending before
+    // the visible text must not leak onto it.
+    let theme = ThemeColors::default();
+    let line = render("let x = 1;", &[(20..25, keyword())], |_| {});
+    for span in &line.spans {
+        assert_eq!(span.style.fg, Some(theme.fg), "{:?}", span.content);
+    }
 }
 
 #[test]

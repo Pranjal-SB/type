@@ -10,7 +10,6 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use typ_buffer::display_width;
 use typ_core::ThemeColors;
-use unicode_segmentation::UnicodeSegmentation;
 
 /// A space either side of the name, so adjacent tabs do not read as one word,
 /// plus the column the close box sits in.
@@ -154,15 +153,26 @@ fn write_cell(buf: &mut Buffer, area: Rect, cell: TabCell, label: &str, style: S
         }
     };
 
+    // **A clipped cell has no close box**, drawn or hit-tested: `close_box_x`
+    // says that column is part of the name. This used to reserve two columns
+    // and draw the box anyway, so the glyph on screen activated the tab when
+    // clicked. Gap 86.
+    let clipped = close_box_x(&cell, label).is_none();
+    let reserved = if clipped { 0 } else { 2 };
+
     put(&mut x, " ");
-    for grapheme in label.graphemes(true) {
+    // `printable`, not `graphemes`: a label is a file name, and `set_symbol`
+    // hands whatever it is given straight to the terminal. Gap 69.
+    for grapheme in typ_core::printable(label) {
         // Leave room for the trailing space and the close box, so a long name
         // is clipped rather than growing over them.
-        if x + 2 >= end {
+        if x + reserved >= end {
             break;
         }
         put(&mut x, grapheme);
     }
-    put(&mut x, " ");
-    put(&mut x, CLOSE);
+    if !clipped {
+        put(&mut x, " ");
+        put(&mut x, CLOSE);
+    }
 }

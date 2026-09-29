@@ -119,6 +119,55 @@ fn a_rejected_config_leaves_the_previous_bindings_intact() {
 }
 
 #[test]
+fn a_config_chord_matches_however_it_is_capitalised_or_ordered() {
+    let mut keymap = Keymap::default_bindings();
+    keymap
+        .merge_toml(
+            "\"Ctrl+Shift+K\" = \"save\"\n\"shift+alt+J\" = \"save\"\n\"PageUp\" = \"save\"",
+        )
+        .unwrap();
+    for (code, mods) in [
+        (
+            KeyCode::Char('k'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        ),
+        (KeyCode::Char('j'), KeyModifiers::ALT | KeyModifiers::SHIFT),
+        (KeyCode::PageUp, KeyModifiers::NONE),
+    ] {
+        assert_eq!(
+            keymap.lookup(&chord(code, mods)),
+            Some(Action::Save),
+            "{code:?} with {mods:?} did not reach the binding"
+        );
+    }
+}
+
+#[test]
+fn a_config_chord_that_names_no_key_is_an_error_naming_the_chord() {
+    for spelling in ["C-s", "pgup", "ctrl+", "hyper+x", "ctrl+shift"] {
+        let mut keymap = Keymap::default_bindings();
+        let err = keymap
+            .merge_toml(&format!("\"{spelling}\" = \"save\""))
+            .expect_err(spelling);
+        let text = format!("{err:#}");
+        assert!(text.contains(spelling), "error was: {text}");
+    }
+}
+
+#[test]
+fn every_default_chord_is_one_a_config_may_spell() {
+    let defaults = Keymap::default_bindings();
+    for action in Action::ALL {
+        for chord in defaults.bindings_for(*action) {
+            let mut keymap = Keymap::default_bindings();
+            keymap
+                .merge_toml(&format!("\"{chord}\" = \"{}\"", action.name()))
+                .unwrap_or_else(|e| panic!("{chord} was refused: {e:#}"));
+        }
+    }
+}
+
+#[test]
 fn bindings_can_be_looked_up_backwards_for_help_text() {
     let keymap = Keymap::default_bindings();
     let bindings = keymap.bindings_for(Action::Save);

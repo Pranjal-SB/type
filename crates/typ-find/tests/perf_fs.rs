@@ -109,6 +109,35 @@ fn searching_ten_thousand_files_stays_under_a_second() {
 
 #[test]
 #[ignore = "wall-clock budget; run with --release --ignored"]
+fn the_cap_bounds_one_large_file_too() {
+    // The cap was consulted between files, and the sink always said "keep
+    // going", so one generated file or lockfile built a `LineHit` for every
+    // matching line before the limit was looked at. A ratio rather than a time,
+    // because it is the shape that was wrong. Gap 108.
+    let _guard = exclusive();
+    let dir = std::env::temp_dir().join(format!("typ-find-perf-bigfile-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("perf dir");
+    fs::write(dir.join("big.lock"), "let needle = 1;\n".repeat(200_000)).expect("perf file");
+    let tree = Tree(dir);
+
+    let capped = best_of_five(|| {
+        std::hint::black_box(search(&tree.0, "needle", 20, &[]));
+    });
+    let full = best_of_five(|| {
+        std::hint::black_box(search(&tree.0, "needle", 1_000_000, &[]));
+    });
+    println!("one 200k-line file, capped at 20: {capped:?} best of 5");
+    println!("one 200k-line file, uncapped:     {full:?} best of 5");
+
+    assert!(
+        capped * 10 < full,
+        "the cap did not bound the file: {capped:?} capped against {full:?} uncapped"
+    );
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored"]
 fn a_capped_search_stops_early_rather_than_finishing() {
     // The cap is what bounds a search the user is still typing. If it only
     // truncated the result *after* walking everything, a one-character query on

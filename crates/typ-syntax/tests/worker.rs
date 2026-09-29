@@ -79,6 +79,32 @@ fn a_burst_costs_fewer_parses_than_it_has_requests() {
 }
 
 #[test]
+fn a_dead_worker_says_so_and_does_not_hand_out_generations() {
+    // The thread exits once nobody receives its results: the stand-in for a
+    // panic, which is the other way it dies. `request` used to return nothing
+    // and stop incrementing, so the caller re-stamped the last generation as
+    // awaited and waited for it forever. Gap 91.
+    let (tx, rx) = mpsc::channel::<Parsed>();
+    drop(rx);
+    let mut worker = ParseWorker::spawn(tx);
+    let rope = Rope::from_str("fn main() {}\n");
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut last = 0;
+    while let Some(generation) = worker.request(Language::Rust, rope.clone()) {
+        assert_eq!(generation, last + 1);
+        last = generation;
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the thread never exited"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(worker.request(Language::Rust, rope), None);
+    assert_eq!(worker.generation(), last, "a refused request used a number");
+}
+
+#[test]
 fn dropping_the_worker_stops_the_thread() {
     // A worker parked on a dead channel is a thread leak, and the editor opens
     // a new buffer every time you click a file in the tree.

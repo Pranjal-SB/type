@@ -133,6 +133,36 @@ fn switching_back_to_an_unchanged_tab_does_not_ask_for_another_parse() {
 }
 
 #[test]
+fn a_tab_whose_parse_was_coalesced_away_still_gets_one() {
+    // The worker drops everything queued behind the job it is running, on the
+    // theory that later jobs describe newer text. With tabs that is false: two
+    // tabs asking while a parse is in flight collapse to one, the loser's
+    // generation never arrives, and its recorded revision means nothing ever
+    // asks again. Gap 111.
+    let dir = fixture("coalesced");
+    // Big enough that its parse is still running when the next two are queued.
+    std::fs::write(dir.join("big.rs"), "fn a() { let x = 1; }\n".repeat(40_000)).unwrap();
+    std::fs::write(dir.join("third.rs"), "fn third() {}\n").unwrap();
+    let (tx, rx) = channel();
+    let mut app = App::new(&dir).unwrap();
+    app.set_event_sender(tx);
+
+    app.open_path(&dir.join("big.rs")).unwrap(); // tab 0, in flight
+    app.open_in_new_tab(&dir.join("first.rs")).unwrap(); // tab 1, queued
+    app.open_in_new_tab(&dir.join("third.rs")).unwrap(); // tab 2, queued
+    assert!(
+        pump_until_tab_parsed(&mut app, &rx, 2),
+        "the last tab never parsed"
+    );
+
+    app.activate_tab(1);
+    assert!(
+        app.tab(1).syntax().is_some() || pump_until_tab_parsed(&mut app, &rx, 1),
+        "the tab whose parse was coalesced away is unhighlighted for good"
+    );
+}
+
+#[test]
 fn each_tab_keeps_its_own_tree() {
     let dir = fixture("own-tree");
     let (tx, rx) = channel();

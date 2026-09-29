@@ -11,6 +11,9 @@ use unicode_segmentation::UnicodeSegmentation;
 pub struct SearchQuery {
     pub needle: String,
     pub case_sensitive: bool,
+    /// Match only where no word grapheme touches either end, so `value` does
+    /// not match inside `other_value`.
+    pub whole_word: bool,
 }
 
 impl SearchQuery {
@@ -18,6 +21,15 @@ impl SearchQuery {
         Self {
             needle: needle.into(),
             case_sensitive,
+            whole_word: false,
+        }
+    }
+
+    /// The same query, matching whole words only.
+    pub fn whole_word(self) -> Self {
+        Self {
+            whole_word: true,
+            ..self
         }
     }
 }
@@ -86,10 +98,20 @@ pub(crate) fn find_in_line_with(
     let mut hits = Vec::new();
     let mut i = 0usize;
     while i + needle.len() <= haystack.len() {
-        let matched = haystack[i..i + needle.len()]
+        let end = i + needle.len();
+        // A word grapheme on either side means this is the inside of a longer
+        // word, which a whole-word query does not want.
+        let inside_a_word = || {
+            (i > 0 && crate::is_word_grapheme(haystack[i - 1]))
+                || haystack
+                    .get(end)
+                    .is_some_and(|g| crate::is_word_grapheme(g))
+        };
+        let matched = haystack[i..end]
             .iter()
             .zip(needle)
-            .all(|(h, n)| grapheme_eq(h, n, query.case_sensitive));
+            .all(|(h, n)| grapheme_eq(h, n, query.case_sensitive))
+            && !(query.whole_word && inside_a_word());
         if matched {
             hits.push((i, i + needle.len()));
             // Advance past the match. Overlapping hits would let a replace-all

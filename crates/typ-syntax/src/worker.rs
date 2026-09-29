@@ -126,27 +126,30 @@ impl ParseWorker {
         }
     }
 
-    /// Ask for a parse. Never blocks.
+    /// Ask for a parse. Never blocks. Returns the generation the answer will
+    /// carry, or `None` when the thread is gone.
     ///
     /// The rope is a snapshot: ropey's nodes are reference-counted and shared,
     /// so the clone is cheap and the worker reads a consistent tree while the
     /// user keeps typing into the original.
-    pub fn request(&mut self, language: Language, rope: Rope) {
-        let Some(jobs) = &self.jobs else {
-            return;
-        };
-
-        self.generation += 1;
+    ///
+    /// **`None` is the only way a caller can know.** This returned nothing and
+    /// stopped counting once the thread died, so the caller stamped the
+    /// previous generation as awaited and waited for it forever while
+    /// believing it was wired. Gap 91.
+    pub fn request(&mut self, language: Language, rope: Rope) -> Option<u64> {
+        let jobs = self.jobs.as_ref()?;
         let pending = Pending {
             language,
             rope,
-            generation: self.generation,
+            generation: self.generation + 1,
         };
-
         if jobs.send(pending).is_err() {
-            // The thread is gone; stop pretending otherwise.
             self.jobs = None;
+            return None;
         }
+        self.generation += 1;
+        Some(self.generation)
     }
 
     /// The generation the most recent [`request`](Self::request) was given.

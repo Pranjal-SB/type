@@ -37,10 +37,3 @@ pub struct Diagnostic {
     /// about a line without either looking wrong.
     pub source: Option<String>,
 }
-
-impl Diagnostic {
-    /// Whether this diagnostic touches a line.
-    pub fn covers_line(&self, line: usize) -> bool {
-        (self.range.0.line..=self.range.1.line).contains(&line)
-    }
-}

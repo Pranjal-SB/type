@@ -142,11 +142,36 @@ fn scrolling_moves_the_list_without_opening_anything() {
     let mut picker = picker(50);
     let events = picker.handle_scroll(3, AREA);
     assert!(picker.offset() > 0, "the list did not scroll");
+    // **Then paint.** `render` calls `visible`, which keeps its promise that
+    // the selection is on screen by moving the offset, so an assertion taken
+    // before a frame is drawn is an assertion about a state the user never
+    // sees. This test passed for gap 74's entire life without this line.
+    let _ = picker.visible(typ_picker::Picker::list_rows(AREA));
+    assert!(picker.offset() > 0, "the next paint undid the scroll");
     assert!(
         !events
             .iter()
             .any(|event| matches!(event, PanelEvent::OpenFile { .. })),
         "a scroll opened a file"
+    );
+}
+
+#[test]
+fn scrolling_carries_the_selection_with_the_viewport() {
+    // `visible` guarantees the selection is among the rows it returns, and the
+    // hit test resolves a click against exactly that slice, so the guarantee
+    // has to hold, which means a wheel event moves the selection rather than
+    // leaving it behind for the next paint to chase. Gap 74.
+    let mut picker = picker(50);
+    let rows = typ_picker::Picker::list_rows(AREA);
+    picker.handle_scroll(3, AREA);
+    let offset = picker.offset();
+    assert!(
+        (offset..offset + rows).contains(&picker.selected()),
+        "selection {} is outside the visible window {}..{}",
+        picker.selected(),
+        offset,
+        offset + rows
     );
 }
 
@@ -161,12 +186,10 @@ fn scrolling_up_stops_at_the_top() {
 fn scrolling_down_stops_at_the_end() {
     let mut picker = picker(8);
     picker.handle_scroll(1_000, AREA);
-    let rows = (AREA.height - 4) as usize;
-    assert!(
-        picker.offset() <= 8usize.saturating_sub(rows),
-        "scrolled past the end: offset {}",
-        picker.offset()
-    );
+    // `<=` against a bound of 2 is satisfied by a `handle_scroll` that does
+    // nothing at all, so assert the value. Gap 129.
+    let rows = typ_picker::Picker::list_rows(AREA);
+    assert_eq!(picker.offset(), 8usize.saturating_sub(rows));
 }
 
 #[test]

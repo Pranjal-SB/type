@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use typ_app::App;
-use typ_core::{KeyChord, Panel};
+use typ_core::KeyChord;
 
 fn fixture(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join("typ-milestone").join(name);
@@ -136,60 +136,6 @@ fn quit_still_guards_unsaved_work() {
     assert!(a.should_quit());
 }
 
-#[test]
-fn every_default_binding_resolves_to_something_that_handles_it() {
-    // A binding nobody handles is a key that does nothing when pressed, and it
-    // looks identical to a bug. Search actions are handled by the app, editing
-    // ones by the panel; nothing in the default table should fall through both.
-    // Actions the *app* owns rather than the panel. They are listed rather than
-    // probed because probing them means running them: this test would quit,
-    // save every fixture, and open four prompts. Adding an app action means
-    // adding a line here, and forgetting to is what this test then reports.
-    const APP_OWNED: &[typ_core::Action] = &[
-        typ_core::Action::Save,
-        typ_core::Action::Quit,
-        typ_core::Action::FocusNext,
-        typ_core::Action::GotoLine,
-        typ_core::Action::SearchOpen,
-        typ_core::Action::SearchNext,
-        typ_core::Action::SearchPrevious,
-        typ_core::Action::ReplaceOpen,
-        typ_core::Action::OpenFilePicker,
-        typ_core::Action::OpenProjectSearch,
-        typ_core::Action::OpenCommandPalette,
-        // App-owned for the same reason the tab actions are: goto-definition
-        // can open a file, and a panel that could open one would have to know
-        // it sits in a list of them.
-        typ_core::Action::GotoDefinition,
-        typ_core::Action::Hover,
-        typ_core::Action::RestartLanguageServers,
-        // Tabs are the app's, not the panel's: a panel that could close itself
-        // would need to know it sits in a list, and invariant 5 says it does
-        // not get to know anything about the app at all.
-        typ_core::Action::NextTab,
-        typ_core::Action::PrevTab,
-        typ_core::Action::CloseTab,
-        typ_core::Action::GoToTab(1),
-        typ_core::Action::GoToTab(2),
-        typ_core::Action::GoToTab(3),
-        typ_core::Action::GoToTab(4),
-        typ_core::Action::GoToTab(5),
-        typ_core::Action::GoToTab(6),
-        typ_core::Action::GoToTab(7),
-        typ_core::Action::GoToTab(8),
-        typ_core::Action::GoToTab(9),
-    ];
-
-    let mut a = app("bindings");
-    let unhandled: Vec<&str> = typ_core::Action::ALL
-        .iter()
-        .filter(|action| {
-            a.editor_mut().apply_action(**action).is_none() && !APP_OWNED.contains(action)
-        })
-        .map(|action| action.name())
-        .collect();
-    assert!(
-        unhandled.is_empty(),
-        "these actions reach neither the editor nor the app: {unhandled:?}"
-    );
-}
+// `every_default_binding_resolves_to_something_that_handles_it` lived here and
+// checked app-owned actions against a hand-written list rather than running
+// them. `app_actions.rs` runs each one instead. Gap 127.

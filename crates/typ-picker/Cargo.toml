@@ -13,6 +13,7 @@ categories.workspace = true
 [dependencies]
 crossterm.workspace = true
 ratatui.workspace = true
+typ-buffer.workspace = true
 typ-core.workspace = true
 typ-find.workspace = true
 unicode-segmentation.workspace = true

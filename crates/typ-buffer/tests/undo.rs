@@ -190,3 +190,84 @@ fn the_cap_drops_the_oldest_step_not_the_newest() {
         "the newest step must survive; only the oldest history is forgotten"
     );
 }
+
+/// One typed step at `col` on line 0, the way the editor makes one.
+fn type_at(buffer: &mut TextBuffer, col: usize, text: &str) {
+    let at = Position { line: 0, col };
+    buffer.begin_edit_group(EditKind::Insert, &caret(0, col));
+    buffer.replace_range(at, at, text);
+    buffer.end_edit_group();
+}
+
+#[test]
+fn undoing_back_to_the_loaded_text_leaves_the_buffer_clean() {
+    let mut buffer = TextBuffer::from_str("abc");
+    type_at(&mut buffer, 3, "d");
+    assert!(buffer.is_dirty());
+
+    buffer.undo(&caret(0, 4));
+    assert_eq!(text(&buffer), "abc");
+    assert!(
+        !buffer.is_dirty(),
+        "undo restored exactly what was loaded, so there is nothing to lose on quit"
+    );
+
+    buffer.redo(&caret(0, 3));
+    assert!(
+        buffer.is_dirty(),
+        "redo moved away from the saved text again"
+    );
+}
+
+#[test]
+fn the_save_point_moves_with_a_save() {
+    let dir = std::env::temp_dir().join(format!("typ-undo-save-point-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("f.txt");
+    std::fs::write(&path, "abc").unwrap();
+
+    let mut buffer = TextBuffer::from_path(&path).unwrap();
+    type_at(&mut buffer, 3, "d");
+    buffer.save().unwrap();
+    buffer.undo_boundary();
+    type_at(&mut buffer, 4, "e");
+
+    buffer.undo(&caret(0, 5));
+    assert_eq!(text(&buffer), "abcd");
+    assert!(!buffer.is_dirty(), "undo returned to what the save wrote");
+
+    buffer.undo(&caret(0, 4));
+    assert_eq!(text(&buffer), "abc");
+    assert!(
+        buffer.is_dirty(),
+        "the loaded text is no longer what is on disk"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_no_op_edit_group_keeps_the_redo_stack() {
+    let mut buffer = TextBuffer::from_str("abc");
+    type_at(&mut buffer, 3, "d");
+    buffer.undo(&caret(0, 4));
+    let depth = buffer.undo_depth();
+
+    // Backspace at (0,0): the group opens, and the edit inside it is a no-op.
+    let origin = Position { line: 0, col: 0 };
+    buffer.begin_edit_group(EditKind::Delete, &caret(0, 0));
+    buffer.replace_range(origin, origin, "");
+    buffer.end_edit_group();
+
+    assert_eq!(
+        buffer.undo_depth(),
+        depth,
+        "an edit that changed nothing must not leave an undo step"
+    );
+    assert!(
+        buffer.redo(&caret(0, 0)).is_some(),
+        "an edit that changed nothing must not throw away the redo"
+    );
+    assert_eq!(text(&buffer), "abcd");
+}

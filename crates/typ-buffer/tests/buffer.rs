@@ -34,52 +34,17 @@ fn insert_marks_buffer_dirty() {
 }
 
 #[test]
-fn delete_before_removes_the_preceding_grapheme() {
-    let mut b = TextBuffer::from_str("abc\n");
-    b.delete_before(Position { line: 0, col: 2 });
-    assert_eq!(b.line_text(0), "ac");
-}
-
-#[test]
-fn delete_before_at_start_of_buffer_is_a_noop() {
-    let mut b = TextBuffer::from_str("abc\n");
-    b.delete_before(Position { line: 0, col: 0 });
-    assert_eq!(b.line_text(0), "abc");
-}
-
-#[test]
-fn delete_before_wide_char_removes_whole_grapheme() {
+fn a_range_of_one_wide_grapheme_removes_all_of_it() {
+    // Deletion is `replace_range` over grapheme positions. The removed
+    // `delete_before`/`delete_after` tested this per helper; one range covers
+    // both directions.
     let mut b = TextBuffer::from_str("日本語\n");
-    b.delete_before(Position { line: 0, col: 1 });
-    assert_eq!(b.line_text(0), "本語");
-}
-
-#[test]
-fn delete_after_removes_the_grapheme_under_the_cursor() {
-    let mut b = TextBuffer::from_str("abc\n");
-    b.delete_after(Position { line: 0, col: 1 });
-    assert_eq!(b.line_text(0), "ac");
-}
-
-#[test]
-fn delete_after_at_end_of_line_joins_the_next_line() {
-    let mut b = TextBuffer::from_str("ab\ncd\n");
-    b.delete_after(Position { line: 0, col: 2 });
-    assert_eq!(b.line_text(0), "abcd");
-}
-
-#[test]
-fn delete_after_at_end_of_buffer_is_a_noop() {
-    let mut b = TextBuffer::from_str("ab");
-    b.delete_after(Position { line: 0, col: 2 });
-    assert_eq!(b.line_text(0), "ab");
-}
-
-#[test]
-fn delete_after_removes_a_whole_wide_grapheme() {
-    let mut b = TextBuffer::from_str("日本語\n");
-    b.delete_after(Position { line: 0, col: 0 });
-    assert_eq!(b.line_text(0), "本語");
+    b.replace_range(
+        Position { line: 0, col: 1 },
+        Position { line: 0, col: 2 },
+        "",
+    );
+    assert_eq!(b.line_text(0), "日語");
 }
 
 #[test]
@@ -152,6 +117,31 @@ fn saving_leaves_no_temporary_file_behind() {
         .collect();
     assert!(leftovers.is_empty(), "left behind: {leftovers:?}");
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "old!\n");
+}
+
+#[test]
+fn a_file_already_at_the_temp_path_is_never_written_through() {
+    // The temp name is the file name plus the pid, so anyone who can write the
+    // directory can put something there first: on Unix, a symlink to a file
+    // of the user's they want overwritten. The save must not open it.
+    let dir = std::env::temp_dir().join("typ-buffer-temp-planted");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("save.txt");
+    std::fs::write(&path, "old\n").unwrap();
+    let planted = dir.join(format!(".save.txt.{}.typ-tmp", std::process::id()));
+    std::fs::write(&planted, "not yours\n").unwrap();
+
+    let mut b = TextBuffer::from_path(&path).unwrap();
+    b.insert_char(Position { line: 0, col: 3 }, '!');
+    b.save().unwrap();
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "old!\n");
+    assert_eq!(
+        std::fs::read_to_string(&planted).unwrap(),
+        "not yours\n",
+        "the save opened a file it did not create"
+    );
 }
 
 #[test]

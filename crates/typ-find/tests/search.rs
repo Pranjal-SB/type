@@ -149,6 +149,35 @@ fn the_cap_truncates_and_says_so() {
 }
 
 #[test]
+fn a_search_stopped_at_exactly_the_limit_is_not_complete() {
+    // The cap fired at `>= limit` and `complete` was `<= limit`, so only an
+    // overshoot was reported: ten matches in the first file and ten more after
+    // came back as "10 matches", no `+`. Two files of ten each, so whichever
+    // the walk reaches first fills the cap exactly. Gap 107.
+    let fixture = Fixture::new("exact-cap");
+    fixture
+        .file("a.rs", &"needle\n".repeat(10))
+        .file("b.rs", &"needle\n".repeat(10));
+
+    let found = search(fixture.path(), "needle", 10, &[]);
+
+    assert_eq!(found.hits.len(), 10);
+    assert!(!found.complete, "twenty matches reported as exactly ten");
+}
+
+#[test]
+fn exactly_limit_matches_in_the_whole_project_is_complete() {
+    // The other side: the fix must not put a `+` on an answer that is whole.
+    let fixture = Fixture::new("exact-whole");
+    fixture.file("a.rs", &"needle\n".repeat(10));
+
+    let found = search(fixture.path(), "needle", 10, &[]);
+
+    assert_eq!(found.hits.len(), 10);
+    assert!(found.complete, "a whole answer was qualified");
+}
+
+#[test]
 fn an_uncapped_search_reports_complete() {
     let fixture = Fixture::new("complete");
     fixture.file("a.rs", "needle\n");
@@ -180,6 +209,13 @@ fn an_invalid_regex_is_empty_rather_than_a_panic() {
     let found = run(fixture.path(), "[");
 
     assert!(found.hits.is_empty());
+    // Nothing was searched, so "complete with no matches" would be a claim
+    // that the project holds none: a literal `foo(` answered with a
+    // confident nothing. Gap 98.
+    assert!(
+        !found.complete,
+        "an unsearched pattern claimed a full answer"
+    );
 }
 
 #[test]
@@ -235,6 +271,31 @@ fn an_open_buffer_is_searched_instead_of_the_file_on_disk() {
         1,
         "the on-disk text was searched as well as the buffer"
     );
+}
+
+#[test]
+fn an_open_buffer_wins_when_the_root_and_the_tab_spell_the_path_differently() {
+    // `typ notes.md` roots the project at `.`, so the walk yields
+    // `./notes.md` while the tab holds `notes.md`, and `Path`'s `Eq` keeps a
+    // leading `CurDir`. The override never fired and the file was read from
+    // disk. Relative on purpose: cargo runs integration tests from the package
+    // root, which is what makes this spelling reachable. Gap 109.
+    struct Here(PathBuf);
+    impl Drop for Here {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    let name = format!("tmp-search-spelling-{}", std::process::id());
+    let here = Here(PathBuf::from(&name));
+    fs::create_dir_all(&here.0).expect("fixture root");
+    fs::write(here.0.join("notes.md"), "saved\n").expect("fixture file");
+
+    let root = PathBuf::from(format!("./{name}"));
+    let overrides = [(here.0.join("notes.md"), "unsaved\n".to_string())];
+
+    let found = search(&root, "unsaved", 100, &overrides);
+    assert_eq!(found.hits.len(), 1, "the open buffer was not searched");
 }
 
 #[test]

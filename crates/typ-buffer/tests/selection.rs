@@ -138,3 +138,108 @@ fn a_caret_inside_a_selection_is_absorbed_by_it() {
     assert_eq!(s.len(), 1);
     assert_eq!(s.primary().range(), (pos(0, 0), pos(0, 6)));
 }
+
+#[test]
+fn a_caret_at_a_selections_start_merges_into_it() {
+    // The one case the half-open rule does *not* cover. A caret at `P` sorts
+    // before the selection `[P, Q)` it sits inside (`range()` gives
+    // `(P,P) < (P,Q)`) so the strict `a_end > b_start` test is false and the
+    // caret-vs-caret fallback needs both sides empty. Reachable by
+    // double-clicking a word and Alt+clicking its first cell.
+    //
+    // Not cosmetic: `edit_at_each_selection` applies in ascending order through
+    // a `Shift`, so the caret inserts first, records a column shift, and the
+    // selection is then replaced one grapheme to the right of what was
+    // selected. Gap 72.
+    let mut s = Selections::default();
+    s.set_single(Selection {
+        anchor: pos(0, 5),
+        head: pos(0, 7),
+    });
+    s.push(Selection::caret(pos(0, 5)));
+
+    assert_eq!(
+        s.len(),
+        1,
+        "two selections both cover column 5: {:?}",
+        s.iter().collect::<Vec<_>>()
+    );
+    assert_eq!(s.iter().next().unwrap().range(), (pos(0, 5), pos(0, 7)));
+}
+
+#[test]
+fn a_caret_at_a_selections_end_stays_separate() {
+    // The other side of the same boundary, and it must not move: `contains` is
+    // half-open, so `P..Q` does not contain `Q` and a caret there is a second
+    // cursor rather than a duplicate.
+    let mut s = Selections::default();
+    s.set_single(Selection {
+        anchor: pos(0, 5),
+        head: pos(0, 7),
+    });
+    s.push(Selection::caret(pos(0, 7)));
+    assert_eq!(s.len(), 2);
+}
+
+#[test]
+fn merging_two_backwards_selections_keeps_them_backwards() {
+    // The head is the end that moves. Merge two leftward selections into a
+    // rightward one and the next Shift+Left shrinks the selection from the far
+    // end instead of extending it from the near one. Gap 73.
+    let mut s = Selections::default();
+    s.set_single(Selection {
+        anchor: pos(0, 5),
+        head: pos(0, 1),
+    });
+    s.push(Selection {
+        anchor: pos(0, 8),
+        head: pos(0, 4),
+    });
+    assert_eq!(s.len(), 1, "these overlap and should merge");
+
+    let merged = s.primary();
+    assert_eq!(merged.range(), (pos(0, 1), pos(0, 8)));
+    assert_eq!(
+        (merged.anchor, merged.head),
+        (pos(0, 8), pos(0, 1)),
+        "the merge turned two leftward selections into a rightward one"
+    );
+}
+
+#[test]
+fn merging_two_forwards_selections_keeps_them_forwards() {
+    let mut s = Selections::default();
+    s.set_single(Selection {
+        anchor: pos(0, 1),
+        head: pos(0, 5),
+    });
+    s.push(Selection {
+        anchor: pos(0, 4),
+        head: pos(0, 8),
+    });
+    assert_eq!(s.len(), 1);
+    let merged = s.primary();
+    assert_eq!((merged.anchor, merged.head), (pos(0, 1), pos(0, 8)));
+}
+
+#[test]
+fn the_selections_touching_a_line_are_exactly_those_that_reach_it() {
+    let mut s = Selections::single(Selection::caret(pos(0, 0)));
+    s.extend([
+        // Starts above line 5 and ends below it: the case a filter on either
+        // end alone would drop.
+        Selection {
+            anchor: pos(2, 3),
+            head: pos(7, 1),
+        },
+        Selection::caret(pos(7, 4)),
+        Selection::caret(pos(9, 0)),
+    ]);
+    let on = |line| s.touching_line(line).to_vec();
+    assert_eq!(on(0), vec![Selection::caret(pos(0, 0))]);
+    assert!(on(1).is_empty());
+    assert_eq!(on(5).len(), 1, "the spanning selection covers line 5");
+    assert_eq!(on(7).len(), 2, "it ends on line 7, where a caret also sits");
+    assert!(on(8).is_empty());
+    assert_eq!(on(9), vec![Selection::caret(pos(9, 0))]);
+}

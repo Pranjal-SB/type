@@ -200,17 +200,45 @@ impl Theme {
         })
     }
 
-    /// Render a palette back out as a theme file.
+    /// Render the theme back out as a theme file.
     ///
     /// This is how the shipped default becomes a file rather than a private
     /// path, and it is what keeps `every_ui_key_the_editor_has_can_be_set_from_a_file`
     /// honest: the emitter destructures `ThemeColors` exhaustively, so a new
     /// colour cannot be added without appearing here, and the round-trip then
     /// proves the parser accepts everything the emitter writes.
-    pub fn write_toml(name: &str, kind: Kind, colors: &ThemeColors) -> String {
-        let mut out = format!("name = {name:?}\nkind = {:?}\n\n[ui]\n", kind.label());
-        for (key, colour) in ui_pairs(colors) {
+    ///
+    /// `[ui]` and `[syntax]` both, with every colour written as a literal,
+    /// which is also why there is no `[palette]`: names were resolved at load,
+    /// and the colours they named are all here. It wrote `[ui]` alone until
+    /// gap 119, so a theme that went through it lost every syntax colour.
+    pub fn to_toml(&self) -> String {
+        let mut out = format!(
+            "name = {:?}\nkind = {:?}\n\n[ui]\n",
+            self.name,
+            self.kind.label()
+        );
+        for (key, colour) in ui_pairs(&self.colors) {
             out.push_str(&format!("{key} = \"{}\"\n", hex_of(colour)));
+        }
+        out.push_str("\n[syntax]\n");
+        for (scope, style) in &self.syntax.scopes {
+            let mut fields = Vec::new();
+            if let Some(fg) = style.fg {
+                fields.push(format!("fg = \"{}\"", hex_of(fg)));
+            }
+            if let Some(bg) = style.bg {
+                fields.push(format!("bg = \"{}\"", hex_of(bg)));
+            }
+            let modifiers: Vec<String> = MODIFIERS
+                .iter()
+                .filter(|(_, m)| style.add_modifier.contains(*m))
+                .map(|(name, _)| format!("{name:?}"))
+                .collect();
+            if !modifiers.is_empty() {
+                fields.push(format!("modifiers = [{}]", modifiers.join(", ")));
+            }
+            out.push_str(&format!("{scope:?} = {{ {} }}\n", fields.join(", ")));
         }
         out
     }
@@ -467,18 +495,24 @@ fn is_ui_key(key: &str) -> bool {
 // [syntax]
 // ---------------------------------------------------------------------------
 
+/// Every modifier a theme may name, for the parser and the writer alike.
+///
+/// Blink and hidden are deliberately absent. No editor uses them for syntax and
+/// a theme that can make code invisible is a theme that will.
+const MODIFIERS: [(&str, Modifier); 6] = [
+    ("bold", Modifier::BOLD),
+    ("dim", Modifier::DIM),
+    ("italic", Modifier::ITALIC),
+    ("underlined", Modifier::UNDERLINED),
+    ("reversed", Modifier::REVERSED),
+    ("crossed_out", Modifier::CROSSED_OUT),
+];
+
 fn parse_modifier(name: &str) -> Result<Modifier> {
-    // Blink and hidden are deliberately absent. No editor uses them for syntax
-    // and a theme that can make code invisible is a theme that will.
-    match name {
-        "bold" => Ok(Modifier::BOLD),
-        "dim" => Ok(Modifier::DIM),
-        "italic" => Ok(Modifier::ITALIC),
-        "underlined" => Ok(Modifier::UNDERLINED),
-        "reversed" => Ok(Modifier::REVERSED),
-        "crossed_out" => Ok(Modifier::CROSSED_OUT),
-        other => bail!(
-            "{other:?} is not a modifier — bold, dim, italic, underlined, reversed or crossed_out"
+    match MODIFIERS.iter().find(|(known, _)| *known == name) {
+        Some((_, modifier)) => Ok(*modifier),
+        None => bail!(
+            "{name:?} is not a modifier: bold, dim, italic, underlined, reversed or crossed_out"
         ),
     }
 }

@@ -12,6 +12,7 @@ pub mod theme;
 
 pub use action::{Action, Direction, Motion};
 pub use audit::audit;
+pub use chrome::printable;
 pub use colour::{Depth, downgrade};
 pub use diagnostic::{Diagnostic, Severity};
 pub use event::{AppEvent, HandlerId, NotifyLevel, PanelEvent, PanelId};
@@ -20,3 +21,6 @@ pub use keymap::Keymap;
 pub use panel::{Panel, RenderContext, ThemeColors};
 pub use style::{UNDERCURL, Undercurl};
 pub use theme::{Kind, SyntaxTheme, Theme};
+/// Re-exported because `PanelEvent::OpenFile` carries one, and a panel crate
+/// should not need `typ-buffer` in its manifest to say where to open a file.
+pub use typ_buffer::Position;

@@ -32,6 +32,50 @@ fn names_are_snake_case_and_unique() {
     }
 }
 
+/// Every name `Action::name` can return, read from its source.
+///
+/// `name()` is an exhaustive match, so the compiler makes a new variant give
+/// itself a name there. `ALL` is a hand-written list the compiler knows nothing
+/// about. Reading the match's string literals is what ties the two together: a
+/// variant with a name and no place in `ALL` fails here, rather than shipping
+/// unbindable and missing from the palette while every test that iterates
+/// `ALL` stays green. Gap 121.
+fn names_in_the_source() -> Vec<&'static str> {
+    let source = include_str!("../src/action.rs");
+    let start = source
+        .find("pub fn name(&self)")
+        .expect("Action::name moved");
+    let end = source[start..]
+        .find("pub fn from_name")
+        .expect("Action::from_name moved")
+        + start;
+    source[start..end]
+        .split("=> \"")
+        .skip(1)
+        .filter_map(|rest| rest.split('"').next())
+        .collect()
+}
+
+#[test]
+fn every_name_the_match_can_return_is_in_all() {
+    // Typed text is deliberately unbindable; see the `Action` docs. The
+    // `go_to_tab_N` names come from a table rather than a literal arm, so the
+    // scan does not see them and `actions_round_trip_through_their_names`
+    // covers them instead.
+    let unreachable = ["insert_char_literal"];
+    let names = names_in_the_source();
+    assert!(names.len() > 40, "the scan found only {names:?}");
+    for name in names {
+        if unreachable.contains(&name) {
+            continue;
+        }
+        assert!(
+            Action::from_name(name).is_some(),
+            "{name} has a name and is missing from Action::ALL"
+        );
+    }
+}
+
 #[test]
 fn an_unknown_name_is_rejected_rather_than_guessed() {
     assert_eq!(Action::from_name("move_sideways"), None);

@@ -353,7 +353,10 @@ impl Keymap {
             toml::from_str(src).context("parsing the keybinding table")?;
 
         let mut staged: Vec<(String, Option<Action>)> = Vec::new();
-        for (chord, action_name) in table {
+        for (spelling, action_name) in table {
+            // Canonicalised on the way in, so the table holds exactly the form
+            // `lookup` compares against.
+            let chord = crate::key::canonical_chord(&spelling).map_err(|e| anyhow!(e))?;
             if action_name.is_empty() {
                 // An empty action unbinds, which a user needs in order to free
                 // a chord their terminal or window manager wants for itself.

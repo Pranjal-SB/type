@@ -215,29 +215,33 @@ fn the_palette_shows_what_key_runs_each_command() {
 
 #[test]
 fn an_unbound_action_shows_no_binding_rather_than_a_wrong_one() {
+    // This used to check every empty row against `Keymap::default_bindings()`,
+    // which is the table that built the rows, and if no action happened to be
+    // unbound the loop never ran at all. Gap 135. Now an action is unbound on
+    // purpose, through the user's keymap, which is also what the palette has
+    // to read: a row taken from the defaults would still say ctrl+q.
     let (mut app, _dir) = app("unbound");
-    app.handle_chord(KeyChord::from_event(KeyEvent::new(
-        KeyCode::Char('P'),
-        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-    )))
-    .unwrap();
+    let mut keymap = Keymap::default_bindings();
+    assert_eq!(keymap.bindings_for(Action::Quit), vec!["ctrl+q"]);
+    keymap.merge_toml("\"ctrl+q\" = \"\"").unwrap();
+    app.set_keymap(keymap);
+
+    app.open_command_palette();
 
     let rows = app.picker().unwrap().commands();
-    let unbound: Vec<&str> = rows
-        .iter()
-        .filter(|r| r.binding.is_empty())
-        .map(|r| r.name.as_str())
-        .collect();
-    // Not an assertion that some action is unbound — that changes as the keymap
-    // grows. The assertion is that an empty binding is the representation, so
-    // nothing has to invent a placeholder that looks like a key.
-    for name in unbound {
-        assert!(
-            Keymap::default_bindings()
-                .bindings_for(Action::from_name(name).expect("a listed name"))
-                .is_empty()
-        );
-    }
+    let binding_of = |name: &str| {
+        rows.iter()
+            .find(|r| r.name == name)
+            .unwrap_or_else(|| panic!("{name} is not in the palette"))
+            .binding
+            .clone()
+    };
+    assert_eq!(
+        binding_of("quit"),
+        "",
+        "an unbound action shows a placeholder, or the default's chord"
+    );
+    assert_eq!(binding_of("save"), "ctrl+s", "a bound one lost its chord");
 }
 
 #[test]
@@ -316,5 +320,44 @@ fn enter_on_an_empty_result_list_runs_nothing() {
     assert!(
         app.picker().is_some(),
         "Enter on nothing closed the overlay anyway"
+    );
+}
+
+// --- the two actions that answer their own confirmation --------------------
+//
+// `handle_chord` exempts Quit and CloseTab from `clear_transient`, because
+// their confirmation *is* the next press of the same key. The palette reaches
+// the same two actions by name and did not: it cleared the flag it was about
+// to set, so on a dirty buffer neither could ever complete.
+
+fn dirty(name: &str) -> (App, PathBuf) {
+    let (mut app, dir) = app(name);
+    app.handle_chord(key(KeyCode::Char('X'))).unwrap();
+    assert!(app.editor().is_dirty(), "the fixture is not dirty");
+    (app, dir)
+}
+
+#[test]
+fn quit_can_be_confirmed_from_the_palette() {
+    let (mut app, _dir) = dirty("palette-quit");
+    app.apply_named_action(Action::Quit).unwrap();
+    assert!(!app.should_quit(), "a dirty buffer should ask first");
+    app.apply_named_action(Action::Quit).unwrap();
+    assert!(
+        app.should_quit(),
+        "quit never completes from the palette; status was {:?}",
+        app.status()
+    );
+}
+
+#[test]
+fn a_tab_can_be_closed_from_the_palette() {
+    let (mut app, _dir) = dirty("palette-close");
+    app.apply_named_action(Action::CloseTab).unwrap();
+    app.apply_named_action(Action::CloseTab).unwrap();
+    assert!(
+        !app.editor().is_dirty(),
+        "close never completes from the palette; status was {:?}",
+        app.status()
     );
 }

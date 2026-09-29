@@ -2195,6 +2195,7 @@ dependencies = [
  "typ-find",
  "typ-lsp",
  "typ-syntax",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -2223,7 +2224,6 @@ dependencies = [
 name = "typ-lsp"
 version = "0.3.0"
 dependencies = [
- "anyhow",
  "gen-lsp-types",
  "libc",
  "lsp-server",
@@ -2264,6 +2264,7 @@ version = "0.3.0"
 dependencies = [
  "crossterm",
  "ratatui",
+ "typ-buffer",
  "typ-core",
  "typ-find",
  "unicode-segmentation",
@@ -2280,7 +2281,6 @@ dependencies = [
 name = "typ-syntax"
 version = "0.3.0"
 dependencies = [
- "anyhow",
  "ropey",
  "tree-house",
  "tree-house-bindings",

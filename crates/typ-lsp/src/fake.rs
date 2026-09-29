@@ -30,6 +30,15 @@ struct Flags {
     /// Publish on `didChange` stamped with version 0, which is stale the
     /// moment anything has been typed. The client has to drop it.
     push_stale: bool,
+    /// Publish on `didOpen` a payload one field off the protocol's shape, so the
+    /// client's parse of it fails.
+    push_malformed: bool,
+    /// Publish on `didOpen` against the URI lowercased: the same file on a
+    /// case-insensitive filesystem, and a different `PathBuf`.
+    push_respelled: bool,
+    /// Publish on `didOpen` and `didChange` one diagnostic whose message is
+    /// the document text the notification carried.
+    echo: bool,
     /// Answer `textDocument/definition` with a sibling file rather than with
     /// the document itself, so a test can tell "jumped within the file" from
     /// "opened another one".
@@ -38,6 +47,19 @@ struct Flags {
     definition_missing: bool,
     /// Answer `textDocument/hover` with a plain string rather than markup.
     hover_plain: bool,
+    /// Answer `textDocument/hover` with `null`. Legal, and the ordinary answer
+    /// while a server is still indexing.
+    hover_empty: bool,
+    /// Answer `textDocument/hover` with a real error rather than a result.
+    hover_error: bool,
+    /// Answer the first N `textDocument/hover` requests with `ContentModified`
+    /// before answering properly. What rust-analyzer does whenever a salsa
+    /// cancellation lands mid-request and it has no retry of its own: the code
+    /// is not a refusal, it is "ask me again".
+    content_modified: usize,
+    /// Answer `initialize` with an error, and then stay up. A server that
+    /// refuses the workspace it was started in.
+    refuse_initialize: bool,
     /// Answer nothing at all to a definition request. Servers do this when
     /// they have not finished indexing.
     no_definition: bool,
@@ -51,6 +73,7 @@ struct Flags {
     exit_now: bool,
     sleep: bool,
     spawn_child: bool,
+    close_stdin: bool,
     die_after: Option<usize>,
 }
 
@@ -64,9 +87,20 @@ impl Flags {
             server_request: has("--server-request"),
             push: has("--push") || has("--push-stale"),
             push_stale: has("--push-stale"),
+            push_malformed: has("--push-malformed"),
+            push_respelled: has("--push-respelled"),
+            echo: has("--echo"),
             definition_elsewhere: has("--definition-elsewhere"),
             definition_missing: has("--definition-missing"),
             hover_plain: has("--hover-plain"),
+            hover_empty: has("--hover-empty"),
+            hover_error: has("--hover-error"),
+            refuse_initialize: has("--refuse-initialize"),
+            content_modified: args
+                .iter()
+                .find_map(|a| a.strip_prefix("--content-modified="))
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0),
             no_definition: has("--no-definition"),
             progress: has("--progress") || has("--progress-create"),
             progress_create: has("--progress-create"),
@@ -74,6 +108,7 @@ impl Flags {
             exit_now: has("--exit-now"),
             sleep: has("--sleep"),
             spawn_child: has("--spawn-child"),
+            close_stdin: has("--close-stdin"),
             die_after: args
                 .iter()
                 .find_map(|a| a.strip_prefix("--die-after="))
@@ -106,6 +141,29 @@ fn progress(out: &mut impl Write, token: &str, value: serde_json::Value) {
     })
     .write(out);
     let _ = out.flush();
+}
+
+/// The id the fake gives `window/workDoneProgress/create`.
+const CREATE_ID: i32 = 7;
+
+/// Two tokens' worth of progress, which is the ordinary rust-analyzer shape
+/// rather than the strange one.
+fn progress_burst(out: &mut impl Write) {
+    progress(
+        out,
+        "indexing",
+        serde_json::json!({ "kind": "begin", "title": "Indexing" }),
+    );
+    progress(
+        out,
+        "indexing",
+        serde_json::json!({ "kind": "report", "percentage": 40 }),
+    );
+    progress(
+        out,
+        "fetching",
+        serde_json::json!({ "kind": "begin", "title": "Fetching" }),
+    );
 }
 
 /// A URI naming `name` in the same directory as `uri`.
@@ -148,11 +206,35 @@ fn publish(out: &mut impl Write, uri: &str, version: i64, items: &[(u32, i64, &s
     let _ = out.flush();
 }
 
+#[cfg(windows)]
+fn close_stdin() {
+    use std::os::windows::io::AsRawHandle;
+    // SAFETY: the handle is this process's stdin, nothing else reads it after
+    // this, and it is closed once.
+    unsafe { windows_sys::Win32::Foundation::CloseHandle(stdin().as_raw_handle()) };
+}
+
+#[cfg(unix)]
+fn close_stdin() {
+    // SAFETY: fd 0 is this process's stdin and nothing reads it after this.
+    unsafe { libc::close(0) };
+}
+
 /// Read frames from stdin and answer them until told to exit.
 pub fn run() {
     let flags = Flags::parse();
 
     if flags.exit_now {
+        return;
+    }
+
+    if flags.close_stdin {
+        // Break stdin while stdout stays open, so the client's writes fail and
+        // its reader never sees end of stream. Closed in-process rather than by
+        // exiting behind a grandchild: on Windows a grandchild inherits this
+        // process's stdin handle and keeps the pipe alive.
+        close_stdin();
+        std::thread::park();
         return;
     }
 
@@ -198,6 +280,7 @@ pub fn run() {
     let mut seen = 0usize;
     let mut open_uri = String::new();
     let mut version = 0i64;
+    let mut refusals = 0usize;
 
     while let Ok(Some(message)) = Message::read(&mut input) {
         seen += 1;
@@ -207,6 +290,31 @@ pub fn run() {
 
         match message {
             Message::Request(Request { id, method, params }) => {
+                let error = if method == "initialize" && flags.refuse_initialize {
+                    Some((-32603, "this workspace is refused"))
+                } else if method != "textDocument/hover" {
+                    None
+                } else if refusals < flags.content_modified {
+                    refusals += 1;
+                    Some((-32801, "content modified"))
+                } else if flags.hover_error {
+                    Some((-32603, "internal error"))
+                } else {
+                    None
+                };
+                if let Some((code, message)) = error {
+                    let _ = Message::Response(Response {
+                        id,
+                        response_result: Err(lsp_server::ResponseError {
+                            code,
+                            message: message.into(),
+                            data: None,
+                        }),
+                    })
+                    .write(&mut out);
+                    let _ = out.flush();
+                    continue;
+                }
                 let result = match method.as_str() {
                     // `clientSaw` is not LSP. It echoes the initialize params
                     // straight back so a test can assert what the client sent
@@ -242,6 +350,7 @@ pub fn run() {
                             },
                         })
                     }
+                    "textDocument/hover" if flags.hover_empty => serde_json::Value::Null,
                     "textDocument/hover" if flags.hover_plain => serde_json::json!({
                         "contents": "plain words",
                     }),
@@ -278,6 +387,31 @@ pub fn run() {
                     "fake/endProgress" if flags.progress => {
                         progress(&mut out, "indexing", serde_json::json!({ "kind": "end" }));
                     }
+                    "textDocument/didOpen" if flags.push_malformed => {
+                        let _ = Message::Notification(Notification {
+                            method: "textDocument/publishDiagnostics".into(),
+                            params: serde_json::json!({
+                                "uri": open_uri,
+                                "diagnostics": [{ "range": "line five", "message": "x" }],
+                            }),
+                        })
+                        .write(&mut out);
+                        let _ = out.flush();
+                    }
+                    // The text it was sent, back as a diagnostic message, so a
+                    // test can compare the payload rather than count frames.
+                    "textDocument/didOpen" | "textDocument/didChange" if flags.echo => {
+                        let text = params
+                            .pointer("/textDocument/text")
+                            .or_else(|| params.pointer("/contentChanges/0/text"))
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("<no text>");
+                        publish(&mut out, &open_uri, version, &[(0, 1, text)]);
+                    }
+                    "textDocument/didOpen" if flags.push_respelled => {
+                        let respelled = open_uri.to_lowercase();
+                        publish(&mut out, &respelled, version, &[(5, 1, "fake: respelled")]);
+                    }
                     "textDocument/didOpen" if flags.push => {
                         publish(&mut out, &open_uri, version, &[(5, 1, "fake: on open")]);
                     }
@@ -299,40 +433,20 @@ pub fn run() {
                 }
                 if method == "initialized" && flags.progress {
                     if flags.progress_create {
+                        // **And then wait.** The burst goes out when the client
+                        // answers, not regardless of whether it does: sending
+                        // it anyway is what let a client that answered nothing
+                        // pass the test for this. See the `Response` arm.
                         let _ = Message::Request(Request {
-                            id: 7.into(),
+                            id: CREATE_ID.into(),
                             method: "window/workDoneProgress/create".into(),
                             params: serde_json::json!({ "token": "indexing" }),
                         })
                         .write(&mut out);
                         let _ = out.flush();
+                    } else {
+                        progress_burst(&mut out);
                     }
-                    progress(
-                        &mut out,
-                        "indexing",
-                        serde_json::json!({
-                            "kind": "begin",
-                            "title": "Indexing",
-                        }),
-                    );
-                    progress(
-                        &mut out,
-                        "indexing",
-                        serde_json::json!({
-                            "kind": "report",
-                            "percentage": 40,
-                        }),
-                    );
-                    // A second token at once. Two pieces of work is the
-                    // ordinary case for rust-analyzer, not the strange one.
-                    progress(
-                        &mut out,
-                        "fetching",
-                        serde_json::json!({
-                            "kind": "begin",
-                            "title": "Fetching",
-                        }),
-                    );
                 }
                 if method == "initialized" && flags.server_request {
                     // The half clients forget. rust-analyzer really does this,
@@ -346,7 +460,21 @@ pub fn run() {
                     let _ = out.flush();
                 }
             }
-            Message::Response(_) => {}
+            Message::Response(response) => {
+                // The reply to `window/workDoneProgress/create`, and the burst
+                // waits for it. A fake that sends progress regardless cannot
+                // tell a client that answers from one that does not, and the
+                // client did not answer at all. **An accepting reply**: a
+                // client is entitled to refuse the token, and one that refuses
+                // should not then be sent progress for it, so an error here is
+                // as good as silence. Gaps 78 and 131.
+                if flags.progress_create
+                    && response.id == CREATE_ID.into()
+                    && response.response_result.is_ok()
+                {
+                    progress_burst(&mut out);
+                }
+            }
         }
     }
 }

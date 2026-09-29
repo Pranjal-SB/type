@@ -249,3 +249,136 @@ fn both_actions_are_reachable_from_the_keymap_and_the_palette() {
         "an action outside ALL cannot be reached by name"
     );
 }
+
+// --- content modified ----------------------------------------------------
+//
+// `-32801 ContentModified` is not a refusal. rust-analyzer answers with it
+// whenever a salsa cancellation lands mid-request and the handler has no
+// `ALLOW_RETRYING` of its own, which is most of them, so a client that treats
+// it as an error gets nothing back from a healthy server, and gets it silently.
+// Driving the real rust-analyzer, the first hover after indexing finished came
+// back this way every time; the second one answered.
+
+#[test]
+fn a_content_modified_answer_is_asked_again() {
+    let (mut app, rx, _) = ready("retry-once", &["--content-modified=1"]);
+    act(&mut app, typ_core::Action::Hover);
+    assert!(
+        pump_until(&mut app, &rx, |a| a.hover().is_some()),
+        "the retry never happened, so a healthy server said nothing"
+    );
+    assert!(app.hover().unwrap().contains("fn fake()"));
+    assert_eq!(app.lsp_requests_of("textDocument/hover"), 2);
+}
+
+#[test]
+fn retrying_gives_up_rather_than_spinning() {
+    // A server that always cancels must not be asked forever. The retry is
+    // paced by the round trip rather than by a timer, so a loop here is a busy
+    // server rather than a busy client: still worth bounding. One ask and
+    // three retries.
+    let (mut app, rx, _) = ready("retry-forever", &["--content-modified=99"]);
+    act(&mut app, typ_core::Action::Hover);
+    assert!(pump_until(&mut app, &rx, |a| a
+        .lsp_requests_of("textDocument/hover")
+        == 4));
+    settle(&mut app, &rx);
+    assert_eq!(app.lsp_requests_of("textDocument/hover"), 4);
+    assert!(app.hover().is_none());
+}
+
+#[test]
+fn a_real_error_is_not_retried() {
+    // Only -32801 means "ask again". Anything else is an answer. The fake sends
+    // a real `InternalError` here, so a client retrying on every code fails.
+    let (mut app, rx, _) = ready("real-error", &["--hover-error"]);
+    act(&mut app, typ_core::Action::Hover);
+    settle(&mut app, &rx);
+    assert_eq!(app.lsp_requests_of("textDocument/hover"), 1);
+    assert!(app.hover().is_none());
+}
+
+#[test]
+fn a_server_that_refused_the_workspace_says_so_rather_than_still_starting() {
+    // Gap 93. "Still starting" is a promise that waiting helps, and it does not.
+    let dir = fixture("refused-init");
+    let (tx, rx) = channel();
+    let mut app = App::new(&dir).unwrap();
+    app.add_language_server(server(&["--refuse-initialize"]));
+    app.set_event_sender(tx);
+    app.open_path(&dir.join("a.rs")).unwrap();
+
+    let deadline = Instant::now() + WAIT;
+    let mut status = None;
+    while Instant::now() < deadline {
+        settle(&mut app, &rx);
+        act(&mut app, typ_core::Action::Hover);
+        status = app.status().map(str::to_string);
+        if status.as_deref().is_some_and(|s| s.contains("refused")) {
+            break;
+        }
+    }
+    assert!(
+        status.as_deref().is_some_and(|s| s.contains("refused")),
+        "status was: {status:?}"
+    );
+}
+
+#[test]
+fn a_refused_request_says_why_in_the_servers_words() {
+    // Every neighbouring arm sets the status. A refusal that only logs is, with
+    // `TYP_LOG` unset, a key that did nothing. Gap 101.
+    let (mut app, rx, _) = ready("refused", &["--hover-error"]);
+    act(&mut app, typ_core::Action::Hover);
+    assert!(pump_until(&mut app, &rx, |a| a.status().is_some()));
+    assert!(
+        app.status().is_some_and(|s| s.contains("internal error")),
+        "status was: {:?}",
+        app.status()
+    );
+}
+
+// --- an answer that arrived empty ----------------------------------------
+//
+// `null` is a legal answer to both requests and the ordinary one while a
+// server is still indexing. Silence is the wrong way to report it: both of
+// these are explicit keypresses, and a keypress that produces nothing at all
+// is indistinguishable from a feature that does not work. Driving the real
+// rust-analyzer, an `Alt+H` that answered `null` looked exactly like the
+// broken hover it was not.
+
+#[test]
+fn a_definition_that_is_not_there_yet_says_so() {
+    let (mut app, rx, _) = ready("empty-definition", &["--no-definition"]);
+    act(&mut app, typ_core::Action::GotoDefinition);
+    assert!(pump_until(&mut app, &rx, |a| a.status().is_some()));
+    assert!(
+        app.status().is_some_and(|s| s.contains("definition")),
+        "status was: {:?}",
+        app.status()
+    );
+    assert_eq!(app.editor().cursor(), Position { line: 0, col: 0 });
+}
+
+#[test]
+fn a_hover_with_nothing_to_show_says_so() {
+    let (mut app, rx, _) = ready("empty-hover", &["--hover-empty"]);
+    act(&mut app, typ_core::Action::Hover);
+    assert!(pump_until(&mut app, &rx, |a| a.status().is_some()));
+    assert!(
+        app.status().is_some_and(|s| s.contains("hover")),
+        "status was: {:?}",
+        app.status()
+    );
+    assert!(app.hover().is_none(), "there was nothing to put in a box");
+}
+
+#[test]
+fn an_answer_that_had_something_says_nothing() {
+    // The message is for the empty case only. A status line that reports every
+    // success is a status line nobody reads.
+    let (mut app, rx, _) = ready("quiet-on-success", &[]);
+    act(&mut app, typ_core::Action::Hover);
+    assert!(pump_until(&mut app, &rx, |a| a.hover().is_some()));
+    assert_eq!(app.status(), None);
+}

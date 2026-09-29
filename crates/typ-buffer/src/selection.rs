@@ -103,6 +103,19 @@ impl Selections {
         self.list.iter()
     }
 
+    /// The selections that touch `line`, found by binary search.
+    ///
+    /// The set is document-ordered and non-overlapping, so both starts and ends
+    /// ascend and the ones reaching a line are one contiguous run. This is what
+    /// lets a frame cost the selections on screen rather than all of them: a
+    /// per-cell scan of the whole set was 132 ms at four thousand cursors, most
+    /// of them nowhere near the viewport. Gap 88.
+    pub fn touching_line(&self, line: usize) -> &[Selection] {
+        let from = self.list.partition_point(|s| s.range().1.line < line);
+        let to = self.list.partition_point(|s| s.range().0.line <= line);
+        &self.list[from..to.max(from)]
+    }
+
     /// Replace everything with one selection.
     pub fn set_single(&mut self, selection: Selection) {
         self.list = vec![selection];
@@ -116,7 +129,24 @@ impl Selections {
         self.normalize();
     }
 
+    /// Add several selections and make the last one primary.
+    ///
+    /// `push` for each of them, with one normalize at the end rather than one
+    /// per selection, which was quadratic in the count, and Ctrl+Shift+L on a
+    /// large file adds thousands. Gap 87.
+    pub fn extend(&mut self, selections: impl IntoIterator<Item = Selection>) {
+        let before = self.list.len();
+        self.list.extend(selections);
+        if self.list.len() > before {
+            self.primary = self.list.len() - 1;
+        }
+        self.normalize();
+    }
+
     /// Rewrite every selection, then restore the invariants.
+    ///
+    /// The primary stays the selection the user was steering, wherever the
+    /// rewrite sorts it to.
     pub fn map_in_place(&mut self, mut f: impl FnMut(Selection) -> Selection) {
         for selection in &mut self.list {
             *selection = f(*selection);
@@ -163,19 +193,51 @@ fn overlaps(a: Selection, b: Selection) -> bool {
         // same rule as `Selection::contains` being half-open.
         return true;
     }
-    // Two carets at the same position are one cursor, not two. Half-open
-    // ranges alone would keep them apart, because an empty range never
-    // strictly contains anything — and the consequence is typing inserting
-    // twice at the same place.
-    a.is_empty() && b.is_empty() && a_end == b_start
+    // The boundary case, and it is one-sided. `a` is the earlier of the two
+    // (`normalize` sorts by `range()` before it gets here) so `a_end == b_start`
+    // means one of:
+    //
+    //   * `a` is a caret at `b`'s start. `[P,Q)` **does** contain `P`, so this
+    //     is one cursor. Two carets at the same position are the same case.
+    //   * `a` is a selection ending where `b` starts. Half-open, so they only
+    //     touch: two cursors.
+    //   * `a` is a selection and `b` a caret at its end. `[P,Q)` does **not**
+    //     contain `Q`: two cursors.
+    //
+    // So it turns on `a` being empty and not on either being empty. Testing
+    // both (which is what this did) left a caret sitting exactly at a
+    // selection's start as a second entry covering the same position, and
+    // `edit_at_each_selection` then replaced one grapheme to the right of what
+    // was selected. Gap 72.
+    a.is_empty() && a_end == b_start
 }
 
+/// The smallest selection covering both.
+///
+/// **Direction is part of the answer, not a detail of it.** The head is the end
+/// that moves, so a merge that always returns a forward selection puts the head
+/// at the wrong end of two leftward ones, and the next Shift+Left shrinks the
+/// selection from the far edge instead of extending it from the near one.
+///
+/// Only agreement is honoured. Two selections travelling opposite ways have no
+/// combined direction to preserve, and inventing one would mean guessing which
+/// of them the user is about to move; forward is the older behaviour and is no
+/// worse for that case. Gap 73.
 fn union(a: Selection, b: Selection) -> Selection {
     let (a_start, a_end) = a.range();
     let (b_start, b_end) = b.range();
+    let (start, end) = (a_start.min(b_start), a_end.max(b_end));
+
+    let backwards = |s: &Selection| !s.is_empty() && s.head < s.anchor;
+    if backwards(&a) && backwards(&b) {
+        return Selection {
+            anchor: end,
+            head: start,
+        };
+    }
     Selection {
-        anchor: a_start.min(b_start),
-        head: a_end.max(b_end),
+        anchor: start,
+        head: end,
     }
 }
 

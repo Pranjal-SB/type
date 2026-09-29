@@ -26,6 +26,9 @@ pub enum EditKind {
 pub struct Snapshot {
     pub rope: Rope,
     pub selections: Selections,
+    /// Which version of the text `rope` is, so the buffer can tell whether an
+    /// undo landed back on the text last saved. See `TextBuffer::is_dirty`.
+    pub state: u64,
 }
 
 /// Whole-content undo history, stored as rope snapshots.
@@ -73,15 +76,12 @@ impl History {
     ///
     /// Continuing a run means *not* pushing: the snapshot already on the stack
     /// predates the whole run, which is exactly the state undo should restore.
-    pub fn record(&mut self, kind: EditKind, before: Rope, selections: &Selections) {
+    pub fn record(&mut self, kind: EditKind, before: Snapshot) {
         self.redo.clear();
         if self.open_run == Some(kind) && kind != EditKind::Other {
             return;
         }
-        self.undo.push(Snapshot {
-            rope: before,
-            selections: selections.clone(),
-        });
+        self.undo.push(before);
         // Forget the oldest step, never the newest. `remove(0)` is O(n) on a
         // 1000-element Vec of cheap clones and runs once per *step*, not per
         // keystroke — a VecDeque would trade that for a less obvious type on
@@ -106,24 +106,18 @@ impl History {
     }
 
     /// Returns the state to restore, banking `current` for redo.
-    pub fn undo(&mut self, current: Rope, selections: &Selections) -> Option<Snapshot> {
+    pub fn undo(&mut self, current: Snapshot) -> Option<Snapshot> {
         let previous = self.undo.pop()?;
-        self.redo.push(Snapshot {
-            rope: current,
-            selections: selections.clone(),
-        });
+        self.redo.push(current);
         // An undo always ends the run: typing after an undo must not fold into
         // the step that was just undone.
         self.open_run = None;
         Some(previous)
     }
 
-    pub fn redo(&mut self, current: Rope, selections: &Selections) -> Option<Snapshot> {
+    pub fn redo(&mut self, current: Snapshot) -> Option<Snapshot> {
         let next = self.redo.pop()?;
-        self.undo.push(Snapshot {
-            rope: current,
-            selections: selections.clone(),
-        });
+        self.undo.push(current);
         self.open_run = None;
         Some(next)
     }

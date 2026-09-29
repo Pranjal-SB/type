@@ -145,8 +145,7 @@ fn the_tree_opens_into_a_tab_too() {
 
     app.apply(vec![PanelEvent::OpenFile {
         path: dir.join("second.rs"),
-        line: 0,
-        col: 0,
+        at: typ_core::Position::default(),
     }])
     .unwrap();
 
@@ -252,4 +251,36 @@ fn opening_a_path_that_does_not_exist_yet_starts_an_empty_buffer() {
     assert_eq!(app.editor_title(), "not-yet.rs");
     assert_eq!(app.editor_mut().line_text(0), "");
     assert!(!path.exists(), "opening must not create the file");
+}
+
+#[test]
+fn opening_a_file_that_cannot_be_read_says_so_instead_of_exiting() {
+    // `TreePanel::activate` emits `OpenFile` for any non-directory entry, and
+    // the picker reaches the same path. A PNG is not UTF-8, so `from_path`
+    // fails, and that error used to propagate out of `apply` and end the
+    // process. `jump_to_definition` already handled this correctly; `apply`
+    // never got the same treatment. Gap 71.
+    let dir = fixture("open-binary");
+    let binary = dir.join("logo.png");
+    std::fs::write(&binary, [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]).unwrap();
+
+    let mut app = App::new(&dir).unwrap();
+    let before = app.tab_count();
+
+    let outcome = app.apply(vec![PanelEvent::OpenFile {
+        path: binary,
+        at: typ_core::Position::default(),
+    }]);
+
+    assert!(
+        outcome.is_ok(),
+        "opening an unreadable file ended the session: {:?}",
+        outcome.err()
+    );
+    assert_eq!(app.tab_count(), before, "a broken tab was opened anyway");
+    assert!(
+        app.status().is_some_and(|s| s.contains("logo.png")),
+        "no status explained the failure; status was {:?}",
+        app.status()
+    );
 }

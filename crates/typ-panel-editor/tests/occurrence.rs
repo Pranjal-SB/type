@@ -181,3 +181,42 @@ fn typing_after_selecting_occurrences_edits_every_one() {
     assert_eq!(panel.line_text(0), "X");
     assert_eq!(panel.line_text(1), "X");
 }
+
+#[test]
+fn a_word_matches_only_whole_words() {
+    // The caret is in `value`. `other_value` and `valueless` contain it and are
+    // different identifiers; renaming them along with it is the wrong edit.
+    let mut panel = EditorPanel::from_str("value other_value valueless value\n");
+    panel.set_selections_for_test(vec![Selection::caret(pos(0, 1))]);
+
+    panel.apply_action(Action::SelectAllOccurrences);
+    assert_eq!(
+        ranges(&panel),
+        vec![(pos(0, 0), pos(0, 5)), (pos(0, 28), pos(0, 33))]
+    );
+
+    panel.set_selections_for_test(vec![Selection::caret(pos(0, 1))]);
+    panel.apply_action(Action::SelectNextOccurrence);
+    panel.apply_action(Action::SelectNextOccurrence);
+    assert_eq!(
+        ranges(&panel),
+        vec![(pos(0, 0), pos(0, 5)), (pos(0, 28), pos(0, 33))],
+        "Ctrl+D skipped past the partial matches"
+    );
+}
+
+#[test]
+fn a_selection_that_is_part_of_a_word_still_matches_inside_words() {
+    // Selecting `val` by hand is asking for `val` wherever it is.
+    let mut panel = EditorPanel::from_str("value val\n");
+    panel.set_selections_for_test(vec![Selection {
+        anchor: pos(0, 0),
+        head: pos(0, 3),
+    }]);
+
+    panel.apply_action(Action::SelectAllOccurrences);
+    assert_eq!(
+        ranges(&panel),
+        vec![(pos(0, 0), pos(0, 3)), (pos(0, 6), pos(0, 9))]
+    );
+}

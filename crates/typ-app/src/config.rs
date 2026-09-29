@@ -40,6 +40,20 @@ pub fn config_dir() -> Option<PathBuf> {
     Some(PathBuf::from(base).join("typ"))
 }
 
+/// Read a config file. `Ok(None)` when there is no file, which is the normal
+/// case; `Err` with a message naming the file for anything else.
+///
+/// **Only `NotFound` is absence.** A permission problem, a directory where the
+/// file should be, or a file saved as UTF-16 used to read as "no config", so the
+/// user's settings silently did not apply. Gap 97.
+pub(crate) fn read_config(path: &std::path::Path) -> Result<Option<String>, String> {
+    match std::fs::read_to_string(path) {
+        Ok(source) => Ok(Some(source)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
+}
+
 /// `keys.toml` in the config directory.
 pub fn config_path() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("keys.toml"))

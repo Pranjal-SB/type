@@ -243,10 +243,42 @@ fn a_long_message_is_truncated_rather_than_shoving_the_position_off_screen() {
     let terminal = draw(&mut app, 60, 8);
     let rows = rows(&terminal);
     let status = &rows[7];
-    assert_eq!(status.chars().count(), 60);
+    // Cells, not chars: the implementation used to measure with `chars()` too,
+    // so this could not see gap 105 by construction. Gap 130.
+    assert_eq!(typ_buffer::display_width(status), 60);
     assert!(
         status.ends_with("main.rs  rs  LF  Spaces: 4  1:1  33%"),
         "status was: {status}"
+    );
+}
+
+#[test]
+fn a_wide_file_name_does_not_push_the_position_off_the_status_bar() {
+    // Gap 105. A CJK name is one char and two cells per character, so the
+    // right half was under-measured by three cells and its tail fell off.
+    let dir = fixture("wide-name");
+    let file = dir.join("日本語.rs");
+    std::fs::write(&file, "fn x() {}\n").unwrap();
+    let mut app = App::new(&dir).unwrap();
+    app.open_path(&file).unwrap();
+
+    let terminal = draw(&mut app, 60, 8);
+    let rows = rows(&terminal);
+    let status = &rows[7];
+
+    let right = app.status_right();
+    assert!(right.contains("日本語.rs"), "right half was: {right}");
+    // As it lands in cells: a wide character's continuation cell is blank.
+    let in_cells: String = right
+        .chars()
+        .flat_map(|c| {
+            let wide = typ_buffer::display_width(&c.to_string()) == 2;
+            std::iter::once(c).chain(wide.then_some(' '))
+        })
+        .collect();
+    assert!(
+        status.ends_with(&in_cells),
+        "the right half did not fit; status was {status:?}, right half {right:?}"
     );
 }
 

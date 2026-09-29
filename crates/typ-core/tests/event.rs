@@ -39,8 +39,7 @@ fn panel_event_stays_small() {
         PanelEvent::Focus(PanelId(0)),
         PanelEvent::OpenFile {
             path: "x".into(),
-            line: 0,
-            col: 0,
+            at: typ_core::Position::default(),
         },
         PanelEvent::OpenWith {
             handler: HandlerId("editor"),

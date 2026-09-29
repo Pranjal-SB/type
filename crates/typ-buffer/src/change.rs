@@ -47,11 +47,17 @@ impl Shift {
 
     /// Record what an edit did.
     ///
-    /// `original_end_line` is in original coordinates; `applied_end` and `after`
-    /// are in current ones — `applied_end` is where the edit's range ended once
-    /// the shift so far was applied, and `after` is where the replacement text
-    /// left the position.
-    pub fn record(&mut self, original_end_line: usize, applied_end: Position, after: Position) {
+    /// `original_end_line` is in original coordinates; `applied` is the edit
+    /// as it ran, in current ones: `old_end` is where its range ended once the
+    /// shift so far was applied, and `new_end` is where the replacement text
+    /// left it.
+    ///
+    /// A span rather than two bare `Position`s: those were in the same
+    /// coordinate space and interchangeable to the compiler, and swapping them
+    /// compiles and lands every later multi-caret edit in the wrong place.
+    /// Gap 140.
+    pub fn record(&mut self, original_end_line: usize, applied: EditSpan) {
+        let (applied_end, after) = (applied.old_end, applied.new_end);
         let col_delta = after.col as isize - applied_end.col as isize;
         if self.col_line == Some(original_end_line) {
             self.cols += col_delta;

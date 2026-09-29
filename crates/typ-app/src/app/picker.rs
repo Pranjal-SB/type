@@ -193,7 +193,10 @@ impl App {
             self.close_picker();
             return vec![PanelEvent::NeedsRedraw];
         }
-        self.dirty = true;
+        // **Not marked dirty here.** `finish` repaints when there are events,
+        // and the picker answers nothing but a left press. Marking it anyway
+        // made every motion report (one per cell the pointer crosses) a full
+        // render pass. Gap 124.
         self.absolutise(events)
     }
 
@@ -221,12 +224,11 @@ impl App {
         let events: Vec<PanelEvent> = events
             .into_iter()
             .map(|event| match event {
-                PanelEvent::OpenFile { path, line, col } => {
+                PanelEvent::OpenFile { path, at } => {
                     opened = true;
                     PanelEvent::OpenFile {
                         path: self.root.join(path),
-                        line,
-                        col,
+                        at,
                     }
                 }
                 other => other,
@@ -320,7 +322,35 @@ impl App {
         };
         let generation = worker.grep(root, query, GREP_HITS, overrides);
         self.awaited_filter = Some(generation);
+        self.notice_dead_find_worker();
         generation
+    }
+
+    /// The query moved: re-read the mode and ask for what it now means.
+    ///
+    /// The mode is read *after* the change, because the change may have been
+    /// the `>` that set it, or the backspace that took it away again.
+    fn picker_query_changed(&mut self, query: String) {
+        self.refresh_picker_mode();
+        let mode = self.picker.as_ref().map(Picker::mode).unwrap_or_default();
+        self.request_for_mode(mode, query);
+    }
+
+    /// A paste while the overlay is up is more query, never an edit to the
+    /// buffer behind it. Gap 79: the key route had this guard and the paste
+    /// route did not.
+    pub(crate) fn paste_into_picker(&mut self, text: &str) {
+        let Some(picker) = self.picker.as_mut() else {
+            return;
+        };
+        let pasted: String = text.chars().filter(|c| !c.is_control()).collect();
+        if pasted.is_empty() {
+            return;
+        }
+        let query = format!("{}{pasted}", picker.query());
+        picker.set_query(query.clone());
+        self.picker_query_changed(query);
+        self.dirty = true;
     }
 
     /// Keys while the overlay is up.
@@ -339,12 +369,8 @@ impl App {
         let events = picker.handle_key(chord);
         let after = picker.query().to_string();
 
-        // The mode is read *after* the key, because the key may have been the
-        // `>` that changed it — or the backspace that took it away again.
         if before != after {
-            self.refresh_picker_mode();
-            let mode = self.picker.as_ref().map(Picker::mode).unwrap_or_default();
-            self.request_for_mode(mode, after);
+            self.picker_query_changed(after);
         }
         self.dirty = true;
 
@@ -388,6 +414,7 @@ impl App {
         if let Some(worker) = &mut self.find_worker {
             worker.index(self.root.clone());
         }
+        self.notice_dead_find_worker();
     }
 
     /// Ask for the best `limit` matches, and return the generation to await.
@@ -402,7 +429,20 @@ impl App {
         };
         let generation = worker.filter(query, limit);
         self.awaited_filter = Some(generation);
+        self.notice_dead_find_worker();
         generation
+    }
+
+    /// Let go of a find worker whose thread is gone, and say so.
+    ///
+    /// Without this the picker waited on a generation nothing would send,
+    /// empty and silent, while `is_wired` still answered true. Gap 91.
+    fn notice_dead_find_worker(&mut self) {
+        if self.find_worker.as_ref().is_some_and(|w| !w.is_alive()) {
+            self.find_worker = None;
+            crate::log_error!("the find worker is gone; the picker and search are off");
+            self.status = Some("File search stopped: its worker thread died.".into());
+        }
     }
 
     /// A find result arrived. Returns whether anything changed on screen.

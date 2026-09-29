@@ -126,7 +126,22 @@ impl Picker {
     /// Replace the query outright — what opening the palette by chord does,
     /// by typing the `>` the user would otherwise have typed.
     pub fn set_query(&mut self, query: String) {
+        self.replace_query(query);
+    }
+
+    /// Every query change comes through here, typed, deleted or pasted.
+    ///
+    /// **The selection goes back to the top.** The list re-ranks completely on
+    /// a new query, so the row that was third has nothing to do with the row
+    /// that is third now, and keeping the index meant Enter opened whatever
+    /// happened to land there. Gap 122.
+    fn replace_query(&mut self, query: String) {
+        if query == self.query {
+            return;
+        }
         self.query = query;
+        self.selected = 0;
+        self.offset = 0;
     }
 
     /// Replace the command rows.
@@ -179,13 +194,16 @@ impl Picker {
         match self.mode {
             Mode::Files => self.hits.get(index).map(|hit| PanelEvent::OpenFile {
                 path: hit.path.clone().into(),
-                line: 0,
-                col: 0,
+                at: typ_core::Position::default(),
             }),
+            // `hit.col` is a grapheme index: `typ-find` converts it before it
+            // leaves the worker.
             Mode::Search => self.lines.get(index).map(|hit| PanelEvent::OpenFile {
                 path: hit.path.clone().into(),
-                line: hit.line,
-                col: hit.col,
+                at: typ_core::Position {
+                    line: hit.line,
+                    col: hit.col,
+                },
             }),
             // A command opens nothing. The app reads `selected_command` after
             // the Enter goes past rather than the picker inventing a variant
@@ -283,11 +301,27 @@ impl Picker {
         self.selected = next.clamp(0, last as isize) as usize;
     }
 
-    /// Scroll without moving the selection — what a wheel event resolves to.
+    /// Move the viewport: what a wheel event resolves to.
+    ///
+    /// **The selection comes along.** This used to move `offset` alone, on the
+    /// reading that a wheel is not a selection gesture. It cannot be: `visible`
+    /// promises the selection is among the rows it returns and moves the offset
+    /// to keep that promise, and the mouse hit-test resolves a click against
+    /// exactly that slice. So a wheel notch that left the selection behind was
+    /// undone by the very next paint, and the list did not move at all: from
+    /// the top of a list, which is where every picker starts, the wheel did
+    /// nothing whatsoever. Gap 74.
+    ///
+    /// Carrying the selection is also what fzf and telescope do.
     pub fn scroll(&mut self, delta: isize, rows: usize) {
         let max = self.len().saturating_sub(rows);
         let next = self.offset as isize + delta;
         self.offset = next.clamp(0, max as isize) as usize;
+        if rows > 0 && self.len() > 0 {
+            let last = self.len() - 1;
+            let bottom = (self.offset + rows - 1).min(last);
+            self.selected = self.selected.clamp(self.offset.min(last), bottom);
+        }
     }
 
     /// Bring the selection into a window of `rows` lines.
@@ -328,7 +362,7 @@ impl Picker {
     }
 
     fn insert(&mut self, c: char) {
-        self.query.push(c);
+        self.replace_query(format!("{}{c}", self.query));
     }
 
     /// Remove one grapheme, not one byte or one char.
@@ -339,7 +373,7 @@ impl Picker {
     fn delete_backward(&mut self) {
         let mut graphemes: Vec<&str> = self.query.graphemes(true).collect();
         graphemes.pop();
-        self.query = graphemes.concat();
+        self.replace_query(graphemes.concat());
     }
 }
 
