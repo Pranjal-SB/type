@@ -44,6 +44,9 @@ mod palette {
     pub const BASE_01: Color = Color::Rgb(0x16, 0x1c, 0x25);
     pub const BASE_02: Color = Color::Rgb(0x1a, 0x21, 0x2c);
     pub const BASE_03: Color = Color::Rgb(0x62, 0x6e, 0x87);
+    /// Indent guides, between the chrome surface and the rule: decoration,
+    /// seen when looked for and quieter than any boundary.
+    pub const GUIDE: Color = Color::Rgb(0x3b, 0x45, 0x57);
     pub const BASE_04: Color = Color::Rgb(0x78, 0x89, 0xa0);
     pub const BASE_05: Color = Color::Rgb(0x84, 0x95, 0xac);
     pub const BASE_06: Color = Color::Rgb(0xa8, 0xb3, 0xc4);
@@ -103,11 +106,9 @@ pub struct ThemeColors {
 
     /// The vertical rule standing at each completed level of indentation.
     ///
-    /// Furniture, like the line numbers and the whitespace marks, and held to
-    /// the same floor for the same reason — below it the rules stop being
-    /// structure and become a texture down the left of the file. It names the
-    /// gutter's step in every shipped theme, which is also what stops the
-    /// greys drifting apart one widget at a time.
+    /// Decoration, not text (interface §1). It sat on the gutter's step until
+    /// v0.3.2, and at that brightness every nested block wore a ladder. The
+    /// audit now keeps it tellable from the page and quieter than a rule.
     pub indent_guide: Color,
 
     pub selection_bg: Color,
@@ -175,7 +176,7 @@ impl Default for ThemeColors {
             // same kind of furniture, and a palette where each widget invents
             // its own grey is how one visual system comes apart.
             whitespace: p::BASE_04,
-            indent_guide: p::BASE_04,
+            indent_guide: p::GUIDE,
 
             selection_bg: p::SELECT,
             selection_fg: p::BASE_08,

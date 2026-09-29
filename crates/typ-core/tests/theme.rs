@@ -67,8 +67,8 @@ fn light_fixture() -> ThemeColors {
         // The gutter's step: a mark is furniture, and it is held to the
         // furniture floor.
         whitespace: Color::Rgb(0x8a, 0x8d, 0x93),
-        // The same step again: guides and marks and numbers are one family.
-        indent_guide: Color::Rgb(0x8a, 0x8d, 0x93),
+        // Decoration: tellable from the page, quieter than the rule.
+        indent_guide: Color::Rgb(0xc8, 0xca, 0xd0),
 
         selection_bg: Color::Rgb(0xd3, 0xdc, 0xea),
         selection_fg: Color::Rgb(0x1a, 0x1c, 0x20),
@@ -147,6 +147,53 @@ fn a_rule_under_three_to_one_is_reported_on_either_ground() {
             "{rule} has to be reported, got: {bad:?}"
         );
     }
+}
+
+#[test]
+fn an_indent_guide_is_decoration_and_is_not_held_to_a_text_floor() {
+    // Interface §1: the guide is decorative, and at the gutter's step it drew a
+    // bright ladder down every nested block. Slate's §1 value sits at 1.9.
+    let theme = ThemeColors {
+        indent_guide: Color::Rgb(0x3b, 0x45, 0x57),
+        ..ThemeColors::default()
+    };
+
+    let bad = audit(&theme, Kind::Dark);
+
+    assert!(
+        !bad.iter().any(|f| f.starts_with("indent_guide")),
+        "a 1.9 guide is what the spec asks for, got: {bad:?}"
+    );
+}
+
+#[test]
+fn an_indent_guide_louder_than_the_rule_or_lost_in_the_page_is_reported() {
+    // Decoration still has two edges. Louder than a rule, a guide reads as a
+    // boundary it is not; at the page's own colour it is not there at all.
+    let theme = ThemeColors::default();
+    let loud = ThemeColors {
+        indent_guide: theme.line_number_fg,
+        ..theme
+    };
+    let lost = ThemeColors {
+        indent_guide: Color::Rgb(0x14, 0x18, 0x20),
+        ..theme
+    };
+
+    assert!(
+        audit(&loud, Kind::Dark)
+            .iter()
+            .any(|f| f.starts_with("border over indent_guide")),
+        "got: {:?}",
+        audit(&loud, Kind::Dark)
+    );
+    assert!(
+        audit(&lost, Kind::Dark)
+            .iter()
+            .any(|f| f.starts_with("indent_guide vs bg")),
+        "got: {:?}",
+        audit(&lost, Kind::Dark)
+    );
 }
 
 #[test]

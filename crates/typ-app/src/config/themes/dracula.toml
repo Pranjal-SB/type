@@ -33,6 +33,7 @@ cursor_line = "#292b37"
 # page and the cursor-line tint after quantisation, which is what forces a
 # third value rather than reusing either.
 chrome = "#323541"
+guide = "#44475a"          # indent guides, upstream current_line
 rule = "#7d86b8"           # the border: 3:1 against both surfaces (upstream comment #6272a4 is 2.59 on the chrome)
 select = "#44475a"
 # Upstream has no second selection tone. The primary reads as "the same thing,
@@ -56,7 +57,7 @@ gutter_bg = "background"
 line_number_fg = "comment"
 line_number_current_fg = "foreground"
 whitespace = "comment"
-indent_guide = "comment"
+indent_guide = "guide"
 
 selection_bg = "select"
 selection_fg = "foreground"

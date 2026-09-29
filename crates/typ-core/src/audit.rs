@@ -265,17 +265,25 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         "whitespace marks must be quieter than the code they sit in",
     );
 
-    // An indent guide is the same class of furniture again, and unlike a
-    // whitespace mark it is always on — so the floor matters more here, not
-    // less. Below it the rules read as a smear down the left of the file
-    // instead of as the structure of the block.
-    at_least(
+    // An indent guide is decoration (interface §1), not text: it was held to
+    // the gutter's floor until v0.3.2 and at that floor every nested block
+    // wore a bright ladder. So it is bounded on both sides instead. It has to
+    // be there at all, and it has to be quieter than a rule, or it reads as a
+    // boundary between regions that are one region.
+    separated_by(
         &mut bad,
-        "indent_guide on bg",
+        "indent_guide vs bg",
         theme.indent_guide,
         theme.bg,
-        floors.quiet,
-        ground,
+        1.3,
+    );
+    emphasised(
+        &mut bad,
+        "border over indent_guide",
+        theme.border,
+        theme.indent_guide,
+        theme.bg,
+        "a guide is quieter than a rule, or it reads as a boundary",
     );
     emphasised(
         &mut bad,

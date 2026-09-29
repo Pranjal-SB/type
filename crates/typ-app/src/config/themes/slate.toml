@@ -23,6 +23,7 @@ base00 = "#10141b"  # the page
 base01 = "#161c25"  # the cursor's line — one step, felt rather than seen
 base02 = "#1a212c"  # raised surfaces: the status bar
 base03 = "#626e87"  # borders and rules, 3:1 against both surfaces
+guide = "#3b4557"   # indent guides: decoration, quieter than a rule
 base04 = "#7889a0"  # furniture text: line numbers
 base05 = "#8495ac"  # quiet content: inactive status segments
 base06 = "#a8b3c4"  # secondary content: file names
@@ -59,11 +60,12 @@ line_number_fg = "base04"
 # present as the code, not by being tinted.
 line_number_current_fg = "base07"
 
-# The gutter's own step. A whitespace mark, an indent guide and a line number
-# are the same kind of furniture, and a palette where each widget invents its
-# own grey is how one visual system comes apart quietly.
+# The gutter's own step. A whitespace mark and a line number are the same kind
+# of furniture, and a palette where each widget invents its own grey is how one
+# visual system comes apart quietly. The indent guide is not furniture but
+# decoration, and sits below the rule.
 whitespace = "base04"
-indent_guide = "base04"
+indent_guide = "guide"
 
 selection_bg = "select"
 selection_fg = "base08"
