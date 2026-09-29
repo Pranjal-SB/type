@@ -193,3 +193,26 @@ fn a_panel_narrower_than_its_own_frame_draws_nothing_and_does_not_panic() {
         }
     }
 }
+
+#[test]
+fn a_focused_title_is_accent_and_bold_and_an_unfocused_one_recedes() {
+    // Interface §4: the focused region's label is accent and bold, and
+    // everything unfocused recedes. The title is the panel's label.
+    use ratatui::style::Modifier;
+    let (focused, theme) = draw(Rect::new(0, 0, 20, 5), "notes", true);
+    let (unfocused, _) = draw(Rect::new(0, 0, 20, 5), "notes", false);
+
+    // `┌─ notes ─`: the name is columns 3 to 7.
+    for x in 3..8 {
+        assert_eq!(focused[(x, 0)].fg, theme.border_focused, "column {x}");
+        assert!(
+            focused[(x, 0)].modifier.contains(Modifier::BOLD),
+            "column {x}"
+        );
+        assert_eq!(unfocused[(x, 0)].fg, theme.receded_fg, "column {x}");
+        assert!(!unfocused[(x, 0)].modifier.contains(Modifier::BOLD));
+    }
+    // The rule either side of the name is still the rule.
+    assert_eq!(unfocused[(1, 0)].fg, theme.border);
+    assert!(!focused[(1, 0)].modifier.contains(Modifier::BOLD));
+}

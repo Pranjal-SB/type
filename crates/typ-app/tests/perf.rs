@@ -148,7 +148,7 @@ fn drawing_the_tab_bar_stays_inside_a_frame_however_many_are_open() {
         let n = 2_000;
         let start = Instant::now();
         for _ in 0..n {
-            typ_app::tabbar::draw(&mut buf, area, &labels, count - 1, &theme);
+            typ_app::tabbar::draw(&mut buf, area, &labels, count - 1, &theme, true);
         }
         start.elapsed() / n
     };

@@ -21,7 +21,7 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 use unicode_segmentation::UnicodeSegmentation;
 
 /// The graphemes of `text` that are safe to put in a cell, in order.
@@ -126,6 +126,16 @@ pub fn frame(area: Rect, buf: &mut Buffer, title: &str, ctx: &RenderContext, bac
     let rule = format!("{head}{}", "─".repeat(fill));
     buf.set_stringn(left + 1, top, &rule, span, style);
     buf.set_stringn(left + 1, bottom, "─".repeat(span), span, style);
+
+    // The title is the panel's label (interface §4): accent and bold when it
+    // has focus, receded with the rest of the panel when it does not. Written
+    // over the name the rule already carries, clipped at the same column.
+    let label = if ctx.is_focused {
+        style.add_modifier(Modifier::BOLD)
+    } else {
+        style.fg(ctx.theme.receded_fg)
+    };
+    buf.set_stringn(left + 3, top, title, span.saturating_sub(2), label);
 
     // The verticals.
     for y in (top + 1)..bottom {

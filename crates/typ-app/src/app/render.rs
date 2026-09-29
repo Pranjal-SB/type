@@ -78,6 +78,7 @@ impl App {
                 &labels,
                 self.active,
                 &self.theme,
+                self.focus == Focus::Editor,
             );
         }
 
