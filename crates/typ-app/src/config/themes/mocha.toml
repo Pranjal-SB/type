@@ -55,6 +55,7 @@ chrome_bg = "mantle"
 
 border = "rule"
 border_focused = "blue"
+float_border = "blue"
 status_bar_bg = "mantle"
 status_bar_fg = "text"
 status_bar_inactive_fg = "subtext0"

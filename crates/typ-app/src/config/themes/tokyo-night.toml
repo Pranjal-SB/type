@@ -66,6 +66,7 @@ chrome_bg = "bg_dark"
 
 border = "rule"
 border_focused = "blue"
+float_border = "blue"
 status_bar_bg = "bg_dark"
 status_bar_fg = "fg"
 status_bar_inactive_fg = "fg_dark"

@@ -58,6 +58,7 @@ chrome_bg = "surface"
 
 border = "rule"
 border_focused = "foam"
+float_border = "foam"
 status_bar_bg = "surface"
 status_bar_fg = "text"
 status_bar_inactive_fg = "subtle"

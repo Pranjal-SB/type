@@ -69,6 +69,7 @@ bracket_match_bg = "cursor_line"
 chrome_bg = "chrome"
 border = "rule"
 border_focused = "purple"
+float_border = "purple"
 
 status_bar_bg = "chrome"
 status_bar_fg = "foreground"

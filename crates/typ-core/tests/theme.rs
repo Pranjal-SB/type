@@ -81,6 +81,7 @@ fn light_fixture() -> ThemeColors {
         border: Color::Rgb(0x7f, 0x82, 0x88),
         // Darker than the unfocused border, for the same reason.
         border_focused: Color::Rgb(0x1f, 0x5f, 0xa8),
+        float_border: Color::Rgb(0x1f, 0x5f, 0xa8),
 
         chrome_bg: Color::Rgb(0xf0, 0xf0, 0xed),
         status_bar_bg: Color::Rgb(0xf0, 0xf0, 0xed),
@@ -224,6 +225,24 @@ fn a_receded_colour_has_to_be_readable_and_has_to_recede() {
         bad.iter().any(|f| f.starts_with("fg over receded_fg")),
         "got: {bad:?}"
     );
+}
+
+#[test]
+fn a_float_border_under_three_to_one_is_reported_on_either_ground() {
+    // A float's border is a rule drawn over content, held to the same 3:1.
+    let theme = ThemeColors {
+        float_border: Color::Rgb(0x2a, 0x32, 0x40),
+        ..ThemeColors::default()
+    };
+
+    let bad = audit(&theme, Kind::Dark);
+
+    for rule in ["float_border on bg", "float_border on chrome_bg"] {
+        assert!(
+            bad.iter().any(|f| f.starts_with(rule)),
+            "{rule} has to be reported, got: {bad:?}"
+        );
+    }
 }
 
 #[test]

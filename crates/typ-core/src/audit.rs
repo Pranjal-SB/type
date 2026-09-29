@@ -347,6 +347,23 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         3.0,
     );
 
+    // A float's border is a rule drawn over content, and a float can land on
+    // either surface, so the same 3:1 on both.
+    separated_by(
+        &mut bad,
+        "float_border on bg",
+        theme.float_border,
+        theme.bg,
+        3.0,
+    );
+    separated_by(
+        &mut bad,
+        "float_border on chrome_bg",
+        theme.float_border,
+        theme.chrome_bg,
+        3.0,
+    );
+
     emphasised(
         &mut bad,
         "border_focused",

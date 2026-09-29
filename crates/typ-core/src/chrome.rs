@@ -149,3 +149,123 @@ pub fn frame(area: Rect, buf: &mut Buffer, title: &str, ctx: &RenderContext, bac
     put(buf, left, bottom, '└', style);
     put(buf, right, bottom, '┘', style);
 }
+
+/// A float: anything drawn over other content (interface §3).
+///
+/// A rounded box on `chrome_bg`, bordered in `float_border` while it has the
+/// keyboard and in the rule (`border`) while it does not. Its `name` is cut into
+/// the top-left of the border and its `exit` into the top-right.
+///
+/// **It paints one cell outside `area`**, and only there: a ring of plain page
+/// (`bg`) so the border never touches code. That is the one exception to a
+/// panel keeping to its rect, and it is the float's whole reason for being
+/// readable. The ring is clipped to the buffer, so a float against the frame's
+/// edge simply loses that side of it.
+///
+/// Every cell inside is cleared, symbol and style, before anything is drawn:
+/// `frame` only restyles, which is right for a docked panel that paints every
+/// cell anyway and wrong for a box over text it does not own.
+///
+/// No shadow and no animation: a float appears whole in one frame.
+pub fn float(area: Rect, buf: &mut Buffer, name: &str, exit: &str, ctx: &RenderContext) {
+    let theme = ctx.theme;
+    let area = area.intersection(buf.area);
+
+    let gutter = Style::default().fg(theme.fg).bg(theme.bg);
+    let ring = Rect::new(
+        area.x.saturating_sub(1),
+        area.y.saturating_sub(1),
+        area.width.saturating_add(2),
+        area.height.saturating_add(2),
+    )
+    .intersection(buf.area);
+    for y in ring.top()..ring.bottom() {
+        for x in ring.left()..ring.right() {
+            if !area.contains((x, y).into()) {
+                buf[(x, y)].reset();
+                buf[(x, y)].set_style(gutter);
+            }
+        }
+    }
+
+    let fill = Style::default().fg(theme.fg).bg(theme.chrome_bg);
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            buf[(x, y)].reset();
+            buf[(x, y)].set_style(fill);
+        }
+    }
+
+    if area.width < 3 || area.height < 2 {
+        return;
+    }
+
+    let colour = if ctx.is_focused {
+        theme.float_border
+    } else {
+        theme.border
+    };
+    let style = Style::default().fg(colour).bg(theme.chrome_bg);
+    let (left, right) = (area.x, area.right() - 1);
+    let (top, bottom) = (area.y, area.bottom() - 1);
+
+    for x in (left + 1)..right {
+        buf[(x, top)].set_symbol("─").set_style(style);
+        buf[(x, bottom)].set_symbol("─").set_style(style);
+    }
+    for y in (top + 1)..bottom {
+        buf[(left, y)].set_symbol("│").set_style(style);
+        buf[(right, y)].set_symbol("│").set_style(style);
+    }
+    buf[(left, top)].set_symbol("╭").set_style(style);
+    buf[(right, top)].set_symbol("╮").set_style(style);
+    buf[(left, bottom)].set_symbol("╰").set_style(style);
+    buf[(right, bottom)].set_symbol("╯").set_style(style);
+
+    // The exit first, because it is what gives way when the box is narrow and
+    // so decides how much room the name gets.
+    let exit_at = float_exit(area, exit);
+    if let Some((x, width)) = exit_at {
+        buf[(x - 1, top)].set_symbol(" ");
+        buf.set_stringn(x, top, exit, width as usize, style);
+        buf[(x + width, top)].set_symbol(" ");
+    }
+
+    // The name is the float's label (interface §4), styled as a docked
+    // panel's title is: accent and bold with the keys, receded without.
+    let start = left + 3;
+    let limit = match exit_at {
+        // A space, at least one cell of rule and a space before the exit.
+        Some((x, _)) => x.saturating_sub(3),
+        None => right,
+    };
+    if name.is_empty() || start >= limit {
+        return;
+    }
+    let label = if ctx.is_focused {
+        style.add_modifier(Modifier::BOLD)
+    } else {
+        style.fg(theme.receded_fg)
+    };
+    buf[(start - 1, top)].set_symbol(" ");
+    let (end, _) = buf.set_stringn(start, top, name, (limit - start) as usize, label);
+    if end < limit {
+        buf[(end, top)].set_symbol(" ");
+    }
+}
+
+/// Where a float's exit label sits on its top border, as `(x, width)`.
+///
+/// `None` when the box is too narrow to carry it beside a cell of name: the
+/// exit gives way before the name does, because the name says what the box
+/// is and `esc` works whether or not it is written down. One function for the
+/// render and the hit-test, the lesson `inner` already taught.
+pub fn float_exit(area: Rect, exit: &str) -> Option<(u16, u16)> {
+    let width = u16::try_from(typ_buffer::display_width(exit)).ok()?;
+    // `╭─ ` and a cell of name on the left, ` ─ ` before the exit, ` ─╮` after.
+    let needed = width.checked_add(10)?;
+    if width == 0 || area.width < needed || area.height < 2 {
+        return None;
+    }
+    Some((area.right() - 3 - width, width))
+}

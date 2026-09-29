@@ -19,7 +19,7 @@ use std::any::Any;
 use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use typ_core::{KeyChord, Panel, PanelEvent, RenderContext};
+use typ_core::{KeyChord, Panel, PanelEvent, RenderContext, chrome};
 use typ_find::{FileHit, LineHit};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -449,6 +449,15 @@ impl Panel for Picker {
             return vec![PanelEvent::CloseSelf];
         }
 
+        // The `esc` cut into the border is a label you can read, so it is a
+        // target you can click.
+        if y == panel_area.y
+            && chrome::float_exit(panel_area, EXIT)
+                .is_some_and(|(exit, width)| x >= exit && x < exit + width)
+        {
+            return vec![PanelEvent::CloseSelf];
+        }
+
         let Some(row) = self.row_at(y, panel_area) else {
             // The border, the query line or the rule. All part of the overlay,
             // so not a dismissal, and none of them is a result.
@@ -487,6 +496,10 @@ impl Panel for Picker {
         true
     }
 }
+
+/// What the picker's border says closes it. Esc on the keyboard, and a click
+/// on this label with the mouse.
+pub(crate) const EXIT: &str = "esc";
 
 /// Rows a Page Up or Down moves through.
 const PAGE: usize = 10;

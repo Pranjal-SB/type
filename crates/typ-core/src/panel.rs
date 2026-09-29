@@ -137,6 +137,9 @@ pub struct ThemeColors {
 
     pub border: Color,
     pub border_focused: Color,
+    /// The rounded border of a float that has the keyboard (interface §3).
+    /// A float without the keys, like the hover box, draws in `border`.
+    pub float_border: Color,
 
     pub status_bar_bg: Color,
     pub status_bar_fg: Color,
@@ -203,6 +206,7 @@ impl Default for ThemeColors {
 
             border: p::BASE_03,
             border_focused: p::ACCENT,
+            float_border: p::ACCENT,
 
             status_bar_bg: p::BASE_02,
             status_bar_fg: p::BASE_07,

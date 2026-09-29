@@ -82,6 +82,7 @@ chrome_bg = "base02"
 
 border = "base03"
 border_focused = "accent"
+float_border = "accent"
 
 status_bar_bg = "base02"
 status_bar_fg = "base07"

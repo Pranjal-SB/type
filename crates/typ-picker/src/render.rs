@@ -12,11 +12,9 @@ use crate::{Mode, Picker};
 const CARET: &str = "> ";
 
 pub(crate) fn draw(picker: &mut Picker, area: Rect, buf: &mut Buffer, ctx: &RenderContext) {
-    // `frame` fills every cell in the rect, which is what stops the body of the
-    // editor showing through the overlay — this panel is the only one drawn
-    // over something else, so a cell left unpainted is visibly wrong rather
-    // than merely the wrong shade.
-    chrome::frame(area, buf, &picker.title(), ctx, ctx.theme.chrome_bg);
+    // A float (interface §3): it clears every cell it covers, so nothing of the
+    // editor shows through, and keeps a cell of page around its border.
+    chrome::float(area, buf, &picker.title(), crate::EXIT, ctx);
 
     let inner = chrome::inner(area);
     if inner.width == 0 || inner.height == 0 {

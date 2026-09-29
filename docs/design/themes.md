@@ -58,7 +58,7 @@ key and left alone.
 | Whitespace | `whitespace` |
 | Selection | `selection_fg` `selection_bg` `selection_primary_bg` |
 | Brackets | `bracket_match_fg` `bracket_match_bg` |
-| Chrome | `chrome_bg` `border` `border_focused` |
+| Chrome | `chrome_bg` `border` `border_focused` `float_border` |
 | Status bar | `status_bar_bg` `status_bar_fg` `status_bar_inactive_fg` `status_bar_accent` |
 | Tree | `tree_directory_fg` `tree_file_fg` |
 | Focus | `receded_fg` |
@@ -77,6 +77,10 @@ v0.3.0 value was 1.3, and a rule nobody can see separates nothing.
 included: the tree's entries and the editor's code both drop to it, and the focused panel is the
 one that did not. Selections and the cursor line keep their colours, because where things are
 still has to be said.
+
+`float_border` is the rounded border of a float that has the keyboard, the picker for one
+(interface §3). A float without the keys, like the hover box, is bordered in the rule. Every
+shipped theme points it at its focus accent.
 
 `selection_primary_bg` exists because with thirty cursors something has to say which one
 every motion is relative to.
@@ -130,6 +134,7 @@ The rules with no ratio, which do not vary by ground:
 | `border` over `indent_guide` | further from `bg`: a guide louder than a rule reads as a boundary |
 | `fg` over `indent_guide` | further from `bg` — a guide is decoration, not content |
 | `border` on `bg` and on `chrome_bg` | ≥ 3.0: a rule is non-text (WCAG 1.4.11) and runs between the two surfaces |
+| `float_border` on `bg` and on `chrome_bg` | ≥ 3.0: the rule of a float that has the keyboard |
 | `border_focused` vs `border` | further from `bg` — focus is gained attention, not lost |
 | `status_bar_fg` over `status_bar_inactive_fg` | further from `status_bar_bg` |
 | `fg` over `receded_fg` | further from `bg`: without focus a panel steps back |
