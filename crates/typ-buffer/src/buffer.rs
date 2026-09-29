@@ -374,6 +374,10 @@ impl TextBuffer {
         // Split once for the whole buffer, not once per line.
         let needle: Vec<&str> = query.needle.graphemes(true).collect();
 
+        if query.case_sensitive && !needle.is_empty() {
+            return self.find_all_in_candidate_lines(query, &needle);
+        }
+
         let mut hits = Vec::new();
         // `rope.lines()` walks the tree once. Indexing `rope.line(i)` in a loop
         // instead is a fresh O(log n) descent per line, which measured at 458 ns
@@ -382,6 +386,54 @@ impl TextBuffer {
         for (line, slice) in self.rope.lines().enumerate() {
             with_slice_str(slice, |text| {
                 for (start, end) in crate::search::find_in_line_with(text, &needle, query) {
+                    hits.push(Selection {
+                        anchor: Position { line, col: start },
+                        head: Position { line, col: end },
+                    });
+                }
+            });
+        }
+        hits
+    }
+
+    /// `find_all` for a case-sensitive needle: search the rope's raw chunks for
+    /// the needle's bytes, and run the grapheme matcher only on the lines those
+    /// hits land on.
+    ///
+    /// Walking every line cost about 170 ns a line before any byte was compared,
+    /// 8.7 ms on 50k lines with no hits at all, and Ctrl+Shift+L paid it on top
+    /// of building its selections. A substring search over the chunks does not
+    /// visit lines at all. The per-line matcher stays the only judge of a match,
+    /// so graphemes and whole-word rules are exactly what they were.
+    fn find_all_in_candidate_lines(&self, query: &SearchQuery, needle: &[&str]) -> Vec<Selection> {
+        let pattern = query.needle.as_str();
+        let mut lines = Vec::new();
+        // The tail of the previous chunk, so a needle split across a chunk seam
+        // is still one contiguous string to search.
+        let mut carry = String::new();
+        let mut chunk_start = 0usize;
+        for chunk in self.rope.chunks() {
+            let window = format!("{carry}{chunk}");
+            let window_start = chunk_start - carry.len();
+            for (at, _) in window.match_indices(pattern) {
+                let line = self.rope.byte_to_line(window_start + at);
+                if lines.last() != Some(&line) {
+                    lines.push(line);
+                }
+            }
+            chunk_start += chunk.len();
+            let mut keep = window.len().saturating_sub(pattern.len().saturating_sub(1));
+            while !window.is_char_boundary(keep) {
+                keep += 1;
+            }
+            carry = window[keep..].to_string();
+        }
+        lines.dedup();
+
+        let mut hits = Vec::new();
+        for line in lines {
+            with_slice_str(self.rope.line(line), |text| {
+                for (start, end) in crate::search::find_in_line_with(text, needle, query) {
                     hits.push(Selection {
                         anchor: Position { line, col: start },
                         head: Position { line, col: end },
