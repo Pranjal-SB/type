@@ -26,6 +26,7 @@ base03 = "#626e87"  # borders and rules, 3:1 against both surfaces
 guide = "#3b4557"   # indent guides: decoration, quieter than a rule
 base04 = "#7889a0"  # furniture text: line numbers
 base05 = "#8495ac"  # quiet content: inactive status segments
+receded = "#9aa5b5" # text in a panel without focus
 base06 = "#a8b3c4"  # secondary content: file names
 base07 = "#cdd5e1"  # body text
 base08 = "#e6ecf5"  # text on a selection
@@ -89,6 +90,10 @@ status_bar_accent = "accent"
 
 tree_directory_fg = "accent_bright"
 tree_file_fg = "base06"
+
+# A panel without focus says everything in one colour, syntax included: focus
+# is shown by what steps back.
+receded_fg = "receded"
 
 diagnostic_error = "red"
 diagnostic_warning = "amber"

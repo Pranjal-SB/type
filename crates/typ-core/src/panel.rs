@@ -49,6 +49,8 @@ mod palette {
     pub const GUIDE: Color = Color::Rgb(0x3b, 0x45, 0x57);
     pub const BASE_04: Color = Color::Rgb(0x78, 0x89, 0xa0);
     pub const BASE_05: Color = Color::Rgb(0x84, 0x95, 0xac);
+    /// Text in a region without focus: between quiet content and file names.
+    pub const RECEDED: Color = Color::Rgb(0x9a, 0xa5, 0xb5);
     pub const BASE_06: Color = Color::Rgb(0xa8, 0xb3, 0xc4);
     pub const BASE_07: Color = Color::Rgb(0xcd, 0xd5, 0xe1);
     pub const BASE_08: Color = Color::Rgb(0xe6, 0xec, 0xf5);
@@ -146,6 +148,14 @@ pub struct ThemeColors {
     pub tree_directory_fg: Color,
     pub tree_file_fg: Color,
 
+    /// Text in a region that does not have focus (interface §4).
+    ///
+    /// One colour for everything an unfocused panel says, syntax included: the
+    /// receded panel is reference, not body text, and focus is shown by what
+    /// steps back rather than by a brighter frame on what did not. A panel
+    /// learns which it is from `RenderContext::is_focused` and nothing else.
+    pub receded_fg: Color,
+
     /// Unused until M3. Four lines now against a breaking change to every
     /// shipped theme file later.
     pub diagnostic_error: Color,
@@ -201,6 +211,8 @@ impl Default for ThemeColors {
 
             tree_directory_fg: p::ACCENT_BRIGHT,
             tree_file_fg: p::BASE_06,
+
+            receded_fg: p::RECEDED,
 
             diagnostic_error: p::RED,
             diagnostic_warning: p::AMBER,

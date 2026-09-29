@@ -77,6 +77,7 @@ status_bar_accent = "purple"
 
 tree_directory_fg = "cyan"
 tree_file_fg = "foreground"
+receded_fg = "comment"
 
 diagnostic_error = "red"
 diagnostic_warning = "yellow"

@@ -699,7 +699,10 @@ impl Panel for EditorPanel {
         // lookup per distinct scope, one byte-to-column conversion per line.
         // Each of those per line — or worse, per cell — is what the 16 ms
         // budget gets spent on.
-        let syntax = match self.syntax.as_ref() {
+        //
+        // An unfocused editor skips all of it (interface §4): its text drops to
+        // one receded colour, so there is nothing for a scope to say.
+        let syntax = match self.syntax.as_ref().filter(|_| ctx.is_focused) {
             Some(syntax) => highlight::for_viewport(
                 syntax,
                 &self.buffer.snapshot(),
@@ -707,6 +710,21 @@ impl Panel for EditorPanel {
                 self.top_line..end,
             ),
             None => Vec::new(),
+        };
+
+        // Body text recedes without focus. One copy of a `Copy` struct per
+        // frame, so `render.rs` goes on reading `fg` and never learns focus
+        // exists. Selections, the cursor line and diagnostics keep their
+        // colours: they say where things are, receded or not.
+        let receded;
+        let text_theme = if ctx.is_focused {
+            ctx.theme
+        } else {
+            receded = typ_core::ThemeColors {
+                fg: ctx.theme.receded_fg,
+                ..*ctx.theme
+            };
+            &receded
         };
 
         let lines: Vec<Line> = (self.top_line..end)
@@ -739,14 +757,14 @@ impl Panel for EditorPanel {
                         diagnostics: diagnostics
                             .get(i - self.top_line)
                             .map_or(&[][..], |row| row.ranges.as_slice()),
-                        theme: ctx.theme,
+                        theme: text_theme,
                     };
                     crate::render::styled_line(text, &style)
                 })
             })
             .collect();
         Paragraph::new(lines)
-            .style(Style::default().fg(ctx.theme.fg).bg(ctx.theme.bg))
+            .style(Style::default().fg(text_theme.fg).bg(text_theme.bg))
             .render(text_area, buf);
     }
 

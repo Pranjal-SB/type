@@ -409,6 +409,35 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         floors.content,
         ground,
     );
+    // An unfocused panel's text. It can sit on either surface, the editor on
+    // `bg` and the sidebar on `chrome_bg`, so it is measured on both. Receded
+    // is still read, so it keeps the quiet floor; and it has to be quieter
+    // than body text, or focus is not shown by anything stepping back.
+    at_least(
+        &mut bad,
+        "receded_fg on bg",
+        theme.receded_fg,
+        theme.bg,
+        floors.quiet,
+        ground,
+    );
+    at_least(
+        &mut bad,
+        "receded_fg on chrome_bg",
+        theme.receded_fg,
+        theme.chrome_bg,
+        floors.quiet,
+        ground,
+    );
+    emphasised(
+        &mut bad,
+        "fg over receded_fg",
+        theme.fg,
+        theme.receded_fg,
+        theme.bg,
+        "an unfocused panel has to be quieter than a focused one",
+    );
+
     // And the surface has to actually be a surface. Chrome and content sharing
     // one colour is the defect this field exists to fix, and a theme that sets
     // them equal has silently undone it.

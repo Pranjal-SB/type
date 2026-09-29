@@ -90,6 +90,7 @@ fn light_fixture() -> ThemeColors {
 
         tree_directory_fg: Color::Rgb(0x1f, 0x5f, 0xa8),
         tree_file_fg: Color::Rgb(0x3a, 0x3d, 0x43),
+        receded_fg: Color::Rgb(0x5f, 0x62, 0x68),
 
         diagnostic_error: Color::Rgb(0x8f, 0x14, 0x14),
         diagnostic_warning: Color::Rgb(0x99, 0x68, 0x00),
@@ -193,6 +194,35 @@ fn an_indent_guide_louder_than_the_rule_or_lost_in_the_page_is_reported() {
             .any(|f| f.starts_with("indent_guide vs bg")),
         "got: {:?}",
         audit(&lost, Kind::Dark)
+    );
+}
+
+#[test]
+fn a_receded_colour_has_to_be_readable_and_has_to_recede() {
+    // Interface §1: the quiet floor on both grounds, because an unfocused
+    // editor sits on `bg` and an unfocused sidebar on `chrome_bg`. And it has to
+    // be quieter than body text, or nothing recedes.
+    let theme = ThemeColors::default();
+    let unreadable = ThemeColors {
+        receded_fg: theme.border,
+        ..theme
+    };
+    let loud = ThemeColors {
+        receded_fg: theme.selection_fg,
+        ..theme
+    };
+
+    let bad = audit(&unreadable, Kind::Dark);
+    for rule in ["receded_fg on bg", "receded_fg on chrome_bg"] {
+        assert!(
+            bad.iter().any(|f| f.starts_with(rule)),
+            "{rule} has to be reported, got: {bad:?}"
+        );
+    }
+    let bad = audit(&loud, Kind::Dark);
+    assert!(
+        bad.iter().any(|f| f.starts_with("fg over receded_fg")),
+        "got: {bad:?}"
     );
 }
 

@@ -33,7 +33,7 @@ border_focused = "accent"
 ```
 
 Three sections and two required scalars. `[palette]` names colours; `[ui]` assigns them to
-the editor's 27 slots. A `[ui]` value is either a `[palette]` key or a `#rrggbb` literal —
+the editor's slots. A `[ui]` value is either a `[palette]` key or a `#rrggbb` literal —
 there is no third form, and a name that resolves to neither is an error naming the line.
 
 **`kind` is declared, not inferred.** It selects every contrast floor in the rubric — see below
@@ -49,7 +49,7 @@ A misspelled key gets a did-you-mean when the edit distance is small enough to b
 and no suggestion when it isn't. `forgeground` suggests `fg`; `banana` gets told it is not a
 key and left alone.
 
-## The 27 slots
+## The slots
 
 | Group | Keys |
 |---|---|
@@ -61,6 +61,7 @@ key and left alone.
 | Chrome | `chrome_bg` `border` `border_focused` |
 | Status bar | `status_bar_bg` `status_bar_fg` `status_bar_inactive_fg` `status_bar_accent` |
 | Tree | `tree_directory_fg` `tree_file_fg` |
+| Focus | `receded_fg` |
 | Guides | `indent_guide` (decorative since v0.3.2: no text floor, see the rules) |
 | Diagnostics | `diagnostic_error` `diagnostic_warning` `diagnostic_info` `diagnostic_hint` |
 
@@ -71,6 +72,11 @@ colour collides with it.
 `border` is the slot `interface.md` calls `rule`. It keeps its old name because a rename breaks
 every theme file already written. Since v0.3.2 it has to hold 3:1 against both surfaces; the
 v0.3.0 value was 1.3, and a rule nobody can see separates nothing.
+
+`receded_fg` is what a panel without focus draws its text in (interface §4). One colour, syntax
+included: the tree's entries and the editor's code both drop to it, and the focused panel is the
+one that did not. Selections and the cursor line keep their colours, because where things are
+still has to be said.
 
 `selection_primary_bg` exists because with thirty cursors something has to say which one
 every motion is relative to.
@@ -103,6 +109,7 @@ this document.
 | `status_bar_fg` | content | |
 | `tree_directory_fg` / `tree_file_fg` on `chrome_bg` | content | Measured on the surface it draws on, not on `bg`. |
 | every `diagnostic_*` on `bg` | content | Read individually, so legible alone. |
+| `receded_fg` on `bg` and on `chrome_bg` | quiet | An unfocused panel's text, on whichever surface that panel sits. Still read, so still a floor. |
 
 | Group | Dark ground | Light ground |
 |---|---|---|
@@ -125,6 +132,7 @@ The rules with no ratio, which do not vary by ground:
 | `border` on `bg` and on `chrome_bg` | ≥ 3.0: a rule is non-text (WCAG 1.4.11) and runs between the two surfaces |
 | `border_focused` vs `border` | further from `bg` — focus is gained attention, not lost |
 | `status_bar_fg` over `status_bar_inactive_fg` | further from `status_bar_bg` |
+| `fg` over `receded_fg` | further from `bg`: without focus a panel steps back |
 | `tree_directory_fg vs tree_file_fg` | ≠ identical |
 | `chrome_bg vs bg` | ≠ identical — the surface has to be a surface |
 | `diagnostic_error vs diagnostic_warning` | ≥ 1.8 separation |
