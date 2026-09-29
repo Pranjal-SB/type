@@ -78,17 +78,21 @@ pub fn hover_area(frame: Rect, cursor: (u16, u16), text: &str) -> Rect {
     // text, and `as u16` first wrapped a 65536-character line to a 3-cell box
     // and overflowed the `+ 2` at 65534. Gap 106.
     let fit = |count: usize, max: u16| count.saturating_add(2).clamp(3, max as usize) as u16;
-    let width = fit(longest, HOVER_MAX_WIDTH).min(frame.width);
+    let width = fit(longest, HOVER_MAX_WIDTH)
+        .max(HOVER_MIN_WIDTH)
+        .min(frame.width);
     let height = fit(lines, HOVER_MAX_HEIGHT).min(frame.height);
 
     let (cx, cy) = cursor;
     let x = cx.min(frame.width.saturating_sub(width));
     // Below when it fits, above when it does not. Never over the cursor: the
-    // box is about the thing under it.
-    let y = if cy + 1 + height <= frame.height {
-        cy + 1
+    // box is about the thing under it. And never over the cursor's row either,
+    // counting the float's one-cell gutter (interface §3), so the box sits a
+    // row further off than it did, with a row of page in between.
+    let y = if cy + 2 + height <= frame.height {
+        cy + 2
     } else {
-        cy.saturating_sub(height)
+        cy.saturating_sub(height + 1)
     };
 
     Rect {
@@ -101,6 +105,14 @@ pub fn hover_area(frame: Rect, cursor: (u16, u16), text: &str) -> Rect {
 
 /// Wide enough for a signature, short enough to leave the code visible.
 pub const HOVER_MAX_WIDTH: u16 = 64;
+
+/// What the hover float's border says it is, and what closes it.
+pub const HOVER_NAME: &str = "hover";
+pub const HOVER_EXIT: &str = "esc";
+
+/// Narrow enough for a one-word answer, wide enough that the border can say
+/// both what the box is and how to close it: `╭─ hover ─ esc ─╮`.
+pub const HOVER_MIN_WIDTH: u16 = (HOVER_NAME.len() + HOVER_EXIT.len() + 9) as u16;
 pub const HOVER_MAX_HEIGHT: u16 = 12;
 
 /// Split the editor's rect into `(tab_bar, editor)`.

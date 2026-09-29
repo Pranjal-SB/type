@@ -452,7 +452,7 @@ impl Panel for Picker {
         // The `esc` cut into the border is a label you can read, so it is a
         // target you can click.
         if y == panel_area.y
-            && chrome::float_exit(panel_area, EXIT)
+            && chrome::float_exit(panel_area, &self.title(), EXIT)
                 .is_some_and(|(exit, width)| x >= exit && x < exit + width)
         {
             return vec![PanelEvent::CloseSelf];

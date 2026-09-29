@@ -229,13 +229,21 @@ impl App {
             syntax: &self.syntax_theme,
             diagnostics: &[],
             // Never focused: it takes no keys, and a bright border would say it
-            // does.
+            // does. So the float is bordered in the rule, not `float_border`.
             is_focused: false,
             panel_index: 3,
             terminal_width: frame.area().width,
             terminal_height: frame.area().height,
         };
-        typ_core::chrome::frame(area, frame.buffer_mut(), "", &ctx, self.theme.chrome_bg);
+        // Non-modal, so nothing behind it dims. `esc` is honest: any key or
+        // click clears it, see `clear_transient`.
+        typ_core::chrome::float(
+            area,
+            frame.buffer_mut(),
+            crate::layout::HOVER_NAME,
+            crate::layout::HOVER_EXIT,
+            &ctx,
+        );
 
         let inner = typ_core::chrome::inner(area);
         let body: Vec<Line> = lines

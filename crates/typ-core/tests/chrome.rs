@@ -289,7 +289,7 @@ fn the_exit_is_where_the_hit_test_says_it_is() {
     // Render and the mouse ask one function, so a click on `esc` cannot land a
     // column off.
     let (buf, _) = draw_float(true);
-    let (x, width) = chrome::float_exit(Rect::new(2, 1, 22, 6), "esc").unwrap();
+    let (x, width) = chrome::float_exit(Rect::new(2, 1, 22, 6), "Open file", "esc").unwrap();
     let drawn: String = (x..x + width).map(|x| buf[(x, 1)].symbol()).collect();
     assert_eq!(drawn, "esc");
 }
@@ -297,10 +297,24 @@ fn the_exit_is_where_the_hit_test_says_it_is() {
 #[test]
 fn a_float_too_narrow_for_its_exit_drops_the_exit_before_the_name() {
     let theme = ThemeColors::default();
+    // One column short of `╭─ Open file ─ esc ─╮`: the exit goes, the name
+    // stays whole.
+    let area = Rect::new(0, 0, 20, 3);
+    let mut buf = Buffer::empty(area);
+    chrome::float(area, &mut buf, "Open file", "esc", &context(&theme, true));
+    assert_eq!(chrome::float_exit(area, "Open file", "esc"), None);
+    let top: String = (0..20).map(|x| buf[(x, 0)].symbol()).collect();
+    assert_eq!(top, "╭─ Open file ──────╮");
+    // And at exactly the width, both, with one cell of rule between.
+    let area = Rect::new(0, 0, 21, 3);
+    let mut buf = Buffer::empty(area);
+    chrome::float(area, &mut buf, "Open file", "esc", &context(&theme, true));
+    let top: String = (0..21).map(|x| buf[(x, 0)].symbol()).collect();
+    assert_eq!(top, "╭─ Open file ─ esc ─╮");
+    // Narrower than the name, the name is clipped and the corner survives.
     let area = Rect::new(0, 0, 10, 3);
     let mut buf = Buffer::empty(area);
     chrome::float(area, &mut buf, "Open file", "esc", &context(&theme, true));
-    assert_eq!(chrome::float_exit(area, "esc"), None);
     assert_eq!(buf[(9, 0)].symbol(), "╮", "the name ate the corner");
     for width in 0..4u16 {
         for height in 0..3u16 {

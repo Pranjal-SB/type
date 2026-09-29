@@ -212,7 +212,8 @@ fn clicking_the_exit_closes_the_picker() {
     // The `esc` cut into the border is a label, and a label you can read is a
     // target you can click (invariant 8). Esc on the keyboard is the other way.
     let mut picker = picker(3);
-    let (x, width) = typ_core::chrome::float_exit(AREA, "esc").expect("40 columns fit it");
+    let (x, width) =
+        typ_core::chrome::float_exit(AREA, &picker.title(), "esc").expect("40 columns fit it");
     for column in x..x + width {
         let events = picker.handle_mouse(click(column, AREA.y), AREA);
         assert_eq!(events, vec![PanelEvent::CloseSelf], "column {column}");

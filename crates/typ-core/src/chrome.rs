@@ -224,7 +224,7 @@ pub fn float(area: Rect, buf: &mut Buffer, name: &str, exit: &str, ctx: &RenderC
 
     // The exit first, because it is what gives way when the box is narrow and
     // so decides how much room the name gets.
-    let exit_at = float_exit(area, exit);
+    let exit_at = float_exit(area, name, exit);
     if let Some((x, width)) = exit_at {
         buf[(x - 1, top)].set_symbol(" ");
         buf.set_stringn(x, top, exit, width as usize, style);
@@ -249,21 +249,22 @@ pub fn float(area: Rect, buf: &mut Buffer, name: &str, exit: &str, ctx: &RenderC
     };
     buf[(start - 1, top)].set_symbol(" ");
     let (end, _) = buf.set_stringn(start, top, name, (limit - start) as usize, label);
-    if end < limit {
+    if end < right {
         buf[(end, top)].set_symbol(" ");
     }
 }
 
 /// Where a float's exit label sits on its top border, as `(x, width)`.
 ///
-/// `None` when the box is too narrow to carry it beside a cell of name: the
-/// exit gives way before the name does, because the name says what the box
+/// `None` when the box is too narrow to carry it beside the whole name: the
+/// exit gives way before the name is cut, because the name says what the box
 /// is and `esc` works whether or not it is written down. One function for the
 /// render and the hit-test, the lesson `inner` already taught.
-pub fn float_exit(area: Rect, exit: &str) -> Option<(u16, u16)> {
+pub fn float_exit(area: Rect, name: &str, exit: &str) -> Option<(u16, u16)> {
     let width = u16::try_from(typ_buffer::display_width(exit)).ok()?;
-    // `╭─ ` and a cell of name on the left, ` ─ ` before the exit, ` ─╮` after.
-    let needed = width.checked_add(10)?;
+    let named = u16::try_from(typ_buffer::display_width(name)).ok()?;
+    // `╭─ name `, a cell of rule, ` exit ─╮`.
+    let needed = named.checked_add(width)?.checked_add(9)?;
     if width == 0 || area.width < needed || area.height < 2 {
         return None;
     }
