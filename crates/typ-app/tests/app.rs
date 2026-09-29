@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use ratatui::layout::Rect;
 use typ_app::App;
 use typ_app::layout::split;
-use typ_core::PanelEvent;
+use typ_core::{Action, PanelEvent};
 
 /// One directory per test — see the tree panel fixture for why sharing races.
 fn fixture(name: &str) -> PathBuf {
@@ -33,7 +33,7 @@ fn cycling_focus_moves_to_the_editor_and_back() {
 fn applying_quit_sets_the_quit_flag() {
     let mut app = App::new(&fixture("quit")).unwrap();
     assert!(!app.should_quit());
-    app.apply(vec![PanelEvent::Quit]).unwrap();
+    app.apply_named_action(Action::Quit).unwrap();
     assert!(app.should_quit());
 }
 

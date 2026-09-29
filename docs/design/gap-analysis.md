@@ -1199,7 +1199,8 @@ one everybody trusts without looking.
 
 ### Where this landed
 
-Every v0.3.1 gap is fixed except 115, on `fix/audit-v0.3.0`. Each fix was written test-first:
+Every v0.3.1 gap is fixed. 115 closed in v0.3.1 itself: `PanelEvent::Quit` is gone, and
+`OpenWith`, `Focus` and `RunCommand` stay because `interface.md` gives each a sender. Each fix was written test-first:
 the failing test was run and read before the fix, and each test-suite gap was proven able to
 fail by breaking the code it guards. Commit subjects name the defect each one fixes.
 
@@ -1225,23 +1226,20 @@ fail by breaking the code it guards. Commit subjects name the defect each one fi
 
 **Still open:**
 
-- **115.** `architecture.md` Event model lists `Quit`, `Focus`, `RunCommand` and `CloseSelf` as
-  the events every panel may send, and `PanelEvent` is at 8 of its ~12. Either the spec keeps
-  them and this closes as won't fix, or the spec drops the ones nothing sends.
 - **99** has no test of its own: there is no portable way to fail a write once the temp file
-  exists. **103**'s test is `cfg(unix)`, so Linux CI is its first run.
+  exists. **103**'s test is `cfg(unix)` and passed on Linux CI.
 - **138** covers the `$EDITOR` session one level below the terminal. The binary's happy path
   needs a pty dev-dependency.
-- **Ctrl+Shift+L misses its 16 ms budget**, 13 to 18 ms alone at 4167 hits. The quadratic cost
-  is gone and `find_all` is what is left, 8.7 ms with no hits at all. InsertChar at 4167 cursors
-  is about 10 ms alone and 24 ms when `perf.rs` runs it after its siblings, so that file wants
-  splitting.
 
 **Found while fixing, not fixed:** a refused request's status shows even after the cursor has
 moved; a server that refuses `initialize` keeps running until TYPE exits;
 `ParseWorker::generation()` has no production callers; `progress_sits_before_the_position`
 waits on a timer, the gap 139 pattern; watcher tests `remove_dir_all` then `create_dir_all`,
 which races on Windows; `typ-find` comments still say `OpenFile.line`.
+
+**Ctrl+Shift+L** missed its budget at 13 to 31 ms after the quadratic cost went. v0.3.1 fixed
+the rest in `find_all`: candidate lines come from a search over the rope's chunks, and an ASCII
+line is matched by bytes. 4167 hits now take about 4 ms.
 
 **Suite when it landed:** 1056 passed, 0 failed, 38 ignored, against 965 before the audit.
 

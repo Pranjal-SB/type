@@ -1262,7 +1262,6 @@ impl App {
     pub fn apply(&mut self, events: Vec<PanelEvent>) -> Result<()> {
         for event in events {
             match event {
-                PanelEvent::Quit => self.request_quit(),
                 PanelEvent::OpenFile { path, at } => {
                     let (line, col) = (at.line, at.col);
                     // **The event has carried `line` and `col` since M1 and

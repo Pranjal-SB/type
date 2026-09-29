@@ -34,6 +34,28 @@ impl SearchQuery {
     }
 }
 
+/// `find_in_line_with` for an ASCII line and needle, where a byte is a grapheme.
+///
+/// Same walk as the grapheme loop: a rejected candidate moves on by one, an
+/// accepted one by the needle's length, so the two cannot disagree.
+fn find_in_ascii_line(line: &str, needle: &str, whole_word: bool) -> Vec<(usize, usize)> {
+    let word_at = |i: usize| line.get(i..i + 1).is_some_and(crate::is_word_grapheme);
+    let mut hits = Vec::new();
+    let mut i = 0usize;
+    while let Some(found) = line[i..].find(needle) {
+        let start = i + found;
+        let end = start + needle.len();
+        let inside_a_word = whole_word && ((start > 0 && word_at(start - 1)) || word_at(end));
+        if inside_a_word {
+            i = start + 1;
+        } else {
+            hits.push((start, end));
+            i = end;
+        }
+    }
+    hits
+}
+
 /// Compare two graphemes, optionally folding case, without allocating.
 ///
 /// `to_lowercase` on a `char` yields an iterator precisely so this can be done
@@ -84,6 +106,13 @@ pub(crate) fn find_in_line_with(
     // a sound precondition for its matches.
     if query.case_sensitive && !line.contains(query.needle.as_str()) {
         return Vec::new();
+    }
+
+    // An ASCII line is one grapheme per byte, so byte offsets are columns and a
+    // byte search is the grapheme search. Segmenting it anyway cost about 2 µs a
+    // line, which on Ctrl+Shift+L's 4167 lines was most of the frame.
+    if query.case_sensitive && line.is_ascii() && query.needle.is_ascii() {
+        return find_in_ascii_line(line, &query.needle, query.whole_word);
     }
 
     // Segmenting the line once and indexing the result beats re-segmenting from

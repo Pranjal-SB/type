@@ -122,3 +122,37 @@ fn replace_range_with_an_empty_range_and_no_text_does_nothing() {
     assert_eq!(b.line_text(0), "ab");
     assert!(!b.is_dirty(), "a no-op must not dirty the buffer");
 }
+
+#[test]
+fn find_all_finds_matches_that_straddle_the_rope_s_chunk_boundaries() {
+    // Lines far longer than one rope chunk, with the needle at every offset
+    // modulo its length, so some hits must cross a chunk seam. The reference
+    // is the plain per-line scan, which cannot see chunks at all.
+    let mut text = String::new();
+    for line in 0..40 {
+        let pad = "x".repeat(line % 7);
+        text.push_str(&pad);
+        for _ in 0..300 {
+            text.push_str("ab needle é ");
+        }
+        text.push('\n');
+    }
+    let b = TextBuffer::from_str(&text);
+
+    let hits: Vec<_> = b
+        .find_all(&query("needle", true))
+        .iter()
+        .map(|s| s.range())
+        .collect();
+
+    let mut expected = Vec::new();
+    for (line, content) in text.lines().enumerate() {
+        for (byte, _) in content.match_indices("needle") {
+            // ASCII before every hit except `é`, which is one grapheme.
+            let col = content[..byte].chars().count();
+            expected.push((pos(line, col), pos(line, col + 6)));
+        }
+    }
+    assert_eq!(hits.len(), 40 * 300);
+    assert_eq!(hits, expected);
+}

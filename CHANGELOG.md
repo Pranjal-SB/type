@@ -3,6 +3,36 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.3.1] - 2026-09-29 (the v0.3.0 audit)
+
+An audit of the whole tree found 80 defects. 73 are fixed here, and the first release to carry
+M3's language server support is this one: 0.3.0 was never tagged.
+
+### Fixed
+- **Two ways to lose unsaved work.** A confirmed tab close armed the tab that took its place, so
+  the next `Ctrl+W` discarded it without asking. `quit` and `close_tab` from the palette could
+  never finish.
+- **A file name could drive your terminal.** Control characters in a path or a search result
+  reached the terminal raw, so a cloned repo could write to your clipboard over OSC 52.
+- **The editor no longer exits** when a file it has open is replaced by a binary, when Enter hits
+  a binary in the tree, or when a worker thread panics.
+- **Multiple cursors:** a caret at the start of a selection could edit the wrong range, merging
+  lost direction, and every motion was quadratic in the cursor count. 4000 cursors move in
+  under a millisecond and Ctrl+Shift+L on 4000 hits takes about 4 ms.
+- **Saving** opens its temp file exclusively, never makes it world-readable, and removes it when
+  the save fails.
+- **Language servers:** answers are matched to the server that sent them, a reopened file is
+  announced as opened, progress requests are answered, a `ContentModified` reply is asked again,
+  and a refused request says so.
+- **Wide characters** are measured in cells in the status bar, hover box and picker.
+- Undo back to the saved text reads as clean, a no-op edit keeps the redo stack, a mis-spelled
+  chord in `keys.toml` is an error, an unreadable config file is a warning, and a background tab
+  notices when its file changes on disk.
+
+### Changed
+- A closed terminal input ends the session with exit code 1 rather than hanging.
+- `PanelEvent::Quit` is gone. Quitting is an app action.
+
 ## [0.3.0] - 2026-08-29 (M3, code intelligence)
 
 TYPE talks to language servers. Diagnostics appear as you type, `F12` goes to a definition,
@@ -487,7 +517,10 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.2.8...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Pranjal-SB/type/releases/tag/v0.3.1
+[0.2.10]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.10
+[0.2.9]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.9
 [0.2.8]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.8
 [0.2.7]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.7
 [0.2.6]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.6
@@ -497,6 +530,6 @@ finding underneath the findings.
 [0.2.2]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.2
 [0.2.1]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.1
 
-<!-- 0.2.0 and 0.1.0 have no link because they have no tag: tagging began at
-     v0.2.1, when the versioning scheme was adopted. -->
+<!-- 0.3.0, 0.2.0 and 0.1.0 have no link because they have no tag: tagging began at
+     v0.2.1, when the versioning scheme was adopted, and 0.3.0 first shipped inside 0.3.1. -->
 

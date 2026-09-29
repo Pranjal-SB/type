@@ -395,15 +395,17 @@ TermIDE's `PanelEvent` grew to **61 variants** because every viewer added its ow
 (`ViewMermaid`, `SwapActiveToHex`, `ViewDatabase`, …). That enum became a chokepoint: every
 new panel type edits core.
 
-TYPE keeps roughly **12 universal variants** — `NeedsRedraw`, `Quit`, `Focus`,
-`OpenFile { path, line, col }`, `RunCommand`, `CloseSelf`, `Notify`, and similar — and routes
-everything else through one:
+TYPE keeps roughly **12 universal variants**, `NeedsRedraw`, `Focus`, `OpenFile { path, at }`,
+`RunCommand`, `CloseSelf`, `Notify` and similar, and routes everything else through one:
 
 ```rust
 OpenWith { handler: HandlerId, path: PathBuf }
 ```
 
 resolved by `typ-registry` against an extension/mime table.
+
+There is no `Quit`. Quitting is an app action, and a panel that could end the session on its
+own could lose another tab's unsaved work.
 
 This is load-bearing in three directions at once:
 

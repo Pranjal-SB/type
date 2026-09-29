@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.3.0, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.3.1, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -325,7 +325,8 @@ one that plainly did nothing.
 | v0.2.8 | M2.8 | Find: fuzzy file picker and project search | shipped |
 | v0.2.9 | M2.9 | Workspace-lite: tabs, tab bar, command palette | shipped |
 | v0.2.10 | — | Loose ends: `typ a.rs b.rs` opens both, documentation corrected | shipped |
-| v0.3.0 | M3 | Code intelligence: LSP client, diagnostics, goto-definition, hover | **current** |
+| v0.3.0 | M3 | Code intelligence: LSP client, diagnostics, goto-definition, hover | shipped in v0.3.1 |
+| v0.3.1 | - | Audit: 80 defects found and 73 fixed, including two that lost unsaved work | **current** |
 | v0.4.0 | M4 | Workspace: splits, sessions, workspace-wide file watching | next |
 | v0.5.0 | M5 | Terminal panel and git integration | |
 | v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |
