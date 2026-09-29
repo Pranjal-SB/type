@@ -1197,64 +1197,53 @@ The last two are worth more than they look. The budgets section of `AGENTS.md` a
 five ways a wall-clock number lies; these are two ways a *pass/fail* number lies, which is the
 one everybody trusts without looking.
 
-### Where this stands
+### Where this landed
 
-**A snapshot, not a living list: delete this subsection when the branch lands.** It exists
-because the state below is the one thing in this part that is not recoverable by reading the
-tree, and the audit's own lesson is that unrecorded context is context that is gone.
+Every v0.3.1 gap is fixed except 115, on `fix/audit-v0.3.0`. Each fix was written test-first:
+the failing test was run and read before the fix, and each test-suite gap was proven able to
+fail by breaking the code it guards. Commit subjects name the defect each one fixes.
 
-Branch `fix/audit-v0.3.0`, off `e1998d8`. Each fix was written test-first: the failing test was
-run and its output read *before* the fix, and the suite plus `clippy -D warnings` was green
-before each commit.
+**Deviations from the proposals**, worth knowing before someone "corrects" them back:
 
-| Commit | Gaps | |
-|---|---|---|
-| `c59255e` | 67–139 | This part of this document |
-| `dce7fbb` | 67 | `close_pending = None` in `close_tab` |
-| `64403bf` | 68 | `answers_its_own_confirmation`, shared by both dispatch paths |
-| `0f83fdc` | 69 | `typ_core::printable`, used by the picker and the tab bar |
-| `eb735a6` | 70, 71 | `App::open_or_report`, and `reload` no longer propagates |
-| `6c50614` | 72 | `overlaps` merges on `a.is_empty()` |
-| `08ce332` | 73 | `union` keeps a direction both inputs agree on |
-| `45a9b36` | 74, 129 | `scroll` carries the selection; the test paints before asserting |
-| `4c062b9` | 75, 128 | The tree's hit test is bounded, and the crate has mouse tests |
-| `192a417` | 76, 77, 78, 131 | Answers keyed on `ServerId`; a reopen sends `didOpen`; server requests are answered. Carries gaps 140–146 and this subsection, which `git add -A` swept in, they belong to the doc commit and are noted here rather than rewritten |
+- **72.** `overlaps` turns on `a.is_empty()` alone. The proposed `a.is_empty() || b.is_empty()`
+  is wrong the other way: a caret at a preceding selection's end is a real second cursor.
+- **74.** The selection travels with the viewport. Making `visible` stop correcting the offset
+  would break the guarantee the mouse hit test depends on.
+- **81.** Fixed in `TextBuffer`, so every edit group is covered, not only
+  `edit_at_each_selection`.
+- **82, 87, 142.** `set_selections` is gone. Motions and edits update the set in place.
+- **83.** A closed input exits 1. Exiting 0 would tell `git commit` the edit finished.
+- **85.** Each tab has its own watch. Re-checking on tab switch would read the file on the render
+  thread.
+- **90.** A worker's panic is logged, so with `TYP_LOG` unset it is not seen anywhere.
+- **98.** An unparsable pattern shows "0+ matches". Searching it as a literal would be kinder.
+- **111.** Fixed in the app. Results arrive in generation order, so an older awaited generation
+  is reset and asks again.
+- **119.** `to_toml` writes `[syntax]` but not `[palette]`. Colours come out as literals.
+- **123.** Whole-word matching applies when the primary selection is exactly one word, not when
+  the search started from a caret as VS Code does it.
 
-Two fixes deliberately differ from what the audit proposed, because a test said so, and both are
-worth knowing before someone "corrects" them back:
+**Still open:**
 
-- **Gap 72.** The proposal was `a.is_empty() || b.is_empty()`. That is wrong in the other
-  direction: a caret at a *preceding* selection's end is a genuine second cursor, because
-  `[P,Q)` does not contain `Q`. The boundary is one-sided: `a` is the earlier of the two, so it
-  turns on `a.is_empty()` alone. There is now a test pinning each side.
-- **Gap 74.** The proposal offered two options, one of which was to make `visible` stop
-  correcting the offset. That would break the guarantee the mouse hit-test depends on, so the
-  selection travels with the viewport instead.
+- **115.** `architecture.md` Event model lists `Quit`, `Focus`, `RunCommand` and `CloseSelf` as
+  the events every panel may send, and `PanelEvent` is at 8 of its ~12. Either the spec keeps
+  them and this closes as won't fix, or the spec drops the ones nothing sends.
+- **99** has no test of its own: there is no portable way to fail a write once the temp file
+  exists. **103**'s test is `cfg(unix)`, so Linux CI is its first run.
+- **138** covers the `$EDITOR` session one level below the terminal. The binary's happy path
+  needs a pty dev-dependency.
+- **Ctrl+Shift+L misses its 16 ms budget**, 13 to 18 ms alone at 4167 hits. The quadratic cost
+  is gone and `find_all` is what is left, 8.7 ms with no hits at all. InsertChar at 4167 cursors
+  is about 10 ms alone and 24 ms when `perf.rs` runs it after its siblings, so that file wants
+  splitting.
 
-**Suite at this point:** 986 passed, 0 failed, 31 ignored; `clippy --workspace --all-targets`
-clean. The runnable count was 965 before this branch. Take the failure count from `grep -c` on
-the failure lines rather than from a field split: see the dead ends above for why.
+**Found while fixing, not fixed:** a refused request's status shows even after the cursor has
+moved; a server that refuses `initialize` keeps running until TYPE exits;
+`ParseWorker::generation()` has no production callers; `progress_sits_before_the_position`
+waits on a timer, the gap 139 pattern; watcher tests `remove_dir_all` then `create_dir_all`,
+which races on Windows; `typ-find` comments still say `OpenFile.line`.
 
-**Three of the RED steps were taken after the fix rather than before**, which is not the
-workflow and is recorded because two of them were nearly wrong. Each was checked by disabling
-the fix and re-running:
-
-- Gap 77's test passed on the first run because `close_tab` marks the frame dirty but pushes no
-  event, so nothing drove `step_batch` and the reconciliation pass never ran. The test was
-  asserting against a sync that had not happened. It calls `sync_language_servers` directly now.
-- Gap 78's first disable-and-check said the test still passed, because removing the specific
-  arm just falls through to the `MethodNotFound` catch-all, and the fake sent its burst on *any*
-  reply. The fake now requires an accepting one, which is both the correct semantic and what
-  makes the test able to fail.
-- Gap 76's two unit tests were confirmed red by dropping `p.server == server` from the
-  predicate.
-
-**There is a stash.** `stash@{0}`, "wip: LSP ContentModified retry + empty-answer status
-(pre-audit)": work that predates this audit, set aside so the branch started clean. It touches
-`app.rs` and `lsp/mod.rs`, both of which gaps 76–78 also edit, and it changes `handle_answer`,
-whose signature gap 76 changes. It will not pop cleanly. It is also *not* redundant with gap 101:
-it adds a message for an empty answer and a retry for `ContentModified`, and leaves the
-`Err(_) => log_warn!` arm (which is gap 101) exactly as it was.
+**Suite when it landed:** 1056 passed, 0 failed, 38 ignored, against 965 before the audit.
 
 ---
 
