@@ -43,7 +43,7 @@ mod palette {
     pub const BASE_00: Color = Color::Rgb(0x10, 0x14, 0x1b);
     pub const BASE_01: Color = Color::Rgb(0x16, 0x1c, 0x25);
     pub const BASE_02: Color = Color::Rgb(0x1a, 0x21, 0x2c);
-    pub const BASE_03: Color = Color::Rgb(0x2a, 0x32, 0x40);
+    pub const BASE_03: Color = Color::Rgb(0x62, 0x6e, 0x87);
     pub const BASE_04: Color = Color::Rgb(0x78, 0x89, 0xa0);
     pub const BASE_05: Color = Color::Rgb(0x84, 0x95, 0xac);
     pub const BASE_06: Color = Color::Rgb(0xa8, 0xb3, 0xc4);

@@ -68,6 +68,10 @@ key and left alone.
 Two levels, not three — `cursor_line_bg` is the third tint and a sidebar in that exact
 colour collides with it.
 
+`border` is the slot `interface.md` calls `rule`. It keeps its old name because a rename breaks
+every theme file already written. Since v0.3.2 it has to hold 3:1 against both surfaces; the
+v0.3.0 value was 1.3, and a rule nobody can see separates nothing.
+
 `selection_primary_bg` exists because with thirty cursors something has to say which one
 every motion is relative to.
 
@@ -117,6 +121,7 @@ The rules with no ratio, which do not vary by ground:
 | `fg` over `line_number_fg` | further from `bg` — numbers are quieter than the code |
 | `fg` over `whitespace` | further from `bg` — marks are quieter than the code |
 | `fg` over `indent_guide` | further from `bg` — a guide is furniture, not content |
+| `border` on `bg` and on `chrome_bg` | ≥ 3.0: a rule is non-text (WCAG 1.4.11) and runs between the two surfaces |
 | `border_focused` vs `border` | further from `bg` — focus is gained attention, not lost |
 | `status_bar_fg` over `status_bar_inactive_fg` | further from `status_bar_bg` |
 | `tree_directory_fg vs tree_file_fg` | ≠ identical |

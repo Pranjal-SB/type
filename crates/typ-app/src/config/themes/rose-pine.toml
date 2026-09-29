@@ -10,6 +10,8 @@
 #   gold            #f6c177 -> #ffeba1   the warning colour
 #   pine            #31748f -> #63a6c1   the hint colour, 3.38 against 6.5
 #   highlight_high  #524f67 -> #2e2b43   the primary selection
+#   + rule          #7f7b99              the border, muted lifted to hold 3:1
+#                                        against both surfaces at 256 colours
 #
 # Upstream misses the error-versus-warning separation by 0.03, which is exactly
 # what "designed for harmony" produces when deuteranopia was not a goal. love and
@@ -22,7 +24,7 @@ kind = "dark"
 [palette]
 base = "#191724"
 surface = "#211f30"
-overlay = "#26233a"
+rule = "#7f7b99"   # upstream muted #6e6a86 lifted until it holds 3:1 at 256, the border: 3:1 against both surfaces
 muted = "#9793af"
 subtle = "#a7a3c1"
 text = "#e7e5fb"
@@ -54,7 +56,7 @@ bracket_match_bg = "highlight_med"
 # value invented here.
 chrome_bg = "surface"
 
-border = "overlay"
+border = "rule"
 border_focused = "foam"
 status_bar_bg = "surface"
 status_bar_fg = "text"

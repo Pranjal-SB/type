@@ -24,6 +24,7 @@ surface0 = "#1f1f30"
 surface1 = "#45475a"
 surface2 = "#303348"
 overlay0 = "#8d91a7"
+rule = "#6c7086"   # upstream overlay0, kept for the border: 3:1 against both surfaces
 text = "#dfe8ff"
 subtext0 = "#a6adc8"
 subtext1 = "#bac2de"
@@ -52,7 +53,7 @@ bracket_match_bg = "surface0"
 # value invented here.
 chrome_bg = "mantle"
 
-border = "surface0"
+border = "rule"
 border_focused = "blue"
 status_bar_bg = "mantle"
 status_bar_fg = "text"

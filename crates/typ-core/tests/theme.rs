@@ -77,7 +77,8 @@ fn light_fixture() -> ThemeColors {
         bracket_match_fg: Color::Rgb(0x8a, 0x4b, 0x00),
         bracket_match_bg: Color::Rgb(0xfd, 0xf0, 0xd9),
 
-        border: Color::Rgb(0xd8, 0xd8, 0xd4),
+        // 3:1 against both surfaces, like any rule.
+        border: Color::Rgb(0x7f, 0x82, 0x88),
         // Darker than the unfocused border, for the same reason.
         border_focused: Color::Rgb(0x1f, 0x5f, 0xa8),
 
@@ -126,6 +127,26 @@ fn the_rules_reject_a_palette_that_earns_it() {
         bad.iter().any(|f| f.starts_with("fg on bg")),
         "an invisible foreground has to be reported, got: {bad:?}"
     );
+}
+
+#[test]
+fn a_rule_under_three_to_one_is_reported_on_either_ground() {
+    // Interface §0.4: a rule is non-text and takes WCAG 1.4.11's 3:1, against
+    // the page and against the chrome surface, because it runs between the two.
+    // The v0.3.0 rule sat at 1.3 and a boundary nobody can see is no boundary.
+    let theme = ThemeColors {
+        border: Color::Rgb(0x2a, 0x32, 0x40),
+        ..ThemeColors::default()
+    };
+
+    let bad = audit(&theme, Kind::Dark);
+
+    for rule in ["border on bg", "border on chrome_bg"] {
+        assert!(
+            bad.iter().any(|f| f.starts_with(rule)),
+            "{rule} has to be reported, got: {bad:?}"
+        );
+    }
 }
 
 #[test]

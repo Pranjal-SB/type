@@ -325,6 +325,20 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         ground,
     );
 
+    // A rule is non-text, so WCAG 1.4.11's flat 3:1 rather than a text floor,
+    // and it is measured against both surfaces because it runs between them.
+    // At 1.3 the v0.3.0 rule left the editor and the sidebar reading as one
+    // space. The spec calls this slot `rule`; it keeps the name `border` because
+    // renaming it would break every theme file in the wild.
+    separated_by(&mut bad, "border on bg", theme.border, theme.bg, 3.0);
+    separated_by(
+        &mut bad,
+        "border on chrome_bg",
+        theme.border,
+        theme.chrome_bg,
+        3.0,
+    );
+
     emphasised(
         &mut bad,
         "border_focused",

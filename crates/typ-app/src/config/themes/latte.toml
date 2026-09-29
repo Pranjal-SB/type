@@ -53,7 +53,7 @@ bracket_match_bg = "crust"
 # value invented here.
 chrome_bg = "mantle"
 
-border = "surface1"
+border = "overlay2"
 border_focused = "blue"
 status_bar_bg = "mantle"
 status_bar_fg = "text"
