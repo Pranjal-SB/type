@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Rect;
 use typ_app::App;
 use typ_app::layout::split_frame;
-use typ_core::{KeyChord, NotifyLevel, PanelEvent};
+use typ_core::{Action, KeyChord, NotifyLevel, PanelEvent};
 
 fn fixture(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join("typ-status-test").join(name);
@@ -42,14 +42,14 @@ fn the_frame_reserves_one_row_for_the_status_bar() {
 #[test]
 fn quitting_a_clean_workspace_needs_no_confirmation() {
     let mut app = App::new(&fixture("clean")).unwrap();
-    app.apply(vec![PanelEvent::Quit]).unwrap();
+    app.apply_named_action(Action::Quit).unwrap();
     assert!(app.should_quit());
 }
 
 #[test]
 fn quitting_with_unsaved_changes_asks_first() {
     let mut app = app_with_edits("dirty");
-    app.apply(vec![PanelEvent::Quit]).unwrap();
+    app.apply_named_action(Action::Quit).unwrap();
     assert!(!app.should_quit(), "the first quit must not discard edits");
     assert!(app.status().unwrap().contains("Unsaved"));
 }
@@ -57,18 +57,18 @@ fn quitting_with_unsaved_changes_asks_first() {
 #[test]
 fn a_second_quit_discards_the_changes() {
     let mut app = app_with_edits("dirty-twice");
-    app.apply(vec![PanelEvent::Quit]).unwrap();
-    app.apply(vec![PanelEvent::Quit]).unwrap();
+    app.apply_named_action(Action::Quit).unwrap();
+    app.apply_named_action(Action::Quit).unwrap();
     assert!(app.should_quit());
 }
 
 #[test]
 fn any_other_input_cancels_a_pending_quit() {
     let mut app = app_with_edits("cancelled");
-    app.apply(vec![PanelEvent::Quit]).unwrap();
+    app.apply_named_action(Action::Quit).unwrap();
     app.clear_transient();
     assert!(app.status().is_none());
-    app.apply(vec![PanelEvent::Quit]).unwrap();
+    app.apply_named_action(Action::Quit).unwrap();
     assert!(!app.should_quit(), "the prompt must start over");
 }
 
@@ -76,7 +76,7 @@ fn any_other_input_cancels_a_pending_quit() {
 fn saving_clears_the_way_to_quit() {
     let mut app = app_with_edits("saved");
     app.editor_mut().save().unwrap();
-    app.apply(vec![PanelEvent::Quit]).unwrap();
+    app.apply_named_action(Action::Quit).unwrap();
     assert!(app.should_quit());
 }
 

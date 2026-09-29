@@ -34,7 +34,6 @@ fn panel_event_stays_small() {
     // and route through OpenWith rather than adding variants.
     let all = [
         PanelEvent::NeedsRedraw,
-        PanelEvent::Quit,
         PanelEvent::CloseSelf,
         PanelEvent::Focus(PanelId(0)),
         PanelEvent::OpenFile {
@@ -54,7 +53,7 @@ fn panel_event_stays_small() {
             message: "hi".into(),
         },
     ];
-    assert_eq!(all.len(), 8);
+    assert_eq!(all.len(), 7);
 
     // The assert above only counts what this test constructs, so on its own it
     // would still pass after a 9th variant were added. This match is the part
@@ -64,7 +63,6 @@ fn panel_event_stays_small() {
     for e in &all {
         match e {
             PanelEvent::NeedsRedraw
-            | PanelEvent::Quit
             | PanelEvent::CloseSelf
             | PanelEvent::Focus(_)
             | PanelEvent::OpenFile { .. }

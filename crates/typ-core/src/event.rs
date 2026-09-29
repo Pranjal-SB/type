@@ -100,8 +100,6 @@ pub enum NotifyLevel {
 pub enum PanelEvent {
     /// Panel state changed; the app should repaint.
     NeedsRedraw,
-    /// Quit the application.
-    Quit,
     /// Close the emitting panel.
     CloseSelf,
     /// Move focus to another panel.
