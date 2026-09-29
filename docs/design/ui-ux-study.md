@@ -92,7 +92,7 @@ worth its single chord; the rest are `ctrl+k g`, `ctrl+k o`, …).
 
 Zed's most-cited quality is chrome that is "out of your face"; VS Code ships Zen mode and
 centered layout because its own default chrome is too loud. Both agree on the direction:
-**every non-editor surface must be togglable to nothing, and the empty state is legitimate.**
+**every non-editor surface must be toggleable to nothing, and the empty state is legitimate.**
 
 TYPE is structurally ahead here (the one-rule layout in `visual.md` already spends ~0% on
 chrome against VS Code's icon strips) but the principle adds a requirement: *every* dock,
@@ -216,7 +216,7 @@ cover the shell (dock layout, toast paint, settings list) the way editing is cov
 | Breadcrumbs | Path/symbol row | No row. Symbol path is a status segment candidate at M3 | maybe |
 | Sticky scroll | Pinned scope headers | Genuinely good in a TUI; candidate, costs rows only when scrolled into deep scope | post-M4 |
 | Minimap | Pixel overview | No. A scrollbar column with match/diagnostic marks gives 80% at 1 column | visual milestone |
-| Zen/centered | Chrome off | Falls out of "everything togglable to zero" (§2.3) | free |
+| Zen/centered | Chrome off | Falls out of "everything toggleable to zero" (§2.3) | free |
 | Walkthroughs | Onboarding checklists | Empty-state screens that teach: no file open → the six keys that matter | visual milestone |
 | Multibuffer | Zed only | Read-only excerpt view first; editable is the long bet (§2.9) | post-M4 |
 | Peek / hover | Inline popup | M3 hover exists; one-rule styling, no box borders | M3 |
