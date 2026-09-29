@@ -7,6 +7,8 @@ verified: 2026-08-22
 
 # Controls — the keyboard model
 
+**Superseded where it disagrees with [`interface.md`](interface.md)**, the shell spec drawn from the mockups.
+
 **Status: half built as of v0.2.9.** The tier analysis in §1 is load-bearing and has been used —
 it is why the command palette is reached by typing `>` into `Ctrl+P` rather than by
 `Ctrl+Shift+P`, and why tab switching is bound to `Alt+,`/`Alt+.` as well as the page keys. The

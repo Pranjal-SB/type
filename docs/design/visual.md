@@ -8,6 +8,8 @@ verified-against: v0.2.10
 
 # Visual direction
 
+**Superseded where it disagrees with [`interface.md`](interface.md)**, the shell spec drawn from the mockups.
+
 **Status: design, not built.** Nothing here is in the tree. It is written down because
 `architecture.md` §4 commits to "no chrome without a job" and "one visual system applied
 uniformly" without ever saying what that looks like, and because two tasks in M2.5 (whitespace,
@@ -170,6 +172,5 @@ room.
 (`symbols = "unicode" | "ascii"`), every glyph single-width, nerd fonts never assumed. The
 table is the whole shell vocabulary; new glyphs are added there or not at all.
 
-The first slice of this document to be built is planned:
-[`../plans/m3.3-native.md`](../plans/m3.3-native.md): one rule, recede, terminal ground,
-window title.
+The first slice of this document to be built is planned in a working plan (M3.3): one
+rule, recede, terminal ground, window title.

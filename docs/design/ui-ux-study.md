@@ -8,6 +8,8 @@ verified-against: v0.3.0
 
 # UI/UX study: what VS Code and Zed get right, translated to a terminal
 
+**Superseded where it disagrees with [`interface.md`](interface.md)**, the shell spec drawn from the mockups.
+
 **Status: study, not a plan.** Input to the visual milestone that `visual.md` already calls
 for, and to M4's workspace work. Nothing here is a licence to build; everything here is a
 candidate that still has to survive mockups and the 80-column floor.
