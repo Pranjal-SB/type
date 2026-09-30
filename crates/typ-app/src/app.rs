@@ -3,6 +3,7 @@ use std::path::Path;
 /// Search, replace and goto-line. A child module rather than a sibling so it
 /// reaches `App`'s private fields without any of them widening to `pub(crate)`
 /// — the extraction is meant to shorten this file, not to open it up.
+mod door;
 mod picker;
 mod render;
 mod search;
@@ -133,6 +134,9 @@ pub struct App {
     /// position: a box left standing over a different one is saying something
     /// true about somewhere else.
     hover: Option<String>,
+    /// The first key of a sequence, pressed and waiting for its second. The
+    /// `ctrl+k` menu is up while this is.
+    pending: Option<String>,
 }
 
 /// One open file, and the parse state that belongs to it rather than to the app.
@@ -263,6 +267,7 @@ impl App {
             index_requested: false,
             lsp: crate::lsp::Lsp::new(root),
             hover: None,
+            pending: None,
         })
     }
 
@@ -918,6 +923,9 @@ impl App {
         // true about the wrong thing. `handle_chord` calls this before running
         // the action, so `Hover` still gets to set it afterwards.
         self.hover = None;
+        // A click or a paste abandons a half-typed sequence rather than
+        // leaving its second key to land on whatever comes next.
+        self.pending = None;
     }
 
     /// Run an action by name, the way the command palette does.
@@ -1079,7 +1087,20 @@ impl App {
             return self.handle_prompt_chord(chord);
         }
 
-        let bound = self.keymap.lookup(&chord);
+        if let Some(prefix) = self.pending.take() {
+            return self.finish_sequence(&prefix, &chord);
+        }
+
+        let bound = match self.keymap.resolve(None, &chord) {
+            typ_core::Resolved::Matched(action) => Some(action),
+            // Nothing runs yet, so nothing transient is cleared: a close
+            // armed by `ctrl+k w` has to survive the `ctrl+k` that confirms it.
+            typ_core::Resolved::Pending(_) => {
+                self.pending = Some(chord.canonical);
+                return Ok(());
+            }
+            typ_core::Resolved::NotFound => None,
+        };
 
         // Every key retires the current status message and anything it left
         // pending, so a confirmation is answered by the very next keystroke or

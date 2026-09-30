@@ -1,4 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use typ_core::keymap::Resolved;
 use typ_core::{Action, Direction, KeyChord, Keymap, Motion};
 
 fn chord(code: KeyCode, mods: KeyModifiers) -> KeyChord {
@@ -219,4 +220,45 @@ fn the_defaults_bind_no_chord_both_alone_and_as_a_prefix() {
     // An empty config still runs the check over the whole table, defaults
     // included.
     Keymap::default_bindings().merge_toml("").unwrap();
+}
+
+// --- resolving a prefix ------------------------------------------------------
+
+#[test]
+fn a_prefix_resolves_to_pending_with_every_row_under_it() {
+    let keymap = Keymap::default_bindings();
+    let ctrl_k = chord(KeyCode::Char('k'), KeyModifiers::CONTROL);
+    match keymap.resolve(None, &ctrl_k) {
+        Resolved::Pending(rows) => assert!(
+            rows.contains(&("f".to_string(), Action::OpenProjectSearch)),
+            "rows were: {rows:?}"
+        ),
+        other => panic!("ctrl+k resolved to {other:?}"),
+    }
+}
+
+#[test]
+fn the_second_step_resolves_against_the_prefix() {
+    let keymap = Keymap::default_bindings();
+    let f = chord(KeyCode::Char('f'), KeyModifiers::NONE);
+    assert_eq!(
+        keymap.resolve(Some("ctrl+k"), &f),
+        Resolved::Matched(Action::OpenProjectSearch)
+    );
+    let q = chord(KeyCode::Char('q'), KeyModifiers::NONE);
+    assert_eq!(keymap.resolve(Some("ctrl+k"), &q), Resolved::NotFound);
+}
+
+#[test]
+fn an_ordinary_chord_resolves_as_it_always_looked_up() {
+    let keymap = Keymap::default_bindings();
+    assert_eq!(
+        keymap.resolve(None, &chord(KeyCode::Char('s'), KeyModifiers::CONTROL)),
+        Resolved::Matched(Action::Save)
+    );
+    // Typed text: bound to nothing and the start of nothing.
+    assert_eq!(
+        keymap.resolve(None, &chord(KeyCode::Char('f'), KeyModifiers::NONE)),
+        Resolved::NotFound
+    );
 }

@@ -5,10 +5,22 @@
 //! wholesale. A `match` on `KeyCode` can be read by exactly one of those.
 
 use std::collections::BTreeMap;
+use std::ops::Bound;
 
 use anyhow::{Context, Result, anyhow};
 
 use crate::{Action, Direction, KeyChord, Motion};
+
+/// What a key means, given what was pressed before it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Resolved {
+    Matched(Action),
+    /// The key starts sequences. Each row is the step after the prefix and
+    /// what it runs, in table order: the rows *are* the menu, generated rather
+    /// than authored, so a rebind changes it.
+    Pending(Vec<(String, Action)>),
+    NotFound,
+}
 
 #[derive(Debug, Clone)]
 pub struct Keymap {
@@ -293,6 +305,10 @@ const DEFAULTS: &[(&str, Action)] = &[
     // Universal, free, and rebindable; the palette reaches it by name either
     // way, which is what makes this a default rather than the only door.
     ("alt+h", Action::Hover),
+    // The door (`controls.md` §2). Ctrl+Shift+F needs the kitty protocol to
+    // arrive at all, so project search gets a chord every terminal delivers.
+    // Gap 52.
+    ("ctrl+k f", Action::OpenProjectSearch),
     ("f3", Action::SearchNext),
     ("shift+f3", Action::SearchPrevious),
     ("ctrl+h", Action::ReplaceOpen),
@@ -332,6 +348,63 @@ impl Keymap {
 
     pub fn lookup(&self, chord: &KeyChord) -> Option<Action> {
         self.bindings.get(&chord.canonical).copied()
+    }
+
+    /// What `chord` means after `prefix`, or on its own when there is none.
+    ///
+    /// Layers (`controls.md` §3) would be searched here, the focused panel's
+    /// rows before these. No panel has rows of its own yet, so this table is
+    /// the whole lookup.
+    ///
+    /// **No allocation for a chord that is neither bound nor a prefix**, which
+    /// is every typed character: the prefix test is one step of an ordered
+    /// iterator, not a formatted range.
+    pub fn resolve(&self, prefix: Option<&str>, chord: &KeyChord) -> Resolved {
+        if let Some(prefix) = prefix {
+            let sequence = format!("{prefix} {}", chord.canonical);
+            return match self.bindings.get(&sequence) {
+                Some(action) => Resolved::Matched(*action),
+                None => Resolved::NotFound,
+            };
+        }
+        if let Some(action) = self.bindings.get(&chord.canonical) {
+            return Resolved::Matched(*action);
+        }
+        if self.starts_a_sequence(&chord.canonical) {
+            return Resolved::Pending(self.under(&chord.canonical));
+        }
+        Resolved::NotFound
+    }
+
+    /// Every row under `prefix`, as (the step after it, the action).
+    ///
+    /// A range scan: `"ctrl+k "` up to `"ctrl+k!"`, because `!` is the byte
+    /// after the space. O(log n + k) from the container the table already is.
+    pub fn under(&self, prefix: &str) -> Vec<(String, Action)> {
+        let start = format!("{prefix} ");
+        let end = format!("{prefix}!");
+        self.bindings
+            .range::<str, _>((
+                Bound::Included(start.as_str()),
+                Bound::Excluded(end.as_str()),
+            ))
+            .map(|(sequence, action)| (sequence[start.len()..].to_string(), *action))
+            .collect()
+    }
+
+    /// Whether some sequence starts with `chord`.
+    ///
+    /// Anything starting `"ctrl+k "` sorts directly after `"ctrl+k"`, since
+    /// no chord spelling holds a byte below the space, so the next key along
+    /// answers.
+    fn starts_a_sequence(&self, chord: &str) -> bool {
+        self.bindings
+            .range::<str, _>((Bound::Excluded(chord), Bound::Unbounded))
+            .next()
+            .is_some_and(|(next, _)| {
+                next.strip_prefix(chord)
+                    .is_some_and(|rest| rest.starts_with(' '))
+            })
     }
 
     /// Chords bound to an action, for help text and the future palette.

@@ -17,7 +17,7 @@ pub use colour::{Depth, downgrade};
 pub use diagnostic::{Diagnostic, Severity};
 pub use event::{AppEvent, HandlerId, NotifyLevel, PanelEvent, PanelId};
 pub use key::KeyChord;
-pub use keymap::Keymap;
+pub use keymap::{Keymap, Resolved};
 pub use panel::{Panel, RenderContext, ThemeColors};
 pub use style::{UNDERCURL, Undercurl};
 pub use theme::{Kind, SyntaxTheme, Theme};
