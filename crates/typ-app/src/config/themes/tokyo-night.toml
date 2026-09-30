@@ -15,6 +15,8 @@
 #   orange          #ff9e64 -> #ffe6ac   the warning colour
 #   red             #f7768e -> #ff8aa2   the error colour
 #   yellow          #e0af68 -> #ffeba4   the warning colour
+#   + rule          #737aa2              the border, upstream dark5: fg_gutter
+#                                        moved too far to stay a rule
 #
 # Upstream's error and warning sit 1.32 apart against a 1.8 floor, the widest
 # miss in the set. Whether this is still recognisably Tokyo Night is a fair
@@ -25,12 +27,14 @@ name = "Tokyo Night Storm"
 kind = "dark"
 
 [palette]
+scrim = "#1b1e2d"  # below bg and bg_dark: the modal backdrop
 bg = "#24283b"
 bg_dark = "#262a3c"
 bg_highlight = "#1a1f32"
 fg = "#dee8ff"
 fg_dark = "#bac2e7"
 fg_gutter = "#9198b7"
+rule = "#737aa2"   # upstream dark5, the border: 3:1 against both surfaces
 comment = "#565f89"
 terminal_black = "#3f4666"
 blue = "#97bfff"
@@ -50,7 +54,7 @@ gutter_bg = "bg"
 line_number_fg = "fg_gutter"
 line_number_current_fg = "fg"
 whitespace = "fg_gutter"
-indent_guide = "fg_gutter"
+indent_guide = "terminal_black"
 selection_bg = "blue7"
 selection_fg = "fg"
 selection_primary_bg = "blue0"
@@ -61,14 +65,17 @@ bracket_match_bg = "terminal_black"
 # value invented here.
 chrome_bg = "bg_dark"
 
-border = "fg_gutter"
+border = "rule"
 border_focused = "blue"
+float_border = "blue"
+scrim = "scrim"
 status_bar_bg = "bg_dark"
 status_bar_fg = "fg"
 status_bar_inactive_fg = "fg_dark"
 status_bar_accent = "blue"
 tree_directory_fg = "blue"
 tree_file_fg = "fg_dark"
+receded_fg = "fg_dark"
 diagnostic_error = "red"
 diagnostic_warning = "yellow"
 diagnostic_info = "blue"

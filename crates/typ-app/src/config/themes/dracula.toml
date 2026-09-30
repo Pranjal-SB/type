@@ -14,6 +14,8 @@
 #   red      #ff5555 -> #ff908a  4.53 against the page, under the 6.5 for text
 #                                read on its own.
 #   + cursor_line, chrome, select_primary: invented, see above.
+#   + rule   #7d86b8   the border. Upstream used current_line (#44475a),
+#                      1.6 against the page; a rule has to hold 3:1.
 #
 # `yellow` is untouched: at 12.74 it already clears its floor and separates from
 # the adapted red by 1.96, over the 1.8 that keeps error and warning apart for a
@@ -23,6 +25,7 @@ name = "Dracula"
 kind = "dark"
 
 [palette]
+scrim = "#1a1b23"  # below background: the modal backdrop, clear of it at 256 too
 background = "#282a36"
 # One step off the page. Any further and the current line becomes a stripe;
 # any closer and it collapses onto the page at 256 colours.
@@ -31,7 +34,8 @@ cursor_line = "#292b37"
 # page and the cursor-line tint after quantisation, which is what forces a
 # third value rather than reusing either.
 chrome = "#323541"
-current_line = "#44475a"   # kept for the border, its remaining upstream job
+guide = "#44475a"          # indent guides, upstream current_line
+rule = "#7d86b8"           # the border: 3:1 against both surfaces (upstream comment #6272a4 is 2.59 on the chrome)
 select = "#44475a"
 # Upstream has no second selection tone. The primary reads as "the same thing,
 # more so" by sitting one step above `select` rather than by changing hue.
@@ -54,7 +58,7 @@ gutter_bg = "background"
 line_number_fg = "comment"
 line_number_current_fg = "foreground"
 whitespace = "comment"
-indent_guide = "comment"
+indent_guide = "guide"
 
 selection_bg = "select"
 selection_fg = "foreground"
@@ -64,8 +68,10 @@ bracket_match_fg = "yellow"
 bracket_match_bg = "cursor_line"
 
 chrome_bg = "chrome"
-border = "current_line"
+border = "rule"
 border_focused = "purple"
+float_border = "purple"
+scrim = "scrim"
 
 status_bar_bg = "chrome"
 status_bar_fg = "foreground"
@@ -74,6 +80,7 @@ status_bar_accent = "purple"
 
 tree_directory_fg = "cyan"
 tree_file_fg = "foreground"
+receded_fg = "comment"
 
 diagnostic_error = "red"
 diagnostic_warning = "yellow"

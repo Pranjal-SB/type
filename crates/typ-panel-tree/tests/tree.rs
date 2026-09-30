@@ -123,3 +123,44 @@ fn the_sidebar_sits_on_the_chrome_surface_not_the_editors_page() {
         "and the selected row still marks itself"
     );
 }
+
+#[test]
+fn an_unfocused_tree_recedes_and_keeps_its_selection() {
+    // Interface §4: the region without focus drops to `receded_fg`. The
+    // selected row is the exception, because "which entry is selected" is the
+    // one thing a receded tree still has to say.
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use typ_core::{RenderContext, ThemeColors};
+
+    let theme = ThemeColors::default();
+    let area = Rect::new(0, 0, 20, 6);
+    let paint = |is_focused: bool| {
+        let mut panel = TreePanel::new(&fixture(&format!("recede-{is_focused}"))).unwrap();
+        let ctx = RenderContext {
+            theme: &theme,
+            syntax: typ_core::SyntaxTheme::empty(),
+            diagnostics: &[],
+            is_focused,
+            panel_index: 0,
+            terminal_width: 20,
+            terminal_height: 6,
+        };
+        let mut buf = Buffer::empty(area);
+        panel.render(area, &mut buf, &ctx);
+        buf
+    };
+
+    // Row 1 is `sub/`, selected; row 3 is `b.rs`, whose name starts at x 3.
+    let focused = paint(true);
+    let unfocused = paint(false);
+    assert_eq!(focused[(3, 3)].symbol(), "b");
+    assert_eq!(focused[(3, 3)].fg, theme.tree_file_fg);
+    assert_eq!(focused[(3, 1)].fg, theme.selection_fg);
+    assert_eq!(unfocused[(3, 3)].fg, theme.receded_fg);
+    assert_eq!(
+        unfocused[(3, 1)].bg,
+        theme.selection_primary_bg,
+        "the selection receded with everything else"
+    );
+}

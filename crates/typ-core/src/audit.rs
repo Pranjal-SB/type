@@ -265,17 +265,25 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         "whitespace marks must be quieter than the code they sit in",
     );
 
-    // An indent guide is the same class of furniture again, and unlike a
-    // whitespace mark it is always on — so the floor matters more here, not
-    // less. Below it the rules read as a smear down the left of the file
-    // instead of as the structure of the block.
-    at_least(
+    // An indent guide is decoration (interface §1), not text: it was held to
+    // the gutter's floor until v0.3.2 and at that floor every nested block
+    // wore a bright ladder. So it is bounded on both sides instead. It has to
+    // be there at all, and it has to be quieter than a rule, or it reads as a
+    // boundary between regions that are one region.
+    separated_by(
         &mut bad,
-        "indent_guide on bg",
+        "indent_guide vs bg",
         theme.indent_guide,
         theme.bg,
-        floors.quiet,
-        ground,
+        1.3,
+    );
+    emphasised(
+        &mut bad,
+        "border over indent_guide",
+        theme.border,
+        theme.indent_guide,
+        theme.bg,
+        "a guide is quieter than a rule, or it reads as a boundary",
     );
     emphasised(
         &mut bad,
@@ -324,6 +332,43 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         floors.content,
         ground,
     );
+
+    // A rule is non-text, so WCAG 1.4.11's flat 3:1 rather than a text floor,
+    // and it is measured against both surfaces because it runs between them.
+    // At 1.3 the v0.3.0 rule left the editor and the sidebar reading as one
+    // space. The spec calls this slot `rule`; it keeps the name `border` because
+    // renaming it would break every theme file in the wild.
+    separated_by(&mut bad, "border on bg", theme.border, theme.bg, 3.0);
+    separated_by(
+        &mut bad,
+        "border on chrome_bg",
+        theme.border,
+        theme.chrome_bg,
+        3.0,
+    );
+
+    // A float's border is a rule drawn over content, and a float can land on
+    // either surface, so the same 3:1 on both.
+    separated_by(
+        &mut bad,
+        "float_border on bg",
+        theme.float_border,
+        theme.bg,
+        3.0,
+    );
+    separated_by(
+        &mut bad,
+        "float_border on chrome_bg",
+        theme.float_border,
+        theme.chrome_bg,
+        3.0,
+    );
+
+    // A modal float repaints both surfaces behind it to this, so it has to be
+    // darker than both. Darker on a light theme too: a backdrop that lightens
+    // reads as a glare over the page rather than the page stepping back.
+    darker(&mut bad, "scrim vs bg", theme.scrim, theme.bg);
+    darker(&mut bad, "scrim vs chrome_bg", theme.scrim, theme.chrome_bg);
 
     emphasised(
         &mut bad,
@@ -387,6 +432,35 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         floors.content,
         ground,
     );
+    // An unfocused panel's text. It can sit on either surface, the editor on
+    // `bg` and the sidebar on `chrome_bg`, so it is measured on both. Receded
+    // is still read, so it keeps the quiet floor; and it has to be quieter
+    // than body text, or focus is not shown by anything stepping back.
+    at_least(
+        &mut bad,
+        "receded_fg on bg",
+        theme.receded_fg,
+        theme.bg,
+        floors.quiet,
+        ground,
+    );
+    at_least(
+        &mut bad,
+        "receded_fg on chrome_bg",
+        theme.receded_fg,
+        theme.chrome_bg,
+        floors.quiet,
+        ground,
+    );
+    emphasised(
+        &mut bad,
+        "fg over receded_fg",
+        theme.fg,
+        theme.receded_fg,
+        theme.bg,
+        "an unfocused panel has to be quieter than a focused one",
+    );
+
     // And the surface has to actually be a surface. Chrome and content sharing
     // one colour is the defect this field exists to fix, and a theme that sets
     // them equal has silently undone it.
@@ -457,6 +531,15 @@ fn below(bad: &mut Vec<String>, name: &str, a: Color, b: Color, ceiling: f64, wh
     if ratio >= ceiling {
         bad.push(format!(
             "{name}: contrast {ratio:.2} is at or above {ceiling:.1}, {why}"
+        ));
+    }
+}
+
+/// `a` has to be strictly darker than `b`, on either kind of ground.
+fn darker(bad: &mut Vec<String>, name: &str, a: Color, b: Color) {
+    if luminance(a) >= luminance(b) {
+        bad.push(format!(
+            "{name}: {a:?} is not darker than {b:?}, and a backdrop has to step back"
         ));
     }
 }

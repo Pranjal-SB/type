@@ -244,10 +244,16 @@ impl Panel for TreePanel {
                 // Directories carry the accent, files the quieter secondary
                 // step. This is what turns a tree from a list into information:
                 // the shape of a project is readable without reading the names.
+                //
+                // Without focus every entry recedes to one colour (interface
+                // §4), except the selected row: which entry is selected is the
+                // one thing a receded tree still has to say.
                 let style = if i == self.selected {
                     Style::default()
                         .fg(ctx.theme.selection_fg)
                         .bg(ctx.theme.selection_primary_bg)
+                } else if !ctx.is_focused {
+                    Style::default().fg(ctx.theme.receded_fg)
                 } else if entry.is_dir {
                     Style::default().fg(ctx.theme.tree_directory_fg)
                 } else {

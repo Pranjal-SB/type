@@ -67,8 +67,8 @@ fn light_fixture() -> ThemeColors {
         // The gutter's step: a mark is furniture, and it is held to the
         // furniture floor.
         whitespace: Color::Rgb(0x8a, 0x8d, 0x93),
-        // The same step again: guides and marks and numbers are one family.
-        indent_guide: Color::Rgb(0x8a, 0x8d, 0x93),
+        // Decoration: tellable from the page, quieter than the rule.
+        indent_guide: Color::Rgb(0xc8, 0xca, 0xd0),
 
         selection_bg: Color::Rgb(0xd3, 0xdc, 0xea),
         selection_fg: Color::Rgb(0x1a, 0x1c, 0x20),
@@ -77,9 +77,12 @@ fn light_fixture() -> ThemeColors {
         bracket_match_fg: Color::Rgb(0x8a, 0x4b, 0x00),
         bracket_match_bg: Color::Rgb(0xfd, 0xf0, 0xd9),
 
-        border: Color::Rgb(0xd8, 0xd8, 0xd4),
+        // 3:1 against both surfaces, like any rule.
+        border: Color::Rgb(0x7f, 0x82, 0x88),
         // Darker than the unfocused border, for the same reason.
         border_focused: Color::Rgb(0x1f, 0x5f, 0xa8),
+        float_border: Color::Rgb(0x1f, 0x5f, 0xa8),
+        scrim: Color::Rgb(0xd8, 0xd8, 0xd4),
 
         chrome_bg: Color::Rgb(0xf0, 0xf0, 0xed),
         status_bar_bg: Color::Rgb(0xf0, 0xf0, 0xed),
@@ -89,6 +92,7 @@ fn light_fixture() -> ThemeColors {
 
         tree_directory_fg: Color::Rgb(0x1f, 0x5f, 0xa8),
         tree_file_fg: Color::Rgb(0x3a, 0x3d, 0x43),
+        receded_fg: Color::Rgb(0x5f, 0x62, 0x68),
 
         diagnostic_error: Color::Rgb(0x8f, 0x14, 0x14),
         diagnostic_warning: Color::Rgb(0x99, 0x68, 0x00),
@@ -125,6 +129,149 @@ fn the_rules_reject_a_palette_that_earns_it() {
     assert!(
         bad.iter().any(|f| f.starts_with("fg on bg")),
         "an invisible foreground has to be reported, got: {bad:?}"
+    );
+}
+
+#[test]
+fn a_rule_under_three_to_one_is_reported_on_either_ground() {
+    // Interface §0.4: a rule is non-text and takes WCAG 1.4.11's 3:1, against
+    // the page and against the chrome surface, because it runs between the two.
+    // The v0.3.0 rule sat at 1.3 and a boundary nobody can see is no boundary.
+    let theme = ThemeColors {
+        border: Color::Rgb(0x2a, 0x32, 0x40),
+        ..ThemeColors::default()
+    };
+
+    let bad = audit(&theme, Kind::Dark);
+
+    for rule in ["border on bg", "border on chrome_bg"] {
+        assert!(
+            bad.iter().any(|f| f.starts_with(rule)),
+            "{rule} has to be reported, got: {bad:?}"
+        );
+    }
+}
+
+#[test]
+fn an_indent_guide_is_decoration_and_is_not_held_to_a_text_floor() {
+    // Interface §1: the guide is decorative, and at the gutter's step it drew a
+    // bright ladder down every nested block. Slate's §1 value sits at 1.9.
+    let theme = ThemeColors {
+        indent_guide: Color::Rgb(0x3b, 0x45, 0x57),
+        ..ThemeColors::default()
+    };
+
+    let bad = audit(&theme, Kind::Dark);
+
+    assert!(
+        !bad.iter().any(|f| f.starts_with("indent_guide")),
+        "a 1.9 guide is what the spec asks for, got: {bad:?}"
+    );
+}
+
+#[test]
+fn an_indent_guide_louder_than_the_rule_or_lost_in_the_page_is_reported() {
+    // Decoration still has two edges. Louder than a rule, a guide reads as a
+    // boundary it is not; at the page's own colour it is not there at all.
+    let theme = ThemeColors::default();
+    let loud = ThemeColors {
+        indent_guide: theme.line_number_fg,
+        ..theme
+    };
+    let lost = ThemeColors {
+        indent_guide: Color::Rgb(0x14, 0x18, 0x20),
+        ..theme
+    };
+
+    assert!(
+        audit(&loud, Kind::Dark)
+            .iter()
+            .any(|f| f.starts_with("border over indent_guide")),
+        "got: {:?}",
+        audit(&loud, Kind::Dark)
+    );
+    assert!(
+        audit(&lost, Kind::Dark)
+            .iter()
+            .any(|f| f.starts_with("indent_guide vs bg")),
+        "got: {:?}",
+        audit(&lost, Kind::Dark)
+    );
+}
+
+#[test]
+fn a_receded_colour_has_to_be_readable_and_has_to_recede() {
+    // Interface §1: the quiet floor on both grounds, because an unfocused
+    // editor sits on `bg` and an unfocused sidebar on `chrome_bg`. And it has to
+    // be quieter than body text, or nothing recedes.
+    let theme = ThemeColors::default();
+    let unreadable = ThemeColors {
+        receded_fg: theme.border,
+        ..theme
+    };
+    let loud = ThemeColors {
+        receded_fg: theme.selection_fg,
+        ..theme
+    };
+
+    let bad = audit(&unreadable, Kind::Dark);
+    for rule in ["receded_fg on bg", "receded_fg on chrome_bg"] {
+        assert!(
+            bad.iter().any(|f| f.starts_with(rule)),
+            "{rule} has to be reported, got: {bad:?}"
+        );
+    }
+    let bad = audit(&loud, Kind::Dark);
+    assert!(
+        bad.iter().any(|f| f.starts_with("fg over receded_fg")),
+        "got: {bad:?}"
+    );
+}
+
+#[test]
+fn a_float_border_under_three_to_one_is_reported_on_either_ground() {
+    // A float's border is a rule drawn over content, held to the same 3:1.
+    let theme = ThemeColors {
+        float_border: Color::Rgb(0x2a, 0x32, 0x40),
+        ..ThemeColors::default()
+    };
+
+    let bad = audit(&theme, Kind::Dark);
+
+    for rule in ["float_border on bg", "float_border on chrome_bg"] {
+        assert!(
+            bad.iter().any(|f| f.starts_with(rule)),
+            "{rule} has to be reported, got: {bad:?}"
+        );
+    }
+}
+
+#[test]
+fn a_scrim_that_does_not_darken_both_surfaces_is_reported() {
+    // Interface §3: a modal float repaints what is behind it one step darker.
+    // Both surfaces are behind it, so it has to be darker than both.
+    let theme = ThemeColors::default();
+    assert!(
+        audit(
+            &ThemeColors {
+                scrim: theme.chrome_bg,
+                ..theme
+            },
+            Kind::Dark
+        )
+        .iter()
+        .any(|f| f.starts_with("scrim vs chrome_bg")),
+    );
+    assert!(
+        audit(
+            &ThemeColors {
+                scrim: theme.bg,
+                ..theme
+            },
+            Kind::Dark
+        )
+        .iter()
+        .any(|f| f.starts_with("scrim vs bg")),
     );
 }
 

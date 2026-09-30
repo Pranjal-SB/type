@@ -242,6 +242,8 @@ fn scrolling_back_up_brings_the_top_into_view() {
 fn rendering_fits_inside_its_area() {
     // A panel that writes outside its rect corrupts whatever it floats over,
     // and an overlay is the one panel where that is guaranteed to be something.
+    // The float's one-cell gutter is the deliberate exception, and it writes
+    // nothing but blank page, which is what this checks for.
     let theme = ThemeColors::default();
     let mut picker = open(&["crates/typ-core/src/theme.rs", "README.md"]);
     let area = Rect::new(5, 3, 30, 8);
@@ -420,4 +422,37 @@ fn an_escape_sequence_in_a_path_never_reaches_a_cell() {
         "raw control characters reached {} cells: {escaped:?}",
         escaped.len()
     );
+}
+
+#[test]
+fn the_picker_is_a_float_named_for_its_mode_with_esc_as_its_exit() {
+    // Interface §3: rounded, its name top-left, its exit top-right, a clear
+    // gutter of page around it, and `float_border` because it has the keys.
+    let theme = ThemeColors::default();
+    let mut picker = open(&["README.md"]);
+    let area = Rect::new(5, 3, 30, 8);
+    let ctx = RenderContext {
+        theme: &theme,
+        syntax: typ_core::SyntaxTheme::empty(),
+        diagnostics: &[],
+        is_focused: true,
+        panel_index: 0,
+        terminal_width: 80,
+        terminal_height: 24,
+    };
+    let mut buf = Buffer::empty(Rect::new(0, 0, 80, 24));
+    picker.render(area, &mut buf, &ctx);
+
+    let top: String = (area.x..area.right())
+        .map(|x| buf[(x, 3)].symbol())
+        .collect();
+    assert!(top.starts_with("╭─ Open file "), "got {top:?}");
+    assert!(top.ends_with(" esc ─╮"), "got {top:?}");
+    assert_eq!(buf[(area.x, 3)].fg, theme.float_border);
+    assert_eq!(buf[(area.x, area.bottom() - 1)].symbol(), "╰");
+    // The gutter, one cell out on every side.
+    assert_eq!(buf[(area.x - 1, 5)].bg, theme.bg);
+    assert_eq!(buf[(area.right(), 5)].bg, theme.bg);
+    assert_eq!(buf[(10, area.y - 1)].bg, theme.bg);
+    assert_eq!(buf[(10, area.bottom())].bg, theme.bg);
 }

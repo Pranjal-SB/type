@@ -193,3 +193,134 @@ fn a_panel_narrower_than_its_own_frame_draws_nothing_and_does_not_panic() {
         }
     }
 }
+
+#[test]
+fn a_focused_title_is_accent_and_bold_and_an_unfocused_one_recedes() {
+    // Interface §4: the focused region's label is accent and bold, and
+    // everything unfocused recedes. The title is the panel's label.
+    use ratatui::style::Modifier;
+    let (focused, theme) = draw(Rect::new(0, 0, 20, 5), "notes", true);
+    let (unfocused, _) = draw(Rect::new(0, 0, 20, 5), "notes", false);
+
+    // `┌─ notes ─`: the name is columns 3 to 7.
+    for x in 3..8 {
+        assert_eq!(focused[(x, 0)].fg, theme.border_focused, "column {x}");
+        assert!(
+            focused[(x, 0)].modifier.contains(Modifier::BOLD),
+            "column {x}"
+        );
+        assert_eq!(unfocused[(x, 0)].fg, theme.receded_fg, "column {x}");
+        assert!(!unfocused[(x, 0)].modifier.contains(Modifier::BOLD));
+    }
+    // The rule either side of the name is still the rule.
+    assert_eq!(unfocused[(1, 0)].fg, theme.border);
+    assert!(!focused[(1, 0)].modifier.contains(Modifier::BOLD));
+}
+
+// ---------------------------------------------------------------------------
+// Floats (interface §3)
+// ---------------------------------------------------------------------------
+
+/// A 22x6 float at (2, 1) in a 26x8 buffer, over text, so a cell the float
+/// failed to clear still says `x`.
+fn draw_float(focused: bool) -> (Buffer, ThemeColors) {
+    let theme = ThemeColors::default();
+    let mut buf = Buffer::with_lines(vec!["x".repeat(26); 8]);
+    chrome::float(
+        Rect::new(2, 1, 22, 6),
+        &mut buf,
+        "Open file",
+        "esc",
+        &context(&theme, focused),
+    );
+    (buf, theme)
+}
+
+#[test]
+fn a_float_is_a_rounded_box_with_its_name_and_its_exit_cut_into_the_top() {
+    let (buf, _) = draw_float(true);
+    let top: String = (2..24).map(|x| buf[(x, 1)].symbol()).collect();
+    let bottom: String = (2..24).map(|x| buf[(x, 6)].symbol()).collect();
+    assert_eq!(top, "╭─ Open file ── esc ─╮");
+    assert_eq!(bottom, "╰────────────────────╯");
+    assert_eq!(buf[(2, 3)].symbol(), "│");
+    assert_eq!(buf[(23, 3)].symbol(), "│");
+}
+
+#[test]
+fn a_float_clears_what_it_is_drawn_over() {
+    let (buf, theme) = draw_float(true);
+    for y in 2..6 {
+        for x in 3..23 {
+            assert_eq!(buf[(x, y)].symbol(), " ", "text showed through at {x},{y}");
+            assert_eq!(buf[(x, y)].bg, theme.chrome_bg, "{x},{y}");
+        }
+    }
+}
+
+#[test]
+fn a_float_keeps_one_clear_cell_of_page_between_its_border_and_the_code() {
+    // Interface §3: the gutter is what stops a border touching code.
+    let (buf, theme) = draw_float(true);
+    let ring = (1..25)
+        .flat_map(|x| [(x, 0), (x, 7)])
+        .chain((0..8).flat_map(|y| [(1, y), (24, y)]));
+    for (x, y) in ring {
+        assert_eq!(buf[(x, y)].symbol(), " ", "gutter at {x},{y}");
+        assert_eq!(buf[(x, y)].bg, theme.bg, "gutter at {x},{y}");
+    }
+    // And nothing past it.
+    assert_eq!(buf[(0, 3)].symbol(), "x");
+    assert_eq!(buf[(25, 3)].symbol(), "x");
+}
+
+#[test]
+fn a_float_with_the_keys_is_bordered_in_float_border_and_one_without_in_the_rule() {
+    let (focused, theme) = draw_float(true);
+    let (unfocused, _) = draw_float(false);
+    assert_eq!(focused[(2, 1)].fg, theme.float_border);
+    assert_eq!(focused[(23, 4)].fg, theme.float_border);
+    assert_eq!(unfocused[(2, 1)].fg, theme.border);
+    assert_eq!(unfocused[(23, 4)].fg, theme.border);
+}
+
+#[test]
+fn the_exit_is_where_the_hit_test_says_it_is() {
+    // Render and the mouse ask one function, so a click on `esc` cannot land a
+    // column off.
+    let (buf, _) = draw_float(true);
+    let (x, width) = chrome::float_exit(Rect::new(2, 1, 22, 6), "Open file", "esc").unwrap();
+    let drawn: String = (x..x + width).map(|x| buf[(x, 1)].symbol()).collect();
+    assert_eq!(drawn, "esc");
+}
+
+#[test]
+fn a_float_too_narrow_for_its_exit_drops_the_exit_before_the_name() {
+    let theme = ThemeColors::default();
+    // One column short of `╭─ Open file ─ esc ─╮`: the exit goes, the name
+    // stays whole.
+    let area = Rect::new(0, 0, 20, 3);
+    let mut buf = Buffer::empty(area);
+    chrome::float(area, &mut buf, "Open file", "esc", &context(&theme, true));
+    assert_eq!(chrome::float_exit(area, "Open file", "esc"), None);
+    let top: String = (0..20).map(|x| buf[(x, 0)].symbol()).collect();
+    assert_eq!(top, "╭─ Open file ──────╮");
+    // And at exactly the width, both, with one cell of rule between.
+    let area = Rect::new(0, 0, 21, 3);
+    let mut buf = Buffer::empty(area);
+    chrome::float(area, &mut buf, "Open file", "esc", &context(&theme, true));
+    let top: String = (0..21).map(|x| buf[(x, 0)].symbol()).collect();
+    assert_eq!(top, "╭─ Open file ─ esc ─╮");
+    // Narrower than the name, the name is clipped and the corner survives.
+    let area = Rect::new(0, 0, 10, 3);
+    let mut buf = Buffer::empty(area);
+    chrome::float(area, &mut buf, "Open file", "esc", &context(&theme, true));
+    assert_eq!(buf[(9, 0)].symbol(), "╮", "the name ate the corner");
+    for width in 0..4u16 {
+        for height in 0..3u16 {
+            let area = Rect::new(0, 0, width, height);
+            let mut buf = Buffer::empty(area);
+            chrome::float(area, &mut buf, "x", "esc", &context(&theme, true));
+        }
+    }
+}

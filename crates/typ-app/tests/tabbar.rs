@@ -130,7 +130,14 @@ fn the_bar_draws_every_visible_name() {
     let mut buf = Buffer::empty(area);
     let theme = typ_core::ThemeColors::default();
 
-    tabbar::draw(&mut buf, area, &labels(&["main.rs", "lib.rs"]), 0, &theme);
+    tabbar::draw(
+        &mut buf,
+        area,
+        &labels(&["main.rs", "lib.rs"]),
+        0,
+        &theme,
+        true,
+    );
 
     let drawn = row(&buf, 0);
     assert!(drawn.contains("main.rs"), "got {drawn:?}");
@@ -145,7 +152,14 @@ fn the_active_tab_is_drawn_differently_from_the_others() {
     let mut buf = Buffer::empty(area);
     let theme = typ_core::ThemeColors::default();
 
-    tabbar::draw(&mut buf, area, &labels(&["main.rs", "lib.rs"]), 0, &theme);
+    tabbar::draw(
+        &mut buf,
+        area,
+        &labels(&["main.rs", "lib.rs"]),
+        0,
+        &theme,
+        true,
+    );
 
     let cells = tabbar::cells(&labels(&["main.rs", "lib.rs"]), 0, 40);
     let active = &cells[0];
@@ -165,7 +179,14 @@ fn a_dirty_tab_is_marked() {
     let mut buf = Buffer::empty(area);
     let theme = typ_core::ThemeColors::default();
 
-    tabbar::draw(&mut buf, area, &labels(&["main.rs *", "lib.rs"]), 0, &theme);
+    tabbar::draw(
+        &mut buf,
+        area,
+        &labels(&["main.rs *", "lib.rs"]),
+        0,
+        &theme,
+        true,
+    );
 
     assert!(row(&buf, 0).contains("main.rs *"));
 }
@@ -176,7 +197,14 @@ fn drawing_into_a_bar_narrower_than_one_name_is_not_a_panic() {
     let mut buf = Buffer::empty(area);
     let theme = typ_core::ThemeColors::default();
 
-    tabbar::draw(&mut buf, area, &labels(&["main.rs", "lib.rs"]), 1, &theme);
+    tabbar::draw(
+        &mut buf,
+        area,
+        &labels(&["main.rs", "lib.rs"]),
+        1,
+        &theme,
+        true,
+    );
 }
 
 #[test]
@@ -253,7 +281,14 @@ fn an_escape_sequence_in_a_file_name_never_reaches_a_cell() {
     let mut buf = Buffer::empty(area);
     let theme = typ_core::ThemeColors::default();
 
-    tabbar::draw(&mut buf, area, &[hostile, "b.rs".to_string()], 0, &theme);
+    tabbar::draw(
+        &mut buf,
+        area,
+        &[hostile, "b.rs".to_string()],
+        0,
+        &theme,
+        true,
+    );
 
     let drawn = row(&buf, 0);
     assert!(
@@ -273,7 +308,7 @@ fn a_close_box_is_drawn_exactly_where_the_hit_test_finds_one() {
     for width in 1..=45 {
         let area = Rect::new(3, 0, width, 1);
         let mut buf = Buffer::empty(area);
-        tabbar::draw(&mut buf, area, &names, 0, &theme);
+        tabbar::draw(&mut buf, area, &names, 0, &theme, true);
 
         let drawn: Vec<u16> = (0..width)
             .filter(|x| buf[(area.x + x, 0)].symbol() == "×")
@@ -288,4 +323,28 @@ fn a_close_box_is_drawn_exactly_where_the_hit_test_finds_one() {
             "at width {width} the bar drew close boxes at {drawn:?} and the hit test has them at {hit:?}"
         );
     }
+}
+
+#[test]
+fn the_active_tab_is_accent_and_bold_while_the_editor_has_focus() {
+    // Interface §4: the focused region's label is accent and bold. Without
+    // focus the active tab keeps its ground, so it still says which file is
+    // open, and its name recedes with the rest of the editor.
+    use ratatui::style::Modifier;
+    let area = Rect::new(0, 0, 40, 1);
+    let theme = typ_core::ThemeColors::default();
+    let names = labels(&["main.rs", "lib.rs"]);
+    let name_x = tabbar::cells(&names, 0, 40)[0].x + 1;
+
+    let mut focused = Buffer::empty(area);
+    tabbar::draw(&mut focused, area, &names, 0, &theme, true);
+    let mut unfocused = Buffer::empty(area);
+    tabbar::draw(&mut unfocused, area, &names, 0, &theme, false);
+
+    let lit = &focused[(name_x, 0)];
+    assert_eq!(lit.fg, theme.border_focused);
+    assert!(lit.modifier.contains(Modifier::BOLD));
+    let receded = &unfocused[(name_x, 0)];
+    assert_eq!(receded.fg, theme.receded_fg);
+    assert_eq!(receded.bg, theme.bg, "the active tab lost its ground");
 }

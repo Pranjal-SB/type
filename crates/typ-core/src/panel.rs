@@ -40,12 +40,19 @@ use crate::{KeyChord, PanelEvent};
 mod palette {
     use ratatui::style::Color;
 
+    /// Below the page: what a modal float repaints the screen behind it to.
+    pub const SCRIM: Color = Color::Rgb(0x0a, 0x0d, 0x12);
     pub const BASE_00: Color = Color::Rgb(0x10, 0x14, 0x1b);
     pub const BASE_01: Color = Color::Rgb(0x16, 0x1c, 0x25);
     pub const BASE_02: Color = Color::Rgb(0x1a, 0x21, 0x2c);
-    pub const BASE_03: Color = Color::Rgb(0x2a, 0x32, 0x40);
+    pub const BASE_03: Color = Color::Rgb(0x62, 0x6e, 0x87);
+    /// Indent guides, between the chrome surface and the rule: decoration,
+    /// seen when looked for and quieter than any boundary.
+    pub const GUIDE: Color = Color::Rgb(0x3b, 0x45, 0x57);
     pub const BASE_04: Color = Color::Rgb(0x78, 0x89, 0xa0);
     pub const BASE_05: Color = Color::Rgb(0x84, 0x95, 0xac);
+    /// Text in a region without focus: between quiet content and file names.
+    pub const RECEDED: Color = Color::Rgb(0x9a, 0xa5, 0xb5);
     pub const BASE_06: Color = Color::Rgb(0xa8, 0xb3, 0xc4);
     pub const BASE_07: Color = Color::Rgb(0xcd, 0xd5, 0xe1);
     pub const BASE_08: Color = Color::Rgb(0xe6, 0xec, 0xf5);
@@ -103,11 +110,9 @@ pub struct ThemeColors {
 
     /// The vertical rule standing at each completed level of indentation.
     ///
-    /// Furniture, like the line numbers and the whitespace marks, and held to
-    /// the same floor for the same reason — below it the rules stop being
-    /// structure and become a texture down the left of the file. It names the
-    /// gutter's step in every shipped theme, which is also what stops the
-    /// greys drifting apart one widget at a time.
+    /// Decoration, not text (interface §1). It sat on the gutter's step until
+    /// v0.3.2, and at that brightness every nested block wore a ladder. The
+    /// audit now keeps it tellable from the page and quieter than a rule.
     pub indent_guide: Color,
 
     pub selection_bg: Color,
@@ -134,6 +139,12 @@ pub struct ThemeColors {
 
     pub border: Color,
     pub border_focused: Color,
+    /// The rounded border of a float that has the keyboard (interface §3).
+    /// A float without the keys, like the hover box, draws in `border`.
+    pub float_border: Color,
+    /// The ground a modal float repaints everything behind it to, the status
+    /// bar excepted (interface §3). One step darker than both surfaces.
+    pub scrim: Color,
 
     pub status_bar_bg: Color,
     pub status_bar_fg: Color,
@@ -144,6 +155,14 @@ pub struct ThemeColors {
 
     pub tree_directory_fg: Color,
     pub tree_file_fg: Color,
+
+    /// Text in a region that does not have focus (interface §4).
+    ///
+    /// One colour for everything an unfocused panel says, syntax included: the
+    /// receded panel is reference, not body text, and focus is shown by what
+    /// steps back rather than by a brighter frame on what did not. A panel
+    /// learns which it is from `RenderContext::is_focused` and nothing else.
+    pub receded_fg: Color,
 
     /// Unused until M3. Four lines now against a breaking change to every
     /// shipped theme file later.
@@ -175,7 +194,7 @@ impl Default for ThemeColors {
             // same kind of furniture, and a palette where each widget invents
             // its own grey is how one visual system comes apart.
             whitespace: p::BASE_04,
-            indent_guide: p::BASE_04,
+            indent_guide: p::GUIDE,
 
             selection_bg: p::SELECT,
             selection_fg: p::BASE_08,
@@ -192,6 +211,8 @@ impl Default for ThemeColors {
 
             border: p::BASE_03,
             border_focused: p::ACCENT,
+            float_border: p::ACCENT,
+            scrim: p::SCRIM,
 
             status_bar_bg: p::BASE_02,
             status_bar_fg: p::BASE_07,
@@ -200,6 +221,8 @@ impl Default for ThemeColors {
 
             tree_directory_fg: p::ACCENT_BRIGHT,
             tree_file_fg: p::BASE_06,
+
+            receded_fg: p::RECEDED,
 
             diagnostic_error: p::RED,
             diagnostic_warning: p::AMBER,

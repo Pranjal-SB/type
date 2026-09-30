@@ -19,12 +19,15 @@ kind = "dark"
 
 [palette]
 # Dark to light, each step with a job.
+scrim = "#0a0d12"   # below the page: what a modal float dims the screen to
 base00 = "#10141b"  # the page
 base01 = "#161c25"  # the cursor's line — one step, felt rather than seen
 base02 = "#1a212c"  # raised surfaces: the status bar
-base03 = "#2a3240"  # borders and rules
+guide = "#3b4557"   # indent guides: decoration, quieter than a rule
+base03 = "#626e87"  # borders and rules, 3:1 against both surfaces
 base04 = "#7889a0"  # furniture text: line numbers
 base05 = "#8495ac"  # quiet content: inactive status segments
+receded = "#9aa5b5" # text in a panel without focus
 base06 = "#a8b3c4"  # secondary content: file names
 base07 = "#cdd5e1"  # body text
 base08 = "#e6ecf5"  # text on a selection
@@ -59,11 +62,12 @@ line_number_fg = "base04"
 # present as the code, not by being tinted.
 line_number_current_fg = "base07"
 
-# The gutter's own step. A whitespace mark, an indent guide and a line number
-# are the same kind of furniture, and a palette where each widget invents its
-# own grey is how one visual system comes apart quietly.
+# The gutter's own step. A whitespace mark and a line number are the same kind
+# of furniture, and a palette where each widget invents its own grey is how one
+# visual system comes apart quietly. The indent guide is not furniture but
+# decoration, and sits below the rule.
 whitespace = "base04"
-indent_guide = "base04"
+indent_guide = "guide"
 
 selection_bg = "select"
 selection_fg = "base08"
@@ -79,6 +83,8 @@ chrome_bg = "base02"
 
 border = "base03"
 border_focused = "accent"
+float_border = "accent"
+scrim = "scrim"
 
 status_bar_bg = "base02"
 status_bar_fg = "base07"
@@ -87,6 +93,10 @@ status_bar_accent = "accent"
 
 tree_directory_fg = "accent_bright"
 tree_file_fg = "base06"
+
+# A panel without focus says everything in one colour, syntax included: focus
+# is shown by what steps back.
+receded_fg = "receded"
 
 diagnostic_error = "red"
 diagnostic_warning = "amber"

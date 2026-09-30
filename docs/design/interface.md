@@ -311,7 +311,7 @@ floating OS windows (postures cover it), settings sync / accounts / profiles (do
 
 ## 12. Sequencing
 
-What exists at v0.3.0 that this builds on: one rule between panels instead of boxes,
+What exists at v0.3.0 that this builds on: boxed panels whose corners join where two meet,
 `chrome_bg` as the one raised surface, the picker as one overlay with `>` for commands, the
 contrast audit in `typ-core`, tabs, and hover and diagnostics from the
 LSP client. What does not: docks, splits, postures, the `ctrl+k` prefix mechanism
@@ -322,7 +322,7 @@ to v0.2.10 took eleven days, and M3 took about a week.
 
 | Slice | Spec | Depends on | Estimate |
 |---|---|---|---|
-| **1. Colour and floats** | §0.2–0.5, §1 slots and values with their audit rules, §3 applied to the picker and the hover box, §4 recede | nothing | 2 to 3 days |
+| **1. Colour and floats** (shipped in v0.3.2) | §0.2–0.5, §1 slots and values with their audit rules, §3 applied to the picker and the hover box, §4 recede. Actual: `rule` shipped as the existing `border` field (a rename breaks theme files); `indent_guide_active`, the git and diff slots and "error on selection" are left to the slices that draw them | nothing | 2 to 3 days |
 | **2. The door** | §6 `ctrl+k` menu generated from the keymap, the status bar teaching line, §4 focus stack, `f6` order | `Action` carrying a description and a group (gaps 52, 53) | 3 to 4 days |
 | **3. Layout model (M4)** | §2 labeled rules as dock tab bars, left / bottom / right docks, §5 splits and panes, postures (docked, float, zoom), §7 presets and adapt-to-width, sessions | slices 1 and 2 | 2 to 3 weeks |
 | **4. Menus and warp** | §5 warp labels, §8 menu bar and context menus, both generated from the action table; the §0.1 parity test | slice 3 for regions to label | 3 to 5 days |

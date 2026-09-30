@@ -235,6 +235,67 @@ fn escape_dismisses_the_hover() {
 }
 
 #[test]
+fn a_click_dismisses_the_hover() {
+    // Invariant 8: the box names `esc` as its exit, and the mouse gets one too.
+    let (mut app, rx, _) = ready("click", &[]);
+    act(&mut app, typ_core::Action::Hover);
+    assert!(pump_until(&mut app, &rx, |a| a.hover().is_some()));
+    let click = AppEvent::Input(Event::Mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column: 40,
+        row: 8,
+        modifiers: KeyModifiers::NONE,
+    }));
+    step_batch(&mut app, vec![click], AREA).unwrap();
+    assert!(app.hover().is_none());
+}
+
+#[test]
+fn the_hover_is_a_float_without_the_keys() {
+    // Interface §3: rounded, named, its exit cut in, a gutter of page around
+    // it, bordered in the rule because it takes no keys, and nothing behind it
+    // dimmed because it is not modal.
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let (mut app, rx, _) = ready("float", &[]);
+    act(&mut app, typ_core::Action::Hover);
+    assert!(pump_until(&mut app, &rx, |a| a.hover().is_some()));
+    let mut terminal = Terminal::new(TestBackend::new(AREA.width, AREA.height)).unwrap();
+    terminal.draw(|frame| app.render(frame)).unwrap();
+    let buf = terminal.backend().buffer();
+    let theme = typ_core::ThemeColors::default();
+
+    let row = |y: u16| -> String { (0..AREA.width).map(|x| buf[(x, y)].symbol()).collect() };
+    let top = (0..AREA.height)
+        .find(|&y| row(y).contains("╭─ hover "))
+        .unwrap_or_else(|| {
+            panic!(
+                "no hover box in:
+{}",
+                (0..AREA.height).map(row).collect::<Vec<_>>().join(
+                    "
+"
+                )
+            )
+        });
+    let left = row(top).chars().position(|c| c == '╭').unwrap() as u16;
+    assert!(row(top).contains(" esc ─╮"), "got {:?}", row(top));
+    assert_eq!(
+        buf[(left, top)].fg,
+        theme.border,
+        "a float without the keys is bordered in the rule"
+    );
+    assert_eq!(buf[(left, top - 1)].bg, theme.bg, "no gutter above the box");
+    assert_eq!(buf[(left, top - 1)].symbol(), " ");
+    for y in 0..AREA.height {
+        for x in 0..AREA.width {
+            assert_ne!(buf[(x, y)].bg, theme.scrim, "a hover is not modal: {x},{y}");
+        }
+    }
+}
+
+#[test]
 fn both_actions_are_reachable_from_the_keymap_and_the_palette() {
     // Every named action is in the palette for free. The bindings are the part
     // that has to be decided.

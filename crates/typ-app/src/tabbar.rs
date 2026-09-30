@@ -101,21 +101,34 @@ fn first_visible(widths: &[u16], active: usize, width: u16) -> usize {
 
 /// Draw the bar. `labels` carries the dirty marker already, so there is one
 /// spelling of "unsaved" in the editor rather than two.
-pub fn draw(buf: &mut Buffer, area: Rect, labels: &[String], active: usize, theme: &ThemeColors) {
+pub fn draw(
+    buf: &mut Buffer,
+    area: Rect,
+    labels: &[String],
+    active: usize,
+    theme: &ThemeColors,
+    focused: bool,
+) {
     if area.height == 0 {
         return;
     }
-    // No new theme fields. The bar is chrome, so it takes the chrome background
-    // and the status bar's dimmed foreground; the **active** tab takes the
-    // editor's own `fg` on `bg`, which is what visually joins it to the pane
-    // underneath — the tab and the text it names are painted the same.
+    // The bar is chrome, so it takes the chrome background and the status
+    // bar's dimmed foreground. The **active** tab takes the editor's own `bg`,
+    // which is what visually joins it to the pane underneath.
     let inactive = Style::default()
         .fg(theme.status_bar_inactive_fg)
         .bg(theme.chrome_bg);
-    let selected = Style::default()
-        .fg(theme.fg)
-        .bg(theme.bg)
-        .add_modifier(Modifier::BOLD);
+    // The active tab is the editor's label (interface §4): accent and bold
+    // while the editor has focus, receded with its text when it does not. It
+    // keeps the page's ground either way, so which file is open stays said.
+    let selected = if focused {
+        Style::default()
+            .fg(theme.border_focused)
+            .bg(theme.bg)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.receded_fg).bg(theme.bg)
+    };
 
     // The whole row first: without it the cells sit on whatever the previous
     // frame left in the gap after the last tab.

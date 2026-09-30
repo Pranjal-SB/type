@@ -3,6 +3,32 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.3.2] - 2026-09-29 (M3.2, shell slice 1)
+
+The first slice of `docs/design/interface.md`: the contrast audit's fixes as theme slots, focus
+shown by receding, and the picker and hover box drawn as floats.
+
+### Added
+- **Three theme slots**, each with an audit rule checked at truecolor and at 256 colours:
+  `receded_fg` (text in a panel without focus), `float_border` (the border of a float that has
+  the keys) and `scrim` (what a modal float dims the screen to).
+- **Focus recedes.** The panel without focus draws its text in `receded_fg` with no syntax
+  colour; its selection and cursor line stay. The focused panel's title and the active tab are
+  accent and bold.
+- **Floats.** The picker and the hover box are rounded boxes with their name and `esc` cut into
+  the top border and a clear cell of page around them. The picker dims everything behind it
+  except the status bar; clicking its `esc` closes it. The hover box sits a row clear of the
+  cursor and dims nothing.
+
+### Changed
+- **`border` holds 3:1 against both surfaces.** It was 1.3 in Slate. The name stays, so theme
+  files keep working; every shipped theme has a new value.
+- **The indent guide is decoration.** It no longer takes the gutter's floor; it has to be
+  visible and quieter than a rule. Slate's is `#3b4557`.
+
+### Fixed
+- The picker and the hover box no longer show the editor's text through their blank rows.
+
 ## [0.3.1] - 2026-09-29 (the v0.3.0 audit)
 
 An audit of the whole tree found 80 defects. 73 are fixed here, and the first release to carry
