@@ -311,7 +311,7 @@ floating OS windows (postures cover it), settings sync / accounts / profiles (do
 
 ## 12. Sequencing
 
-What exists at v0.3.0 that this builds on: one rule between panels instead of boxes,
+What exists at v0.3.0 that this builds on: boxed panels whose corners join where two meet,
 `chrome_bg` as the one raised surface, the picker as one overlay with `>` for commands, the
 contrast audit in `typ-core`, tabs, and hover and diagnostics from the
 LSP client. What does not: docks, splits, postures, the `ctrl+k` prefix mechanism

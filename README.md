@@ -107,7 +107,7 @@ and counted on the status bar, `F12` jumps to a definition and `Alt+H` explains 
 the cursor. rust-analyzer and taplo are configured without a config file; a server that is not
 installed is silent and the editor is the editor it was without one.
 
-No splits yet, and no completion — that is v0.3.1. See the roadmap. Full history in
+No splits yet, those are v0.4.0, and no completion. See the roadmap. Full history in
 [CHANGELOG.md](CHANGELOG.md).
 
 Every editing primitive is a named action and every key binding is a table row, which is why the
