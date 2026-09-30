@@ -32,7 +32,7 @@ impl App {
             // `activate_tab` returns early when the tab is already active, so
             // this is not redundant: opening the file already on screen, from
             // the tree, still means "put me in the editor".
-            self.focus = Focus::Editor;
+            self.set_focus(Focus::Editor);
             return Ok(());
         }
 
@@ -247,7 +247,7 @@ impl App {
 
         self.apply_indent_width();
         self.tabs[self.active].panel.set_whitespace(self.whitespace);
-        self.focus = Focus::Editor;
+        self.set_focus(Focus::Editor);
         // A no-op for a tab already watched, so a switch costs nothing here.
         self.watch_tab(self.active);
         self.warn_if_changed_on_disk();

@@ -43,6 +43,9 @@ pub struct App {
     keymap: Keymap,
     theme: ThemeColors,
     focus: Focus,
+    /// Where focus was before it came here, for `esc` to go back to. A stack
+    /// one deep, because two panels is as deep as it gets until docks land.
+    came_from: Option<Focus>,
     quit: bool,
     /// Message shown in the status bar until the next keypress.
     status: Option<String>,
@@ -235,6 +238,10 @@ fn answers_its_own_confirmation(action: Action) -> bool {
 
 const SEGMENT_GAP: &str = "  ";
 
+/// The order `f6` walks. Fixed, so a screen-reader user can learn it
+/// (interface §5); docks and the status bar join it when they exist.
+const FOCUS_ORDER: [Focus; 2] = [Focus::Tree, Focus::Editor];
+
 /// The prefix `Action::OpenMenu` opens, when no key was pressed to say which.
 const DOOR: &str = "ctrl+k";
 
@@ -252,6 +259,7 @@ impl App {
             keymap: Keymap::default_bindings(),
             theme: ThemeColors::default(),
             focus: Focus::Tree,
+            came_from: None,
             quit: false,
             status: None,
             quit_pending: false,
@@ -1003,11 +1011,42 @@ impl App {
         self.tabs[self.active].panel.title()
     }
 
+    /// The next region in `FOCUS_ORDER`, wrapping.
     pub fn cycle_focus(&mut self) {
-        self.focus = match self.focus {
-            Focus::Tree => Focus::Editor,
-            Focus::Editor => Focus::Tree,
-        };
+        self.step_focus(1);
+    }
+
+    fn step_focus(&mut self, delta: isize) {
+        let at = FOCUS_ORDER
+            .iter()
+            .position(|f| *f == self.focus)
+            .unwrap_or(0);
+        let next = (at as isize + delta).rem_euclid(FOCUS_ORDER.len() as isize);
+        self.set_focus(FOCUS_ORDER[next as usize]);
+    }
+
+    /// Move focus, remembering where it came from.
+    pub fn set_focus(&mut self, focus: Focus) {
+        if focus != self.focus {
+            self.came_from = Some(self.focus);
+            self.focus = focus;
+        }
+    }
+
+    /// `esc` with nothing of the panel's own to cancel: back to where focus
+    /// came from. The editor is home, so `esc` there never moves focus: it is
+    /// the pane every other one returns to (interface §5, "back to the
+    /// editor"). Returns whether focus moved.
+    fn focus_back(&mut self) -> bool {
+        if self.focus == Focus::Editor || self.focused().captures_escape() {
+            return false;
+        }
+        let back = self
+            .came_from
+            .filter(|f| *f != self.focus)
+            .unwrap_or(Focus::Editor);
+        self.set_focus(back);
+        true
     }
 
     pub fn keymap(&self) -> &Keymap {
@@ -1215,6 +1254,11 @@ impl App {
     fn perform_app_action(&mut self, action: Action) -> bool {
         match action {
             Action::FocusNext => self.cycle_focus(),
+            Action::FocusPrevious => self.step_focus(-1),
+            // Only reached when the focused panel declined it, which the
+            // editor never does: a selection to collapse is its own thing to
+            // cancel, and it gets that first.
+            Action::CollapseSelections => return self.focus_back(),
             Action::OpenFilePicker => self.open_picker(),
             Action::OpenProjectSearch => self.open_search(),
             Action::OpenCommandPalette => self.open_command_palette(),

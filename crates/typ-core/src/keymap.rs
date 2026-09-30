@@ -254,6 +254,7 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("tab", Action::Indent),
     ("shift+tab", Action::Outdent),
     ("f6", Action::FocusNext),
+    ("shift+f6", Action::FocusPrevious),
     ("ctrl+tab", Action::FocusNext),
     ("ctrl+g", Action::GotoLine),
     ("ctrl+f", Action::SearchOpen),

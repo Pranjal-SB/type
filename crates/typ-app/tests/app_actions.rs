@@ -78,6 +78,11 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             run(app, a);
             assert_eq!(app.focus(), Focus::Tree);
         },
+        Action::FocusPrevious => |app, a| {
+            assert_eq!(app.focus(), Focus::Editor);
+            run(app, a);
+            assert_eq!(app.focus(), Focus::Tree);
+        },
         Action::GotoLine => |app, a| {
             run(app, a);
             assert_eq!(prompt_kind(app), Some(PromptKind::GotoLine));

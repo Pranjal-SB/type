@@ -81,6 +81,8 @@ pub enum Action {
     Save,
     Quit,
     FocusNext,
+    /// `FocusNext` the other way round.
+    FocusPrevious,
     GotoLine,
     SearchOpen,
     SearchNext,
@@ -327,6 +329,7 @@ impl Action {
         Action::Save,
         Action::Quit,
         Action::FocusNext,
+        Action::FocusPrevious,
         Action::GotoLine,
         Action::SearchOpen,
         Action::SearchNext,
@@ -420,6 +423,7 @@ impl Action {
             Action::Save => "save",
             Action::Quit => "quit",
             Action::FocusNext => "focus_next",
+            Action::FocusPrevious => "focus_previous",
             Action::GotoLine => "goto_line",
             Action::SearchOpen => "search_open",
             Action::SearchNext => "search_next",
@@ -521,6 +525,7 @@ impl Action {
             Action::Save => "save the file",
             Action::Quit => "quit the editor",
             Action::FocusNext => "move focus to the next panel",
+            Action::FocusPrevious => "move focus to the previous panel",
             Action::GotoLine => "go to a line number",
             Action::SearchOpen => "search the file",
             Action::SearchNext => "jump to the next match",
@@ -579,7 +584,7 @@ impl Action {
             Action::NextTab | Action::PrevTab | Action::CloseTab | Action::GoToTab(_) => {
                 Group::Tabs
             }
-            Action::FocusNext => Group::Panels,
+            Action::FocusNext | Action::FocusPrevious => Group::Panels,
             Action::GotoDefinition | Action::Hover | Action::RestartLanguageServers => Group::Code,
             Action::Quit | Action::OpenCommandPalette | Action::OpenMenu => Group::App,
         }

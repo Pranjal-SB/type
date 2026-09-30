@@ -184,7 +184,7 @@ impl App {
             .render(area, buf);
     }
 
-    fn focused(&self) -> &dyn Panel {
+    pub(super) fn focused(&self) -> &dyn Panel {
         match self.focus {
             Focus::Tree => &self.tree,
             Focus::Editor => &self.tabs[self.active].panel,

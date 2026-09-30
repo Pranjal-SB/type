@@ -488,14 +488,10 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                         // A click both focuses the panel and is delivered to it,
                         // so clicking into an unfocused panel takes one click.
                         if in_tree {
-                            if app.focus() != Focus::Tree {
-                                app.cycle_focus();
-                            }
+                            app.set_focus(Focus::Tree);
                             events = app.tree_mut().handle_mouse(m, tree_area);
                         } else {
-                            if app.focus() != Focus::Editor {
-                                app.cycle_focus();
-                            }
+                            app.set_focus(Focus::Editor);
                             events = app.editor_mut().handle_mouse(m, editor_area);
                         }
                     }
