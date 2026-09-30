@@ -3,6 +3,38 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.3.3] - 2026-09-30 (M3.3, shell slice 2)
+
+The second slice of `docs/design/interface.md`: `ctrl+k` as a door to everything a terminal
+cannot give its own chord, built on the mechanism `controls.md` §2 has described since v0.2.9.
+Closes gaps 52 and 53.
+
+### Added
+- **The `ctrl+k` menu.** Pressing `ctrl+k` docks a menu above the status bar with every binding
+  under it, in columns by group, each row its key and what it does. The second key runs a row
+  directly; arrows and `enter` run the highlighted one; a click runs the row under it and a
+  click elsewhere cancels; `esc` cancels. It is generated from the keymap, so a rebind changes
+  it. On a short terminal it takes at most a third of the rows and scrolls.
+- **The teaching line.** After a row runs from the menu, the status bar shows its chord, such
+  as `ctrl+k f · search the project`, for two seconds. It goes with the first event after that
+  and never sets a timer, so an idle editor is not woken for it.
+- **Sequence bindings.** `keys.toml` can bind `"ctrl+k x"`, each step canonicalised like any
+  chord. A key bound alone and as a prefix is an error naming both; three steps is an error.
+- **Default `ctrl+k` rows** for what has no chord every terminal sends: `f` project search, `p`
+  command palette, `g` goto line, `w` close tab, `d` goto definition, `h` hover, `r` restart the
+  language servers. The direct chords stay.
+- **`open_menu`**, so the palette opens the menu where a terminal or multiplexer eats `ctrl+k`.
+- **`shift+f6`** walks focus backwards; `focus_previous` names it.
+- **A startup warning** for a `keys.toml` binding the terminal cannot send without the kitty
+  keyboard protocol, such as `ctrl+shift+k` outside Windows.
+
+### Changed
+- **Every action has a description and a group.** The command palette shows and matches the
+  description ("add the next match of the selection") rather than the config name
+  (`select_next_occurrence`), which `keys.toml` still uses.
+- **`esc` goes back.** In a panel with nothing of its own to cancel, `esc` returns focus to the
+  panel it came from; in the editor it still collapses the selection and never moves focus.
+
 ## [0.3.2] - 2026-09-29 (M3.2, shell slice 1)
 
 The first slice of `docs/design/interface.md`: the contrast audit's fixes as theme slots, focus
@@ -543,7 +575,9 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/Pranjal-SB/type/releases/tag/v0.3.3
+[0.3.2]: https://github.com/Pranjal-SB/type/releases/tag/v0.3.2
 [0.3.1]: https://github.com/Pranjal-SB/type/releases/tag/v0.3.1
 [0.2.10]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.10
 [0.2.9]: https://github.com/Pranjal-SB/type/releases/tag/v0.2.9
