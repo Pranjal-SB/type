@@ -139,6 +139,61 @@ const GO_TO_TAB_NAMES: [&str; 9] = [
     "go_to_tab_9",
 ];
 
+/// The `go_to_tab_N` descriptions, indexed like `GO_TO_TAB_NAMES`.
+const GO_TO_TAB_DESCRIPTIONS: [&str; 9] = [
+    "switch to tab 1",
+    "switch to tab 2",
+    "switch to tab 3",
+    "switch to tab 4",
+    "switch to tab 5",
+    "switch to tab 6",
+    "switch to tab 7",
+    "switch to tab 8",
+    "switch to tab 9",
+];
+
+/// A column of the `ctrl+k` menu. Closed: a new group is a design decision,
+/// not something an action invents for itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Group {
+    Edit,
+    Selection,
+    Find,
+    Files,
+    Tabs,
+    Panels,
+    Code,
+    App,
+}
+
+impl Group {
+    /// In the order the menu draws them.
+    pub const ALL: &'static [Group] = &[
+        Group::Edit,
+        Group::Selection,
+        Group::Find,
+        Group::Files,
+        Group::Tabs,
+        Group::Panels,
+        Group::Code,
+        Group::App,
+    ];
+
+    /// The column's heading.
+    pub fn label(self) -> &'static str {
+        match self {
+            Group::Edit => "edit",
+            Group::Selection => "selection",
+            Group::Find => "find",
+            Group::Files => "files",
+            Group::Tabs => "tabs",
+            Group::Panels => "panels",
+            Group::Code => "code",
+            Group::App => "app",
+        }
+    }
+}
+
 impl Action {
     /// Every action a config file may name, in a stable order.
     pub const ALL: &'static [Action] = &[
@@ -394,5 +449,131 @@ impl Action {
     /// keypress — a map would be more code for no measurable gain.
     pub fn from_name(name: &str) -> Option<Action> {
         Action::ALL.iter().copied().find(|a| a.name() == name)
+    }
+
+    /// What the action does, as a menu row says it.
+    ///
+    /// The `ctrl+k` menu and the command palette both show this, so it is one
+    /// string for two surfaces. `name` stays what a config file writes.
+    /// Exhaustive, so a new action cannot compile without saying what it does.
+    pub fn description(&self) -> &'static str {
+        match self {
+            Action::Move { motion, extend } => match (motion, extend) {
+                (Motion::Left, false) => "move the cursor left",
+                (Motion::Left, true) => "extend the selection left",
+                (Motion::Right, false) => "move the cursor right",
+                (Motion::Right, true) => "extend the selection right",
+                (Motion::Up, false) => "move the cursor up a line",
+                (Motion::Up, true) => "extend the selection up a line",
+                (Motion::Down, false) => "move the cursor down a line",
+                (Motion::Down, true) => "extend the selection down a line",
+                (Motion::WordLeft, false) => "move the cursor to the previous word",
+                (Motion::WordLeft, true) => "extend the selection to the previous word",
+                (Motion::WordRight, false) => "move the cursor to the next word",
+                (Motion::WordRight, true) => "extend the selection to the next word",
+                (Motion::LineStart, false) => "move the cursor to the start of the line",
+                (Motion::LineStart, true) => "extend the selection to the start of the line",
+                (Motion::LineEnd, false) => "move the cursor to the end of the line",
+                (Motion::LineEnd, true) => "extend the selection to the end of the line",
+                (Motion::PageUp, false) => "move the cursor up a page",
+                (Motion::PageUp, true) => "extend the selection up a page",
+                (Motion::PageDown, false) => "move the cursor down a page",
+                (Motion::PageDown, true) => "extend the selection down a page",
+                (Motion::DocumentStart, false) => "move the cursor to the start of the file",
+                (Motion::DocumentStart, true) => "extend the selection to the start of the file",
+                (Motion::DocumentEnd, false) => "move the cursor to the end of the file",
+                (Motion::DocumentEnd, true) => "extend the selection to the end of the file",
+            },
+            Action::Delete {
+                direction: Direction::Backward,
+                by_word: false,
+            } => "delete the character before the cursor",
+            Action::Delete {
+                direction: Direction::Backward,
+                by_word: true,
+            } => "delete the word before the cursor",
+            Action::Delete {
+                direction: Direction::Forward,
+                by_word: false,
+            } => "delete the character after the cursor",
+            Action::Delete {
+                direction: Direction::Forward,
+                by_word: true,
+            } => "delete the word after the cursor",
+            Action::InsertNewline => "insert a line break",
+            Action::InsertChar(_) => "type a character",
+            Action::Undo => "undo the last edit",
+            Action::Redo => "redo the last undone edit",
+            Action::SelectAll => "select the whole file",
+            Action::SelectLine => "select the line",
+            Action::SelectNextOccurrence => "add the next match of the selection",
+            Action::SelectAllOccurrences => "select every match of the selection",
+            Action::CollapseSelections => "collapse each selection to its cursor",
+            Action::AddCursor(Direction::Backward) => "add a cursor on the line above",
+            Action::AddCursor(Direction::Forward) => "add a cursor on the line below",
+            Action::Save => "save the file",
+            Action::Quit => "quit the editor",
+            Action::FocusNext => "move focus to the next panel",
+            Action::GotoLine => "go to a line number",
+            Action::SearchOpen => "search the file",
+            Action::SearchNext => "jump to the next match",
+            Action::SearchPrevious => "jump to the previous match",
+            Action::ReplaceOpen => "replace in the file",
+            Action::OpenFilePicker => "open a file by name",
+            Action::OpenProjectSearch => "search the project",
+            Action::OpenCommandPalette => "run a command by name",
+            Action::NextTab => "switch to the next tab",
+            Action::PrevTab => "switch to the previous tab",
+            Action::CloseTab => "close the tab",
+            Action::GoToTab(n) => GO_TO_TAB_DESCRIPTIONS
+                .get((*n as usize).saturating_sub(1))
+                .copied()
+                .unwrap_or("switch to no tab"),
+            Action::Copy => "copy the selection",
+            Action::Cut => "cut the selection",
+            Action::Paste => "paste the clipboard",
+            Action::Indent => "indent the selected lines",
+            Action::Outdent => "outdent the selected lines",
+            Action::GotoDefinition => "go to the definition",
+            Action::Hover => "describe what is under the cursor",
+            Action::RestartLanguageServers => "restart the language servers",
+        }
+    }
+
+    /// Which column of the `ctrl+k` menu the action sits in.
+    pub fn group(&self) -> Group {
+        match self {
+            Action::Move { extend: false, .. }
+            | Action::Delete { .. }
+            | Action::InsertNewline
+            | Action::InsertChar(_)
+            | Action::Undo
+            | Action::Redo
+            | Action::Copy
+            | Action::Cut
+            | Action::Paste
+            | Action::Indent
+            | Action::Outdent => Group::Edit,
+            Action::Move { extend: true, .. }
+            | Action::SelectAll
+            | Action::SelectLine
+            | Action::SelectNextOccurrence
+            | Action::SelectAllOccurrences
+            | Action::CollapseSelections
+            | Action::AddCursor(_) => Group::Selection,
+            Action::GotoLine
+            | Action::SearchOpen
+            | Action::SearchNext
+            | Action::SearchPrevious
+            | Action::ReplaceOpen
+            | Action::OpenProjectSearch => Group::Find,
+            Action::Save | Action::OpenFilePicker => Group::Files,
+            Action::NextTab | Action::PrevTab | Action::CloseTab | Action::GoToTab(_) => {
+                Group::Tabs
+            }
+            Action::FocusNext => Group::Panels,
+            Action::GotoDefinition | Action::Hover | Action::RestartLanguageServers => Group::Code,
+            Action::Quit | Action::OpenCommandPalette => Group::App,
+        }
     }
 }

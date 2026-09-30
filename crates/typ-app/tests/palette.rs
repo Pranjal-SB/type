@@ -361,3 +361,41 @@ fn a_tab_can_be_closed_from_the_palette() {
         app.status()
     );
 }
+
+#[test]
+fn a_palette_row_says_what_the_action_does_rather_than_its_name() {
+    let (mut app, _dir) = app("described");
+    app.open_command_palette();
+
+    let rows = app.picker().unwrap().commands();
+    let row = rows
+        .iter()
+        .find(|r| r.name == "select_next_occurrence")
+        .expect("select_next_occurrence is an action");
+    assert_eq!(row.description, "add the next match of the selection");
+}
+
+#[test]
+fn the_palette_draws_the_description_on_the_row() {
+    let (mut app, _dir) = app("drawn");
+    app.open_command_palette();
+    typed(&mut app, "next match");
+
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
+    terminal.draw(|frame| app.render(frame)).unwrap();
+    let buf = terminal.backend().buffer();
+    let screen: String = (0..buf.area.height)
+        .map(|y| {
+            (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        screen.contains("add the next match of the selection"),
+        "{screen}"
+    );
+    assert!(!screen.contains("select_next_occurrence"), "{screen}");
+}

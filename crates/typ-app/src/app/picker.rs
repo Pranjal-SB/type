@@ -103,35 +103,44 @@ impl App {
         }
     }
 
-    /// Rank the action names and hand the rows to the overlay.
+    /// Rank the actions by what they do and hand the rows to the overlay.
     ///
     /// **Ranked here rather than on the worker.** The corpus is sixty-odd
-    /// static names — the round trip would cost more than the ranking, and the
+    /// static rows, and the round trip would cost more than the ranking. The
     /// worker exists to keep a 37,000-entry corpus off this thread, not a
     /// sixty-entry one.
     fn rank_commands(&mut self, needle: &str) {
-        let names: Vec<String> = typ_core::Action::ALL
+        let actions: Vec<typ_core::Action> = typ_core::Action::ALL
             .iter()
+            .copied()
             // A row that reopens the overlay you are already in is a no-op
             // nobody can explain.
-            .filter(|action| **action != typ_core::Action::OpenCommandPalette)
-            .map(|action| action.name().to_string())
+            .filter(|action| *action != typ_core::Action::OpenCommandPalette)
+            .collect();
+        // Matched against what the row says, so the highlighted letters are
+        // letters on screen. Descriptions are unique (the action tests hold
+        // that), which is what makes the way back to the action unambiguous.
+        let descriptions: Vec<String> = actions
+            .iter()
+            .map(|action| action.description().to_string())
             .collect();
 
-        let rows: Vec<CommandRow> = typ_find::rank(needle, &names, COMMANDS)
+        let rows: Vec<CommandRow> = typ_find::rank(needle, &descriptions, COMMANDS)
             .into_iter()
-            .map(|hit| {
-                let binding = typ_core::Action::from_name(&hit.path)
-                    .map(|action| self.keymap.bindings_for(action))
-                    .unwrap_or_default()
+            .filter_map(|hit| {
+                let action = *actions.iter().find(|a| a.description() == hit.path)?;
+                let binding = self
+                    .keymap
+                    .bindings_for(action)
                     .first()
                     .map(|s| s.to_string())
                     .unwrap_or_default();
-                CommandRow {
-                    name: hit.path,
+                Some(CommandRow {
+                    name: action.name().to_string(),
+                    description: hit.path,
                     binding,
                     indices: hit.indices,
-                }
+                })
             })
             .collect();
 

@@ -10,7 +10,7 @@ pub mod panel;
 pub mod style;
 pub mod theme;
 
-pub use action::{Action, Direction, Motion};
+pub use action::{Action, Direction, Group, Motion};
 pub use audit::audit;
 pub use chrome::printable;
 pub use colour::{Depth, downgrade};
