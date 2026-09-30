@@ -120,6 +120,11 @@ pub enum Action {
     /// it; TYPE reaches it through the palette, which every named action is in
     /// for free.
     RestartLanguageServers,
+    /// Put the `ctrl+k` menu up without pressing `ctrl+k`.
+    ///
+    /// For a terminal or a multiplexer that eats the chord: the palette
+    /// reaches this by name, so the menu is never only one key away.
+    OpenMenu,
 }
 
 /// The `go_to_tab_N` names, indexed by `n - 1`.
@@ -350,6 +355,7 @@ impl Action {
         Action::GotoDefinition,
         Action::Hover,
         Action::RestartLanguageServers,
+        Action::OpenMenu,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -428,6 +434,7 @@ impl Action {
             Action::GotoDefinition => "goto_definition",
             Action::Hover => "hover",
             Action::RestartLanguageServers => "restart_language_servers",
+            Action::OpenMenu => "open_menu",
             Action::GoToTab(n) => GO_TO_TAB_NAMES
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -537,6 +544,7 @@ impl Action {
             Action::GotoDefinition => "go to the definition",
             Action::Hover => "describe what is under the cursor",
             Action::RestartLanguageServers => "restart the language servers",
+            Action::OpenMenu => "show the ctrl+k menu",
         }
     }
 
@@ -573,7 +581,7 @@ impl Action {
             }
             Action::FocusNext => Group::Panels,
             Action::GotoDefinition | Action::Hover | Action::RestartLanguageServers => Group::Code,
-            Action::Quit | Action::OpenCommandPalette => Group::App,
+            Action::Quit | Action::OpenCommandPalette | Action::OpenMenu => Group::App,
         }
     }
 }

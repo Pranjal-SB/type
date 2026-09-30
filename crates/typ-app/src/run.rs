@@ -413,6 +413,13 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
                     return finish(app, events, changed);
                 }
 
+                // The menu is next, for the same reason: a press that ran a
+                // row, or cancelled the menu, is not also a click on a panel.
+                if app.pending_prefix().is_some() {
+                    app.route_menu_mouse(m, area)?;
+                    return finish(app, events, changed);
+                }
+
                 // The tab bar sits inside the editor's columns but above its
                 // rect, so without this a click on it is hit-tested against a
                 // row the editor does not own.

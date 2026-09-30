@@ -135,6 +135,10 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             run(app, a);
             assert_eq!(app.active_tab(), n as usize - 1);
         },
+        Action::OpenMenu => |app, a| {
+            run(app, a);
+            assert_eq!(app.pending_prefix(), Some("ctrl+k"));
+        },
         // No server is configured, and each of these has to say so.
         Action::GotoDefinition | Action::Hover | Action::RestartLanguageServers => |app, a| {
             run(app, a);

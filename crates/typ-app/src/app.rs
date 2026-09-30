@@ -134,9 +134,9 @@ pub struct App {
     /// position: a box left standing over a different one is saying something
     /// true about somewhere else.
     hover: Option<String>,
-    /// The first key of a sequence, pressed and waiting for its second. The
-    /// `ctrl+k` menu is up while this is.
-    pending: Option<String>,
+    /// A prefix pressed and waiting for its second key, and the menu of what
+    /// that key can be. `None` is the ordinary state.
+    menu: Option<crate::menu::Menu>,
 }
 
 /// One open file, and the parse state that belongs to it rather than to the app.
@@ -230,6 +230,9 @@ fn answers_its_own_confirmation(action: Action) -> bool {
 
 const SEGMENT_GAP: &str = "  ";
 
+/// The prefix `Action::OpenMenu` opens, when no key was pressed to say which.
+const DOOR: &str = "ctrl+k";
+
 /// Shown when there is nothing more urgent to say. Discoverability is part of
 /// the product: bindings nobody can find are bindings that do not exist.
 const HINT: &str = "Tab focus  ·  Enter open  ·  Ctrl+S save  ·  Ctrl+Q quit";
@@ -267,7 +270,7 @@ impl App {
             index_requested: false,
             lsp: crate::lsp::Lsp::new(root),
             hover: None,
-            pending: None,
+            menu: None,
         })
     }
 
@@ -925,7 +928,7 @@ impl App {
         self.hover = None;
         // A click or a paste abandons a half-typed sequence rather than
         // leaving its second key to land on whatever comes next.
-        self.pending = None;
+        self.menu = None;
     }
 
     /// Run an action by name, the way the command palette does.
@@ -1087,16 +1090,16 @@ impl App {
             return self.handle_prompt_chord(chord);
         }
 
-        if let Some(prefix) = self.pending.take() {
-            return self.finish_sequence(&prefix, &chord);
+        if self.menu.is_some() {
+            return self.handle_menu_chord(chord);
         }
 
         let bound = match self.keymap.resolve(None, &chord) {
             typ_core::Resolved::Matched(action) => Some(action),
             // Nothing runs yet, so nothing transient is cleared: a close
             // armed by `ctrl+k w` has to survive the `ctrl+k` that confirms it.
-            typ_core::Resolved::Pending(_) => {
-                self.pending = Some(chord.canonical);
+            typ_core::Resolved::Pending(rows) => {
+                self.menu = Some(crate::menu::Menu::new(chord.canonical, rows));
                 return Ok(());
             }
             typ_core::Resolved::NotFound => None,
@@ -1203,6 +1206,7 @@ impl App {
             Action::OpenFilePicker => self.open_picker(),
             Action::OpenProjectSearch => self.open_search(),
             Action::OpenCommandPalette => self.open_command_palette(),
+            Action::OpenMenu => self.open_menu(DOOR),
             Action::Quit => self.request_quit(),
             Action::NextTab => self.next_tab(),
             Action::PrevTab => self.prev_tab(),
