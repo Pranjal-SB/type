@@ -5,10 +5,22 @@
 //! wholesale. A `match` on `KeyCode` can be read by exactly one of those.
 
 use std::collections::BTreeMap;
+use std::ops::Bound;
 
 use anyhow::{Context, Result, anyhow};
 
 use crate::{Action, Direction, KeyChord, Motion};
+
+/// What a key means, given what was pressed before it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Resolved {
+    Matched(Action),
+    /// The key starts sequences. Each row is the step after the prefix and
+    /// what it runs, in table order: the rows *are* the menu, generated rather
+    /// than authored, so a rebind changes it.
+    Pending(Vec<(String, Action)>),
+    NotFound,
+}
 
 #[derive(Debug, Clone)]
 pub struct Keymap {
@@ -222,9 +234,7 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("ctrl+y", Action::Redo),
     ("ctrl+a", Action::SelectAll),
     ("ctrl+l", Action::SelectLine),
-    // VS Code, Sublime and ttt all put select-next-occurrence on Ctrl+D. TYPE
-    // has no chord *sequences*, so Ctrl+K L for select-all is unavailable and
-    // this takes VS Code's other binding for it.
+    // VS Code, Sublime and ttt all put select-next-occurrence on Ctrl+D.
     ("ctrl+d", Action::SelectNextOccurrence),
     ("ctrl+shift+l", Action::SelectAllOccurrences),
     ("esc", Action::CollapseSelections),
@@ -244,6 +254,7 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("tab", Action::Indent),
     ("shift+tab", Action::Outdent),
     ("f6", Action::FocusNext),
+    ("shift+f6", Action::FocusPrevious),
     ("ctrl+tab", Action::FocusNext),
     ("ctrl+g", Action::GotoLine),
     ("ctrl+f", Action::SearchOpen),
@@ -287,12 +298,21 @@ const DEFAULTS: &[(&str, Action)] = &[
     // layer, which does not exist.
     ("f12", Action::GotoDefinition),
     // **Deliberately not a chord anyone expects**, because the one everyone
-    // expects is a prefix. VS Code puts hover on `Ctrl+K Ctrl+I`, and
-    // `controls.md` §1 says a prefix is the only way to reach the rest of an
-    // IDE's surface — the sequence keymap is gap 53 and unbuilt. `Alt+H` is
-    // Universal, free, and rebindable; the palette reaches it by name either
-    // way, which is what makes this a default rather than the only door.
+    // expects is a prefix: VS Code puts hover on `Ctrl+K Ctrl+I`. `Ctrl+K H`
+    // is the door's row for it; `Alt+H` is Universal, free, and rebindable,
+    // and stays as the one-key way.
     ("alt+h", Action::Hover),
+    // The door (`controls.md` §2): what has no chord every terminal delivers.
+    // Ctrl+Shift+F and Ctrl+Shift+P need the kitty protocol to arrive at all
+    // (gap 52), and the rest are either a readline habit away from being eaten
+    // or bound to keys nobody would guess. The direct chords stay beside them.
+    ("ctrl+k f", Action::OpenProjectSearch),
+    ("ctrl+k p", Action::OpenCommandPalette),
+    ("ctrl+k g", Action::GotoLine),
+    ("ctrl+k w", Action::CloseTab),
+    ("ctrl+k r", Action::RestartLanguageServers),
+    ("ctrl+k h", Action::Hover),
+    ("ctrl+k d", Action::GotoDefinition),
     ("f3", Action::SearchNext),
     ("shift+f3", Action::SearchPrevious),
     ("ctrl+h", Action::ReplaceOpen),
@@ -334,6 +354,70 @@ impl Keymap {
         self.bindings.get(&chord.canonical).copied()
     }
 
+    /// What `chord` means after `prefix`, or on its own when there is none.
+    ///
+    /// Layers (`controls.md` §3) would be searched here, the focused panel's
+    /// rows before these. No panel has rows of its own yet, so this table is
+    /// the whole lookup.
+    ///
+    /// **No allocation for a chord that is neither bound nor a prefix**, which
+    /// is every typed character: the prefix test is one step of an ordered
+    /// iterator, not a formatted range.
+    pub fn resolve(&self, prefix: Option<&str>, chord: &KeyChord) -> Resolved {
+        if let Some(prefix) = prefix {
+            let sequence = format!("{prefix} {}", chord.canonical);
+            return match self.bindings.get(&sequence) {
+                Some(action) => Resolved::Matched(*action),
+                None => Resolved::NotFound,
+            };
+        }
+        if let Some(action) = self.bindings.get(&chord.canonical) {
+            return Resolved::Matched(*action);
+        }
+        if self.starts_a_sequence(&chord.canonical) {
+            return Resolved::Pending(self.under(&chord.canonical));
+        }
+        Resolved::NotFound
+    }
+
+    /// Every row under `prefix`, as (the step after it, the action).
+    ///
+    /// A range scan: `"ctrl+k "` up to `"ctrl+k!"`, because `!` is the byte
+    /// after the space. O(log n + k) from the container the table already is.
+    pub fn under(&self, prefix: &str) -> Vec<(String, Action)> {
+        let start = format!("{prefix} ");
+        let end = format!("{prefix}!");
+        self.bindings
+            .range::<str, _>((
+                Bound::Included(start.as_str()),
+                Bound::Excluded(end.as_str()),
+            ))
+            .map(|(sequence, action)| (sequence[start.len()..].to_string(), *action))
+            .collect()
+    }
+
+    /// Whether some sequence starts with `chord`.
+    ///
+    /// Anything starting `"ctrl+k "` sorts directly after `"ctrl+k"`, since
+    /// no chord spelling holds a byte below the space, so the next key along
+    /// answers.
+    fn starts_a_sequence(&self, chord: &str) -> bool {
+        self.bindings
+            .range::<str, _>((Bound::Excluded(chord), Bound::Unbounded))
+            .next()
+            .is_some_and(|(next, _)| {
+                next.strip_prefix(chord)
+                    .is_some_and(|rest| rest.starts_with(' '))
+            })
+    }
+
+    /// Every row, in table order.
+    pub fn rows(&self) -> impl Iterator<Item = (&str, Action)> {
+        self.bindings
+            .iter()
+            .map(|(chord, action)| (chord.as_str(), *action))
+    }
+
     /// Chords bound to an action, for help text and the future palette.
     pub fn bindings_for(&self, action: Action) -> Vec<&str> {
         self.bindings
@@ -356,7 +440,7 @@ impl Keymap {
         for (spelling, action_name) in table {
             // Canonicalised on the way in, so the table holds exactly the form
             // `lookup` compares against.
-            let chord = crate::key::canonical_chord(&spelling).map_err(|e| anyhow!(e))?;
+            let chord = crate::key::canonical_sequence(&spelling).map_err(|e| anyhow!(e))?;
             if action_name.is_empty() {
                 // An empty action unbinds, which a user needs in order to free
                 // a chord their terminal or window manager wants for itself.
@@ -368,18 +452,41 @@ impl Keymap {
             staged.push((chord, Some(action)));
         }
 
+        let mut merged = self.bindings.clone();
         for (chord, action) in staged {
             match action {
                 Some(action) => {
-                    self.bindings.insert(chord, action);
+                    merged.insert(chord, action);
                 }
                 None => {
-                    self.bindings.remove(&chord);
+                    merged.remove(&chord);
                 }
             }
         }
+        // Over the merged table, because the clash is often between a user row
+        // and a default one: `"ctrl+k" = "save"` in keys.toml against the
+        // shipped `ctrl+k f`.
+        if let Some((prefix, sequence)) = prefix_clash(&merged) {
+            return Err(anyhow!(
+                "\"{prefix}\" is bound on its own and also starts \"{sequence}\"; unbind one of them"
+            ));
+        }
+        self.bindings = merged;
         Ok(())
     }
+}
+
+/// A chord bound on its own that also starts a sequence, if there is one.
+///
+/// Such a chord could never reach its sequence: the first press would already
+/// have matched.
+fn prefix_clash(bindings: &BTreeMap<String, Action>) -> Option<(&str, &str)> {
+    bindings.keys().find_map(|sequence| {
+        let (prefix, _) = sequence.split_once(' ')?;
+        bindings
+            .contains_key(prefix)
+            .then_some((prefix, sequence.as_str()))
+    })
 }
 
 impl Default for Keymap {

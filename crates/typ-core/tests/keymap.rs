@@ -1,4 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use typ_core::keymap::Resolved;
 use typ_core::{Action, Direction, KeyChord, Keymap, Motion};
 
 fn chord(code: KeyCode, mods: KeyModifiers) -> KeyChord {
@@ -172,4 +173,125 @@ fn bindings_can_be_looked_up_backwards_for_help_text() {
     let keymap = Keymap::default_bindings();
     let bindings = keymap.bindings_for(Action::Save);
     assert!(bindings.contains(&"ctrl+s"), "bindings were: {bindings:?}");
+}
+
+// --- sequences: `ctrl+k f` is a row like any other (controls.md §2) --------
+
+#[test]
+fn a_sequence_in_a_config_is_canonicalised_step_by_step() {
+    let mut keymap = Keymap::default_bindings();
+    keymap
+        .merge_toml("\"Ctrl+K  F\" = \"open_project_search\"")
+        .unwrap();
+    let bindings = keymap.bindings_for(Action::OpenProjectSearch);
+    assert!(
+        bindings.contains(&"ctrl+k f"),
+        "bindings were: {bindings:?}"
+    );
+}
+
+#[test]
+fn a_chord_bound_alone_and_as_a_prefix_is_an_error_naming_both() {
+    let mut keymap = Keymap::default_bindings();
+    let err = keymap
+        .merge_toml("\"ctrl+k\" = \"save\"\n\"ctrl+k f\" = \"open_project_search\"")
+        .unwrap_err();
+    let text = format!("{err:#}");
+    assert!(text.contains("\"ctrl+k\""), "error was: {text}");
+    // Whichever sequence it found first: every one under ctrl+k is a clash.
+    assert!(text.contains("\"ctrl+k "), "error was: {text}");
+    // Rejected whole, like any other bad config.
+    assert_eq!(
+        keymap.lookup(&chord(KeyCode::Char('k'), KeyModifiers::CONTROL)),
+        None
+    );
+}
+
+#[test]
+fn a_sequence_of_three_keys_is_an_error() {
+    // Nothing needs one, and the menu has one level.
+    let mut keymap = Keymap::default_bindings();
+    let err = keymap.merge_toml("\"ctrl+k f g\" = \"save\"").unwrap_err();
+    let text = format!("{err:#}");
+    assert!(text.contains("ctrl+k f g"), "error was: {text}");
+}
+
+#[test]
+fn the_defaults_bind_no_chord_both_alone_and_as_a_prefix() {
+    // An empty config still runs the check over the whole table, defaults
+    // included.
+    Keymap::default_bindings().merge_toml("").unwrap();
+}
+
+// --- resolving a prefix ------------------------------------------------------
+
+#[test]
+fn a_prefix_resolves_to_pending_with_every_row_under_it() {
+    let keymap = Keymap::default_bindings();
+    let ctrl_k = chord(KeyCode::Char('k'), KeyModifiers::CONTROL);
+    match keymap.resolve(None, &ctrl_k) {
+        Resolved::Pending(rows) => assert!(
+            rows.contains(&("f".to_string(), Action::OpenProjectSearch)),
+            "rows were: {rows:?}"
+        ),
+        other => panic!("ctrl+k resolved to {other:?}"),
+    }
+}
+
+#[test]
+fn the_second_step_resolves_against_the_prefix() {
+    let keymap = Keymap::default_bindings();
+    let f = chord(KeyCode::Char('f'), KeyModifiers::NONE);
+    assert_eq!(
+        keymap.resolve(Some("ctrl+k"), &f),
+        Resolved::Matched(Action::OpenProjectSearch)
+    );
+    let q = chord(KeyCode::Char('q'), KeyModifiers::NONE);
+    assert_eq!(keymap.resolve(Some("ctrl+k"), &q), Resolved::NotFound);
+}
+
+#[test]
+fn an_ordinary_chord_resolves_as_it_always_looked_up() {
+    let keymap = Keymap::default_bindings();
+    assert_eq!(
+        keymap.resolve(None, &chord(KeyCode::Char('s'), KeyModifiers::CONTROL)),
+        Resolved::Matched(Action::Save)
+    );
+    // Typed text: bound to nothing and the start of nothing.
+    assert_eq!(
+        keymap.resolve(None, &chord(KeyCode::Char('f'), KeyModifiers::NONE)),
+        Resolved::NotFound
+    );
+}
+
+#[test]
+fn the_door_holds_what_has_no_chord_every_terminal_sends() {
+    let rows = Keymap::default_bindings().under("ctrl+k");
+    for (key, action) in [
+        ("f", Action::OpenProjectSearch),
+        ("p", Action::OpenCommandPalette),
+        ("g", Action::GotoLine),
+        ("w", Action::CloseTab),
+        ("r", Action::RestartLanguageServers),
+        ("h", Action::Hover),
+        ("d", Action::GotoDefinition),
+    ] {
+        assert!(
+            rows.contains(&(key.to_string(), action)),
+            "ctrl+k {key} is not {}; rows were {rows:?}",
+            action.name()
+        );
+    }
+    // The Enhanced-tier chords stay as second bindings.
+    let keymap = Keymap::default_bindings();
+    assert!(
+        keymap
+            .bindings_for(Action::OpenProjectSearch)
+            .contains(&"ctrl+shift+f")
+    );
+    assert!(
+        keymap
+            .bindings_for(Action::OpenCommandPalette)
+            .contains(&"ctrl+shift+p")
+    );
 }

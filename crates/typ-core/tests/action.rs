@@ -1,4 +1,4 @@
-use typ_core::{Action, Direction, Motion};
+use typ_core::{Action, Direction, Group, Motion};
 
 #[test]
 fn actions_round_trip_through_their_names() {
@@ -120,4 +120,40 @@ fn directions_are_explicit_arguments_not_separate_actions() {
     assert_ne!(back, forward);
     assert_eq!(Action::from_name("delete_backward"), Some(back));
     assert_eq!(Action::from_name("delete_forward"), Some(forward));
+}
+
+#[test]
+fn every_action_says_what_it_does_in_a_lowercase_phrase() {
+    // The menu and the palette show this string, not the snake_case name, so
+    // it reads as a phrase: a lowercase verb first and no full stop, the way a
+    // menu row reads in every editor that has one.
+    let mut seen = std::collections::HashSet::new();
+    for action in Action::ALL {
+        let description = action.description();
+        let name = action.name();
+        assert!(!description.is_empty(), "{name} has no description");
+        assert!(
+            description.starts_with(|c: char| c.is_ascii_lowercase()),
+            "{name}: {description:?} does not start with a lowercase verb"
+        );
+        assert!(
+            !description.ends_with('.'),
+            "{name}: {description:?} ends in a full stop"
+        );
+        assert!(
+            seen.insert(description),
+            "{name}: {description:?} is used twice"
+        );
+    }
+}
+
+#[test]
+fn every_group_holds_something() {
+    // A group nothing belongs to is a heading the menu can never draw.
+    for group in Group::ALL {
+        assert!(
+            Action::ALL.iter().any(|a| a.group() == *group),
+            "{group:?} is empty"
+        );
+    }
 }

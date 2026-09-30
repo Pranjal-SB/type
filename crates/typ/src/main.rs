@@ -183,8 +183,14 @@ fn real_main() -> Result<()> {
     app.set_language_servers(settings.language_servers);
 
     let (keymap, warning) = typ_app::config::load_keymap(typ_app::config::config_path().as_deref());
-    app.set_keymap(keymap);
     complaints.extend(warning);
+    // Once, here, rather than when the chord fails to arrive: a key that never
+    // reaches the editor cannot be answered by anything the editor says then.
+    complaints.extend(typ_app::capability::protocol_warning(
+        &keymap,
+        typ_app::capability::has_keyboard_protocol(),
+    ));
+    app.set_keymap(keymap);
 
     // The setting wins over detection where it is set, because nothing in the
     // environment separates a tmux that forwards truecolor from one that

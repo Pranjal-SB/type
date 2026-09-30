@@ -3,6 +3,7 @@ use std::path::Path;
 /// Search, replace and goto-line. A child module rather than a sibling so it
 /// reaches `App`'s private fields without any of them widening to `pub(crate)`
 /// — the extraction is meant to shorten this file, not to open it up.
+mod door;
 mod picker;
 mod render;
 mod search;
@@ -42,6 +43,9 @@ pub struct App {
     keymap: Keymap,
     theme: ThemeColors,
     focus: Focus,
+    /// Where focus was before it came here, for `esc` to go back to. A stack
+    /// one deep, because two panels is as deep as it gets until docks land.
+    came_from: Option<Focus>,
     quit: bool,
     /// Message shown in the status bar until the next keypress.
     status: Option<String>,
@@ -133,6 +137,14 @@ pub struct App {
     /// position: a box left standing over a different one is saying something
     /// true about somewhere else.
     hover: Option<String>,
+    /// A prefix pressed and waiting for its second key, and the menu of what
+    /// that key can be. `None` is the ordinary state.
+    menu: Option<crate::menu::Menu>,
+    /// The chord a menu row could have been, and when to stop saying so.
+    ///
+    /// Not transient in the `clear_transient` sense: it lasts its two seconds
+    /// through whatever keys come next, and goes with the first event after.
+    teaching: Option<(String, std::time::Instant)>,
 }
 
 /// One open file, and the parse state that belongs to it rather than to the app.
@@ -226,6 +238,13 @@ fn answers_its_own_confirmation(action: Action) -> bool {
 
 const SEGMENT_GAP: &str = "  ";
 
+/// The order `f6` walks. Fixed, so a screen-reader user can learn it
+/// (interface §5); docks and the status bar join it when they exist.
+const FOCUS_ORDER: [Focus; 2] = [Focus::Tree, Focus::Editor];
+
+/// The prefix `Action::OpenMenu` opens, when no key was pressed to say which.
+const DOOR: &str = "ctrl+k";
+
 /// Shown when there is nothing more urgent to say. Discoverability is part of
 /// the product: bindings nobody can find are bindings that do not exist.
 const HINT: &str = "Tab focus  ·  Enter open  ·  Ctrl+S save  ·  Ctrl+Q quit";
@@ -240,6 +259,7 @@ impl App {
             keymap: Keymap::default_bindings(),
             theme: ThemeColors::default(),
             focus: Focus::Tree,
+            came_from: None,
             quit: false,
             status: None,
             quit_pending: false,
@@ -263,6 +283,8 @@ impl App {
             index_requested: false,
             lsp: crate::lsp::Lsp::new(root),
             hover: None,
+            menu: None,
+            teaching: None,
         })
     }
 
@@ -851,7 +873,13 @@ impl App {
                 None => format!("{} {}", prompt.label(), prompt.input()),
             };
         }
-        self.status.clone().unwrap_or_else(|| HINT.to_string())
+        if let Some(message) = &self.status {
+            return message.clone();
+        }
+        match &self.teaching {
+            Some((line, _)) => line.clone(),
+            None => HINT.to_string(),
+        }
     }
 
     /// Right half: what is open, what state it is in, and where the cursor is.
@@ -918,6 +946,9 @@ impl App {
         // true about the wrong thing. `handle_chord` calls this before running
         // the action, so `Hover` still gets to set it afterwards.
         self.hover = None;
+        // A click or a paste abandons a half-typed sequence rather than
+        // leaving its second key to land on whatever comes next.
+        self.menu = None;
     }
 
     /// Run an action by name, the way the command palette does.
@@ -980,11 +1011,42 @@ impl App {
         self.tabs[self.active].panel.title()
     }
 
+    /// The next region in `FOCUS_ORDER`, wrapping.
     pub fn cycle_focus(&mut self) {
-        self.focus = match self.focus {
-            Focus::Tree => Focus::Editor,
-            Focus::Editor => Focus::Tree,
-        };
+        self.step_focus(1);
+    }
+
+    fn step_focus(&mut self, delta: isize) {
+        let at = FOCUS_ORDER
+            .iter()
+            .position(|f| *f == self.focus)
+            .unwrap_or(0);
+        let next = (at as isize + delta).rem_euclid(FOCUS_ORDER.len() as isize);
+        self.set_focus(FOCUS_ORDER[next as usize]);
+    }
+
+    /// Move focus, remembering where it came from.
+    pub fn set_focus(&mut self, focus: Focus) {
+        if focus != self.focus {
+            self.came_from = Some(self.focus);
+            self.focus = focus;
+        }
+    }
+
+    /// `esc` with nothing of the panel's own to cancel: back to where focus
+    /// came from. The editor is home, so `esc` there never moves focus: it is
+    /// the pane every other one returns to (interface §5, "back to the
+    /// editor"). Returns whether focus moved.
+    fn focus_back(&mut self) -> bool {
+        if self.focus == Focus::Editor || self.focused().captures_escape() {
+            return false;
+        }
+        let back = self
+            .came_from
+            .filter(|f| *f != self.focus)
+            .unwrap_or(Focus::Editor);
+        self.set_focus(back);
+        true
     }
 
     pub fn keymap(&self) -> &Keymap {
@@ -1079,7 +1141,20 @@ impl App {
             return self.handle_prompt_chord(chord);
         }
 
-        let bound = self.keymap.lookup(&chord);
+        if self.menu.is_some() {
+            return self.handle_menu_chord(chord);
+        }
+
+        let bound = match self.keymap.resolve(None, &chord) {
+            typ_core::Resolved::Matched(action) => Some(action),
+            // Nothing runs yet, so nothing transient is cleared: a close
+            // armed by `ctrl+k w` has to survive the `ctrl+k` that confirms it.
+            typ_core::Resolved::Pending(rows) => {
+                self.menu = Some(crate::menu::Menu::new(chord.canonical, rows));
+                return Ok(());
+            }
+            typ_core::Resolved::NotFound => None,
+        };
 
         // Every key retires the current status message and anything it left
         // pending, so a confirmation is answered by the very next keystroke or
@@ -1179,9 +1254,15 @@ impl App {
     fn perform_app_action(&mut self, action: Action) -> bool {
         match action {
             Action::FocusNext => self.cycle_focus(),
+            Action::FocusPrevious => self.step_focus(-1),
+            // Only reached when the focused panel declined it, which the
+            // editor never does: a selection to collapse is its own thing to
+            // cancel, and it gets that first.
+            Action::CollapseSelections => return self.focus_back(),
             Action::OpenFilePicker => self.open_picker(),
             Action::OpenProjectSearch => self.open_search(),
             Action::OpenCommandPalette => self.open_command_palette(),
+            Action::OpenMenu => self.open_menu(DOOR),
             Action::Quit => self.request_quit(),
             Action::NextTab => self.next_tab(),
             Action::PrevTab => self.prev_tab(),

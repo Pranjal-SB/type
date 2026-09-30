@@ -19,7 +19,8 @@ use crate::app::{App, Focus, SEGMENT_GAP};
 
 impl App {
     pub fn render(&mut self, frame: &mut ratatui::Frame) {
-        let (body, status_area) = crate::layout::split_frame(frame.area());
+        let (_, status_area) = crate::layout::split_frame(frame.area());
+        let (body, menu_area) = self.split_body(frame.area());
         let (tree_area, pane) = crate::layout::split(body);
         let (bar_area, editor_area) = crate::layout::split_tabs(pane, self.tabs.len());
         let (w, h) = (frame.area().width, frame.area().height);
@@ -83,6 +84,9 @@ impl App {
         }
 
         self.render_status(status_area, frame.buffer_mut());
+        if let (Some(menu), Some(area)) = (&self.menu, menu_area) {
+            menu.render(area, frame.buffer_mut(), &self.theme);
+        }
 
         // Over the body, under the picker. A hover and the overlay are never up
         // together — opening the picker clears the transient state the hover is
@@ -94,9 +98,10 @@ impl App {
         // clipped by it. `chrome::frame` fills every cell of its rect, which is
         // what stops the editor showing through.
         if self.picker.is_some() {
-            // Modal, so everything behind it steps back. `body` is the frame
-            // minus the status bar, which stays as it is.
-            typ_core::chrome::scrim(frame.buffer_mut(), body, self.theme.scrim);
+            // Modal, so everything behind it steps back: the frame minus the
+            // status bar, which stays as it is.
+            let (behind, _) = crate::layout::split_frame(frame.area());
+            typ_core::chrome::scrim(frame.buffer_mut(), behind, self.theme.scrim);
             let area = crate::layout::picker_area(frame.area());
             let ctx = RenderContext {
                 theme: &self.theme,
@@ -114,6 +119,11 @@ impl App {
             }
             // The overlay has its own text cursor at the end of the query, and
             // the panel underneath must not also claim one.
+            return;
+        }
+
+        // The keyboard is the menu's while it is up, so no panel shows a caret.
+        if self.menu.is_some() {
             return;
         }
 
@@ -174,7 +184,7 @@ impl App {
             .render(area, buf);
     }
 
-    fn focused(&self) -> &dyn Panel {
+    pub(super) fn focused(&self) -> &dyn Panel {
         match self.focus {
             Focus::Tree => &self.tree,
             Focus::Editor => &self.tabs[self.active].panel,
@@ -191,7 +201,7 @@ impl App {
     /// coordinate inside the editor down a row and a hit-test that missed that
     /// would land every click one line above the pointer.
     pub fn areas(&self, area: Rect) -> (Rect, Rect) {
-        let (body, _) = crate::layout::split_frame(area);
+        let (body, _) = self.split_body(area);
         let (tree, pane) = crate::layout::split(body);
         let (_, editor) = crate::layout::split_tabs(pane, self.tabs.len());
         (tree, editor)

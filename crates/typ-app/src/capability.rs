@@ -68,6 +68,60 @@ pub fn depth_from(colorterm: Option<&str>, term: Option<&str>, wt_session: Optio
     Depth::Ansi256
 }
 
+/// Whether a chord needs the kitty keyboard protocol to arrive at all.
+///
+/// In the legacy encoding `Ctrl+letter` is one control byte with no room for a
+/// shift bit, so `ctrl+shift+f` arrives as `ctrl+f` or not at all; and
+/// `Ctrl+Tab` is a bare Tab. Arrows, the page keys and function keys carry
+/// their modifiers in xterm's CSI form and need nothing. `controls.md` §1.
+fn needs_protocol(chord: &str) -> bool {
+    chord.split(' ').any(|step| {
+        step == "ctrl+tab"
+            || step
+                .strip_prefix("ctrl+shift+")
+                .is_some_and(|key| key.chars().count() == 1)
+    })
+}
+
+/// A warning for configured bindings this terminal cannot send, if any.
+///
+/// **Configured means the user's rows**, the ones `keys.toml` added or changed.
+/// The defaults ship Enhanced-tier chords on purpose, each beside one every
+/// terminal sends; warning about those would say the same thing on every start.
+///
+/// Pure, like `depth_from`: whether the protocol is there is an argument.
+pub fn protocol_warning(keymap: &typ_core::Keymap, has_protocol: bool) -> Option<String> {
+    if has_protocol {
+        return None;
+    }
+    let defaults = typ_core::Keymap::default_bindings();
+    let unsendable: Vec<&str> = keymap
+        .rows()
+        .filter(|&(chord, action)| {
+            needs_protocol(chord) && !defaults.bindings_for(action).contains(&chord)
+        })
+        .map(|(chord, _)| chord)
+        .collect();
+    if unsendable.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "keys.toml binds {}, which this terminal cannot send without the kitty keyboard \
+         protocol; bind a ctrl+k row instead",
+        unsendable.join(", ")
+    ))
+}
+
+/// Whether this terminal delivers the chords `needs_protocol` names.
+///
+/// **Windows only, today.** Its console API reports full modifier state, so
+/// `ctrl+shift+f` arrives as itself. Elsewhere it needs the kitty keyboard
+/// protocol switched on, and TYPE does not push it yet, so no terminal there
+/// reports it, however capable.
+pub fn has_keyboard_protocol() -> bool {
+    cfg!(windows)
+}
+
 /// The only thing here that reads the environment.
 ///
 /// No test covers it, and none should: there is no logic in it beyond handing

@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.3.2, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.3.3, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -57,9 +57,10 @@ symlinks or your mode bits.
 number can live in your config directory. The terminal's colour depth is detected at startup and
 the palette is brought down to 256 colours when it has to be. Indentation is measured from the
 file instead of assumed, whitespace can be shown when you ask for it, and indent guides are
-drawn — including through blank lines. Focus is shown by what steps back: the panel without it
+drawn, blank lines included. Focus is shown by what steps back: the panel without it
 drops to one quiet colour, syntax and all, and the picker and hover box are rounded floats that
-name themselves and their exit.
+name themselves and their exit. `Ctrl+K` opens a menu of everything bound under it, drawn from
+the keymap, and running a row from it shows the direct chord for two seconds.
 
 Every shipped theme is checked against a contrast rubric at truecolor **and again after
 degradation**, which is the half nobody else checks: quantising moves every colour by a
@@ -175,9 +176,28 @@ cargo build --release
 
 | Key | Action |
 |---|---|
-| `F6` | Cycle focus between tree and editor (`Ctrl+Tab` too, where the terminal reports it) |
+| `F6` `Shift+F6` | Move focus to the next / previous panel (`Ctrl+Tab` too, where the terminal reports it) |
+| `Ctrl+K` | Open the menu of everything bound under it (below) |
 | `Ctrl+S` | Save |
 | `Ctrl+Q` | Quit |
+
+**The `Ctrl+K` menu**
+
+`Ctrl+K` puts a menu above the status bar listing every binding that starts with it, in columns
+by group. Press the second key, or use the arrows and `Enter`, or click a row; `Esc` cancels.
+After a row runs, the status bar shows its direct chord for two seconds. The menu is built from
+the keymap, so a rebind in `keys.toml` changes it. If your terminal eats `Ctrl+K`, the palette
+has it as "show the ctrl+k menu".
+
+| Key | Action |
+|---|---|
+| `Ctrl+K F` | Search the project (also `Ctrl+Shift+F`, where the terminal sends it) |
+| `Ctrl+K P` | Command palette (also `Ctrl+Shift+P`) |
+| `Ctrl+K G` | Go to a line (also `Ctrl+G`) |
+| `Ctrl+K W` | Close the tab (also `Ctrl+W`) |
+| `Ctrl+K D` | Go to the definition (also `F12`) |
+| `Ctrl+K H` | Describe what is under the cursor (also `Alt+H`) |
+| `Ctrl+K R` | Restart the language servers |
 
 **Tree**
 
@@ -186,6 +206,7 @@ cargo build --release
 | `↑` `↓` | Move the selection |
 | `Enter` | Open a file, or expand/collapse a directory |
 | `→` `←` | Expand / collapse a directory |
+| `Esc` | Back to the editor |
 
 **Editor**
 
@@ -299,7 +320,8 @@ same name; everything else keeps its default.
 ```toml
 # chord = action
 "ctrl+e" = "move_line_end"
-"ctrl+shift+k" = "delete_word_forward"
+# a sequence: a prefix, a space, one more key
+"ctrl+k k" = "delete_word_forward"
 
 # an empty action unbinds a key
 "ctrl+l" = ""
@@ -309,6 +331,12 @@ A binding whose action name is unknown is reported in the status bar at startup 
 defaults are kept. A typo here never stops the editor opening. One bad line rejects the whole
 file rather than half-applying it, because a keymap you cannot tell the state of is worse than
 one that plainly did nothing.
+
+A key cannot be both bound on its own and the start of a sequence, so `"ctrl+k" = "save"`
+beside the default `ctrl+k` rows is rejected with both named. A binding such as `ctrl+shift+k`
+that the terminal cannot send without the kitty keyboard protocol gets a warning at startup,
+since otherwise it would simply never fire; outside Windows that is every `Ctrl+Shift+letter`
+for now.
 
 ## Roadmap
 
@@ -329,7 +357,8 @@ one that plainly did nothing.
 | v0.2.10 | — | Loose ends: `typ a.rs b.rs` opens both, documentation corrected | shipped |
 | v0.3.0 | M3 | Code intelligence: LSP client, diagnostics, goto-definition, hover | shipped in v0.3.1 |
 | v0.3.1 | - | Audit: 80 defects found and 73 fixed, including two that lost unsaved work | shipped |
-| v0.3.2 | M3.2 | Shell, slice 1: rules at 3:1, focus by receding, the picker and hover as floats | **current** |
+| v0.3.2 | M3.2 | Shell, slice 1: rules at 3:1, focus by receding, the picker and hover as floats | shipped |
+| v0.3.3 | M3.3 | Shell, slice 2: the `Ctrl+K` menu, sequence bindings, a focus stack | **current** |
 | v0.4.0 | M4 | Workspace: splits, sessions, workspace-wide file watching | next |
 | v0.5.0 | M5 | Terminal panel and git integration | |
 | v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |

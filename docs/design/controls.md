@@ -9,11 +9,13 @@ verified: 2026-08-22
 
 **Superseded where it disagrees with [`interface.md`](interface.md)**, the shell spec drawn from the mockups.
 
-**Status: half built as of v0.2.9.** The tier analysis in §1 is load-bearing and has been used —
-it is why the command palette is reached by typing `>` into `Ctrl+P` rather than by
+**Status: §1 and §2 built as of v0.3.3.** The tier analysis in §1 is load-bearing and has been
+used: it is why the command palette is reached by typing `>` into `Ctrl+P` rather than by
 `Ctrl+Shift+P`, and why tab switching is bound to `Alt+,`/`Alt+.` as well as the page keys. The
-*mechanism* in §2 — sequence bindings, `Resolved::Pending`, the generated hint, `Action` carrying
-a description and a group — is not built. Gap analysis 52 and 53 track what that leaves.
+mechanism in §2 shipped in v0.3.3: sequence bindings, `Resolved::Pending` from the range scan,
+the menu generated from its payload with no timer, and `Action` carrying a description and a
+group. Gaps 52 and 53 are closed. §3's layers are the lookup order with one layer in it, since no
+panel has rows of its own yet; predicates are still unbuilt.
 
 The decisions still constrain M2.6 (kitty protocol), M4 (splits) and M5 (terminal panel), and two
 of them were arrived at by measuring the field rather than by taste.

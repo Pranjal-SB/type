@@ -139,7 +139,7 @@ fn draw_rows(
                     inner.x,
                     y,
                     inner.width,
-                    &row.name,
+                    &row.description,
                     style,
                     &row.indices,
                     matched,

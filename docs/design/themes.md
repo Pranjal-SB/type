@@ -33,7 +33,7 @@ border_focused = "accent"
 ```
 
 Three sections and two required scalars. `[palette]` names colours; `[ui]` assigns them to
-the editor's slots. A `[ui]` value is either a `[palette]` key or a `#rrggbb` literal —
+the editor's slots. A `[ui]` value is either a `[palette]` key or a `#rrggbb` literal;
 there is no third form, and a name that resolves to neither is an error naming the line.
 
 **`kind` is declared, not inferred.** It selects every contrast floor in the rubric — see below
@@ -138,7 +138,7 @@ The rules with no ratio, which do not vary by ground:
 | `fg` over `whitespace` | further from `bg` — marks are quieter than the code |
 | `indent_guide vs bg` | ≥ 1.3: decoration, but it has to be there |
 | `border` over `indent_guide` | further from `bg`: a guide louder than a rule reads as a boundary |
-| `fg` over `indent_guide` | further from `bg` — a guide is decoration, not content |
+| `fg` over `indent_guide` | further from `bg`: a guide is decoration, not content |
 | `border` on `bg` and on `chrome_bg` | ≥ 3.0: a rule is non-text (WCAG 1.4.11) and runs between the two surfaces |
 | `float_border` on `bg` and on `chrome_bg` | ≥ 3.0: the rule of a float that has the keyboard |
 | `scrim` vs `bg` and vs `chrome_bg` | darker than both, on either kind of ground: a modal backdrop steps back |

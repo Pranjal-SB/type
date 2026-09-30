@@ -17,6 +17,17 @@ pub fn split_frame(area: Rect) -> (Rect, Rect) {
     (body, status)
 }
 
+/// Split the body into `(body, menu)`, the menu `height` rows at the bottom.
+///
+/// Full width and docked, not floating: the body gives up rows and nothing in
+/// it moves sideways (interface §6).
+pub fn split_menu(body: Rect, height: u16) -> (Rect, Rect) {
+    let height = height.min(body.height);
+    let rest = Rect::new(body.x, body.y, body.width, body.height - height);
+    let menu = Rect::new(body.x, rest.bottom(), body.width, height);
+    (rest, menu)
+}
+
 /// A `width` by `height` rect centred in `area`, never larger than it.
 ///
 /// Clamped rather than assumed to fit. A `Rect` wider than the buffer it is

@@ -39,7 +39,7 @@ pub enum Mode {
     Files,
     /// Search the project's text. `ctrl+shift+f`.
     Search,
-    /// Every named action, ranked by name. Reached by typing `>` at the front
+    /// Every named action, ranked by what it does. Reached by typing `>` at the front
     /// of a file query, which is VS Code's convention and — because
     /// `Ctrl+Shift+letter` needs the kitty protocol to arrive at all — the only
     /// path into the palette that works in every terminal.
@@ -57,7 +57,11 @@ pub enum Mode {
 /// tests already guarantee.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandRow {
+    /// The action's config name, which is how the app turns the row back into
+    /// an `Action`. Never drawn: the row shows `description`.
     pub name: String,
+    /// What the row says, and what the query is matched against.
+    pub description: String,
     /// What key runs it, or empty when nothing does. Empty rather than a
     /// placeholder, so nothing has to invent a string that looks like a key.
     pub binding: String,
