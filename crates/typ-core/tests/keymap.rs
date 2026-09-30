@@ -198,7 +198,8 @@ fn a_chord_bound_alone_and_as_a_prefix_is_an_error_naming_both() {
         .unwrap_err();
     let text = format!("{err:#}");
     assert!(text.contains("\"ctrl+k\""), "error was: {text}");
-    assert!(text.contains("\"ctrl+k f\""), "error was: {text}");
+    // Whichever sequence it found first: every one under ctrl+k is a clash.
+    assert!(text.contains("\"ctrl+k "), "error was: {text}");
     // Rejected whole, like any other bad config.
     assert_eq!(
         keymap.lookup(&chord(KeyCode::Char('k'), KeyModifiers::CONTROL)),
@@ -260,5 +261,37 @@ fn an_ordinary_chord_resolves_as_it_always_looked_up() {
     assert_eq!(
         keymap.resolve(None, &chord(KeyCode::Char('f'), KeyModifiers::NONE)),
         Resolved::NotFound
+    );
+}
+
+#[test]
+fn the_door_holds_what_has_no_chord_every_terminal_sends() {
+    let rows = Keymap::default_bindings().under("ctrl+k");
+    for (key, action) in [
+        ("f", Action::OpenProjectSearch),
+        ("p", Action::OpenCommandPalette),
+        ("g", Action::GotoLine),
+        ("w", Action::CloseTab),
+        ("r", Action::RestartLanguageServers),
+        ("h", Action::Hover),
+        ("d", Action::GotoDefinition),
+    ] {
+        assert!(
+            rows.contains(&(key.to_string(), action)),
+            "ctrl+k {key} is not {}; rows were {rows:?}",
+            action.name()
+        );
+    }
+    // The Enhanced-tier chords stay as second bindings.
+    let keymap = Keymap::default_bindings();
+    assert!(
+        keymap
+            .bindings_for(Action::OpenProjectSearch)
+            .contains(&"ctrl+shift+f")
+    );
+    assert!(
+        keymap
+            .bindings_for(Action::OpenCommandPalette)
+            .contains(&"ctrl+shift+p")
     );
 }

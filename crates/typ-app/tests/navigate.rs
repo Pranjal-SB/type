@@ -302,9 +302,12 @@ fn both_actions_are_reachable_from_the_keymap_and_the_palette() {
     let keymap = typ_core::Keymap::default_bindings();
     assert_eq!(
         keymap.bindings_for(typ_core::Action::GotoDefinition),
-        vec!["f12"]
+        vec!["ctrl+k d", "f12"]
     );
-    assert_eq!(keymap.bindings_for(typ_core::Action::Hover), vec!["alt+h"]);
+    assert_eq!(
+        keymap.bindings_for(typ_core::Action::Hover),
+        vec!["alt+h", "ctrl+k h"]
+    );
     assert!(
         typ_core::Action::ALL.contains(&typ_core::Action::Hover),
         "an action outside ALL cannot be reached by name"

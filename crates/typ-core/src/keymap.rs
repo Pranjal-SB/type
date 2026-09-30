@@ -234,9 +234,7 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("ctrl+y", Action::Redo),
     ("ctrl+a", Action::SelectAll),
     ("ctrl+l", Action::SelectLine),
-    // VS Code, Sublime and ttt all put select-next-occurrence on Ctrl+D. TYPE
-    // has no chord *sequences*, so Ctrl+K L for select-all is unavailable and
-    // this takes VS Code's other binding for it.
+    // VS Code, Sublime and ttt all put select-next-occurrence on Ctrl+D.
     ("ctrl+d", Action::SelectNextOccurrence),
     ("ctrl+shift+l", Action::SelectAllOccurrences),
     ("esc", Action::CollapseSelections),
@@ -299,16 +297,21 @@ const DEFAULTS: &[(&str, Action)] = &[
     // layer, which does not exist.
     ("f12", Action::GotoDefinition),
     // **Deliberately not a chord anyone expects**, because the one everyone
-    // expects is a prefix. VS Code puts hover on `Ctrl+K Ctrl+I`, and
-    // `controls.md` §1 says a prefix is the only way to reach the rest of an
-    // IDE's surface — the sequence keymap is gap 53 and unbuilt. `Alt+H` is
-    // Universal, free, and rebindable; the palette reaches it by name either
-    // way, which is what makes this a default rather than the only door.
+    // expects is a prefix: VS Code puts hover on `Ctrl+K Ctrl+I`. `Ctrl+K H`
+    // is the door's row for it; `Alt+H` is Universal, free, and rebindable,
+    // and stays as the one-key way.
     ("alt+h", Action::Hover),
-    // The door (`controls.md` §2). Ctrl+Shift+F needs the kitty protocol to
-    // arrive at all, so project search gets a chord every terminal delivers.
-    // Gap 52.
+    // The door (`controls.md` §2): what has no chord every terminal delivers.
+    // Ctrl+Shift+F and Ctrl+Shift+P need the kitty protocol to arrive at all
+    // (gap 52), and the rest are either a readline habit away from being eaten
+    // or bound to keys nobody would guess. The direct chords stay beside them.
     ("ctrl+k f", Action::OpenProjectSearch),
+    ("ctrl+k p", Action::OpenCommandPalette),
+    ("ctrl+k g", Action::GotoLine),
+    ("ctrl+k w", Action::CloseTab),
+    ("ctrl+k r", Action::RestartLanguageServers),
+    ("ctrl+k h", Action::Hover),
+    ("ctrl+k d", Action::GotoDefinition),
     ("f3", Action::SearchNext),
     ("shift+f3", Action::SearchPrevious),
     ("ctrl+h", Action::ReplaceOpen),
@@ -407,6 +410,13 @@ impl Keymap {
             })
     }
 
+    /// Every row, in table order.
+    pub fn rows(&self) -> impl Iterator<Item = (&str, Action)> {
+        self.bindings
+            .iter()
+            .map(|(chord, action)| (chord.as_str(), *action))
+    }
+
     /// Chords bound to an action, for help text and the future palette.
     pub fn bindings_for(&self, action: Action) -> Vec<&str> {
         self.bindings
@@ -457,7 +467,7 @@ impl Keymap {
         // shipped `ctrl+k f`.
         if let Some((prefix, sequence)) = prefix_clash(&merged) {
             return Err(anyhow!(
-                "\"{prefix}\" is bound on its own and is also the start of \"{sequence}\";                  a key cannot be both, so unbind one of them"
+                "\"{prefix}\" is bound on its own and also starts \"{sequence}\"; unbind one of them"
             ));
         }
         self.bindings = merged;

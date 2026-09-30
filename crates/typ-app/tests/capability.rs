@@ -235,3 +235,41 @@ fn a_multiplexer_answers_no_whatever_else_is_set() {
         );
     }
 }
+
+// --- chords a terminal has to be told how to send (gap 52) -------------------
+
+fn with_keys(toml: &str) -> typ_core::Keymap {
+    let mut keymap = typ_core::Keymap::default_bindings();
+    keymap.merge_toml(toml).unwrap();
+    keymap
+}
+
+#[test]
+fn a_configured_ctrl_shift_chord_warns_where_the_protocol_is_missing() {
+    let keymap = with_keys("\"ctrl+shift+k\" = \"save\"");
+
+    let warning = typ_app::capability::protocol_warning(&keymap, false)
+        .expect("no warning for a chord this terminal cannot send");
+
+    assert!(warning.contains("ctrl+shift+k"), "{warning}");
+}
+
+#[test]
+fn the_same_chord_is_quiet_where_the_protocol_is_there() {
+    let keymap = with_keys("\"ctrl+shift+k\" = \"save\"");
+    assert_eq!(typ_app::capability::protocol_warning(&keymap, true), None);
+}
+
+#[test]
+fn the_defaults_do_not_warn() {
+    // They ship Enhanced-tier chords on purpose, each beside one every
+    // terminal sends, so warning about them would warn on every start.
+    let keymap = typ_core::Keymap::default_bindings();
+    assert_eq!(typ_app::capability::protocol_warning(&keymap, false), None);
+}
+
+#[test]
+fn a_chord_every_terminal_sends_does_not_warn() {
+    let keymap = with_keys("\"ctrl+shift+left\" = \"save\"\n\"alt+k\" = \"save\"");
+    assert_eq!(typ_app::capability::protocol_warning(&keymap, false), None);
+}
