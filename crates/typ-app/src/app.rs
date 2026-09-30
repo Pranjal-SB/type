@@ -137,6 +137,11 @@ pub struct App {
     /// A prefix pressed and waiting for its second key, and the menu of what
     /// that key can be. `None` is the ordinary state.
     menu: Option<crate::menu::Menu>,
+    /// The chord a menu row could have been, and when to stop saying so.
+    ///
+    /// Not transient in the `clear_transient` sense: it lasts its two seconds
+    /// through whatever keys come next, and goes with the first event after.
+    teaching: Option<(String, std::time::Instant)>,
 }
 
 /// One open file, and the parse state that belongs to it rather than to the app.
@@ -271,6 +276,7 @@ impl App {
             lsp: crate::lsp::Lsp::new(root),
             hover: None,
             menu: None,
+            teaching: None,
         })
     }
 
@@ -859,7 +865,13 @@ impl App {
                 None => format!("{} {}", prompt.label(), prompt.input()),
             };
         }
-        self.status.clone().unwrap_or_else(|| HINT.to_string())
+        if let Some(message) = &self.status {
+            return message.clone();
+        }
+        match &self.teaching {
+            Some((line, _)) => line.clone(),
+            None => HINT.to_string(),
+        }
     }
 
     /// Right half: what is open, what state it is in, and where the cursor is.

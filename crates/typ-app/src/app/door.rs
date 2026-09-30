@@ -4,6 +4,8 @@
 //! A child module of `app` for the reason `picker` is: it reaches `App`'s
 //! private fields without widening them.
 
+use std::time::{Duration, Instant};
+
 use anyhow::Result;
 use crossterm::event::{KeyCode, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
@@ -11,6 +13,9 @@ use typ_core::{Action, KeyChord, Resolved};
 
 use super::App;
 use crate::menu::Menu;
+
+/// How long the status bar teaches the chord a menu row stood for.
+const TEACH_FOR: Duration = Duration::from_secs(2);
 
 impl App {
     /// The first key of a sequence, if one is waiting for its second.
@@ -42,16 +47,16 @@ impl App {
             return Ok(());
         }
         if let Resolved::Matched(action) = self.keymap.resolve(Some(menu.prefix()), &chord) {
-            return self.run_from_menu(action);
+            return self.run_from_menu(menu.prefix(), &chord.canonical, action);
         }
         match chord.raw.code {
             KeyCode::Up => menu.move_selection(-1),
             KeyCode::Down => menu.move_selection(1),
             KeyCode::Enter => {
-                let Some(&(_, action)) = menu.selected() else {
+                let Some((key, action)) = menu.selected() else {
                     return Ok(());
                 };
-                return self.run_from_menu(action);
+                return self.run_from_menu(menu.prefix(), key, *action);
             }
             _ => {
                 self.clear_transient();
@@ -80,17 +85,51 @@ impl App {
             .and_then(|area| menu.hit(area, event.column, event.row))
             .and_then(|index| menu.row(index));
         match (event.kind, hit) {
-            (MouseEventKind::Down(MouseButton::Left), Some(&(_, action))) => {
-                self.run_from_menu(action)
+            (MouseEventKind::Down(MouseButton::Left), Some((key, action))) => {
+                self.run_from_menu(menu.prefix(), key, *action)
             }
             _ => Ok(()),
         }
     }
 
-    /// Run a row. The named-action path: panel first, then the app, and the
-    /// same exemption for the two actions that confirm themselves.
-    fn run_from_menu(&mut self, action: Action) -> Result<()> {
-        self.apply_named_action(action)
+    /// Run a row, then teach its chord.
+    ///
+    /// The named-action path: panel first, then the app, and the same
+    /// exemption for the two actions that confirm themselves. The teaching
+    /// line is what makes the menu a way to learn the direct chord rather than
+    /// a place to live (interface §6).
+    fn run_from_menu(&mut self, prefix: &str, key: &str, action: Action) -> Result<()> {
+        let line = format!("{prefix} {key} \u{b7} {}", action.description());
+        self.apply_named_action(action)?;
+        self.teaching = Some((line, Instant::now() + TEACH_FOR));
+        Ok(())
+    }
+
+    /// Retire whatever has outlived its deadline.
+    ///
+    /// Called with each event rather than from a timer, so a line left
+    /// standing costs nothing while the editor is idle and is gone the moment
+    /// anything happens after its two seconds.
+    /// Returns whether anything went, so the screen can be told.
+    pub fn expire(&mut self, now: Instant) -> bool {
+        let over = self
+            .teaching
+            .as_ref()
+            .is_some_and(|(_, until)| now >= *until);
+        if over {
+            self.teaching = None;
+        }
+        over
+    }
+
+    /// When the loop has to wake with nothing arriving, if ever.
+    ///
+    /// **`None`, and the teaching line is the reason it is worth a method.**
+    /// The line could ask to be cleared on time, and that would be a wakeup
+    /// every time the menu is used, on an editor nobody is looking at. It
+    /// expires on the next event instead; see `expire`.
+    pub fn wake_deadline(&self) -> Option<Instant> {
+        None
     }
 
     /// The body above the status bar, less the menu when it is up, and the

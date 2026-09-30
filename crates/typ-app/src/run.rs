@@ -1,5 +1,6 @@
 use std::io::{Stdout, stdout};
 use std::sync::mpsc;
+use std::time::Instant;
 
 use anyhow::Result;
 use crossterm::ExecutableCommand;
@@ -222,10 +223,22 @@ fn event_loop(terminal: &mut Terminal<TypBackend<Stdout>>, app: &mut App) -> Res
             return Ok(());
         }
 
-        // Unreachable in practice: the app holds a sender, so this never
-        // disconnects. A dead pump says so with `InputClosed` instead.
-        let Ok(first) = rx.recv() else {
-            return Ok(());
+        // Blocks until an event, or until the app's own deadline if it has
+        // one. Disconnection is unreachable in practice: the app holds a
+        // sender, and a dead pump says so with `InputClosed` instead.
+        let received = match app.wake_deadline() {
+            Some(at) => rx.recv_timeout(at.saturating_duration_since(Instant::now())),
+            None => rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected),
+        };
+        let first = match received {
+            Ok(event) => event,
+            // Woken by the deadline rather than by anything arriving: go round
+            // so whatever was waiting on the time gets its frame.
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                app.mark_dirty();
+                continue;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
         };
 
         // Block for one, then take everything already queued behind it. One
@@ -364,6 +377,18 @@ fn finish(app: &mut App, events: Vec<PanelEvent>, mut changed: bool) -> Result<F
 /// `run` owns the screen, so the body lives here where a test can hand it an
 /// event and an area and inspect what it did.
 pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
+    step_at(app, event, area, Instant::now())
+}
+
+/// `step`, told what time it is. Anything that expires is retired against
+/// `now` before the event is handled, so a test can be two seconds later
+/// without sleeping for them.
+pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Result<Flow> {
+    // Marked here as well as by `finish`: a worker event that changes nothing
+    // on its own still has to repaint the line it just retired.
+    if app.expire(now) {
+        app.mark_dirty();
+    }
     let mut events: Vec<PanelEvent> = Vec::new();
 
     // Default to marking the frame dirty, and be explicit about the few paths

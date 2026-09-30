@@ -317,3 +317,76 @@ fn the_palette_opens_the_menu_for_a_terminal_that_eats_ctrl_k() {
     app.apply_named_action(Action::OpenMenu).unwrap();
     assert_eq!(app.pending_prefix(), Some("ctrl+k"));
 }
+
+// --- the teaching line (interface.md §6, step 3) -----------------------------
+
+const TEACHING: &str = "ctrl+k f \u{b7} search the project";
+
+fn resize() -> AppEvent {
+    AppEvent::Input(Event::Resize(80, 24))
+}
+
+#[test]
+fn running_a_row_from_the_menu_teaches_its_chord() {
+    let mut app = app("teach-key");
+    ctrl_k(&mut app);
+    key(&mut app, 'f');
+    assert_eq!(app.status_left(), TEACHING);
+}
+
+#[test]
+fn enter_and_a_click_teach_the_chord_too() {
+    let mut app = app("teach-enter");
+    ctrl_k(&mut app);
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(app.status_left(), TEACHING);
+
+    let mut app = self::app("teach-click");
+    ctrl_k(&mut app);
+    let buf = draw(&mut app, AREA);
+    click(&mut app, find(&buf, "search the project").unwrap());
+    assert_eq!(app.status_left(), TEACHING);
+}
+
+#[test]
+fn a_direct_chord_teaches_nothing() {
+    let mut app = app("teach-direct");
+    press(
+        &mut app,
+        KeyCode::Char('F'),
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    );
+    assert_eq!(app.picker().map(|p| p.mode()), Some(Mode::Search));
+    assert!(
+        !app.status_left().contains("search the project"),
+        "{}",
+        app.status_left()
+    );
+}
+
+#[test]
+fn the_teaching_line_goes_with_the_first_event_after_two_seconds() {
+    let mut app = app("teach-expire");
+    let start = std::time::Instant::now();
+    ctrl_k(&mut app);
+    key(&mut app, 'f');
+
+    typ_app::run::step_at(&mut app, resize(), AREA, start).unwrap();
+    assert_eq!(app.status_left(), TEACHING, "gone before its time");
+
+    let later = start + std::time::Duration::from_secs(3);
+    typ_app::run::step_at(&mut app, resize(), AREA, later).unwrap();
+    assert!(!app.status_left().contains("search the project"));
+}
+
+#[test]
+fn the_teaching_line_does_not_wake_an_idle_editor() {
+    // It clears on the next event after its deadline. Nothing sets a timer for
+    // it, so a user who walks away does not cost a wakeup.
+    let mut app = app("teach-idle");
+    assert_eq!(app.wake_deadline(), None);
+    ctrl_k(&mut app);
+    key(&mut app, 'f');
+    assert_eq!(app.status_left(), TEACHING);
+    assert_eq!(app.wake_deadline(), None);
+}
