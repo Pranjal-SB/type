@@ -49,6 +49,29 @@ const NAMED_KEYS: &[&str] = &[
     "right",
 ];
 
+/// A binding as a config file spells it: one chord, or a prefix and one more
+/// chord separated by whitespace (`"Ctrl+K  F"` is `ctrl+k f`).
+///
+/// Two steps at most. Nothing needs three, and the menu a prefix opens has one
+/// level. A spelling that is only whitespace is the space key, as it was before
+/// sequences existed.
+pub(crate) fn canonical_sequence(spelling: &str) -> Result<String, String> {
+    let steps: Vec<&str> = spelling.split_whitespace().collect();
+    match steps.as_slice() {
+        [] => canonical_chord(spelling),
+        [chord] => canonical_chord(chord),
+        [prefix, chord] => Ok(format!(
+            "{} {}",
+            canonical_chord(prefix)?,
+            canonical_chord(chord)?
+        )),
+        _ => Err(format!(
+            "{spelling}: a sequence is a prefix and one more key, not {} keys",
+            steps.len()
+        )),
+    }
+}
+
 /// A chord as a config file spells it, in the form `KeyChord::canonical` takes.
 ///
 /// `lookup` compares strings, so a binding written `Ctrl+S` or `shift+ctrl+p`

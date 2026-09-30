@@ -173,3 +173,50 @@ fn bindings_can_be_looked_up_backwards_for_help_text() {
     let bindings = keymap.bindings_for(Action::Save);
     assert!(bindings.contains(&"ctrl+s"), "bindings were: {bindings:?}");
 }
+
+// --- sequences: `ctrl+k f` is a row like any other (controls.md §2) --------
+
+#[test]
+fn a_sequence_in_a_config_is_canonicalised_step_by_step() {
+    let mut keymap = Keymap::default_bindings();
+    keymap
+        .merge_toml("\"Ctrl+K  F\" = \"open_project_search\"")
+        .unwrap();
+    let bindings = keymap.bindings_for(Action::OpenProjectSearch);
+    assert!(
+        bindings.contains(&"ctrl+k f"),
+        "bindings were: {bindings:?}"
+    );
+}
+
+#[test]
+fn a_chord_bound_alone_and_as_a_prefix_is_an_error_naming_both() {
+    let mut keymap = Keymap::default_bindings();
+    let err = keymap
+        .merge_toml("\"ctrl+k\" = \"save\"\n\"ctrl+k f\" = \"open_project_search\"")
+        .unwrap_err();
+    let text = format!("{err:#}");
+    assert!(text.contains("\"ctrl+k\""), "error was: {text}");
+    assert!(text.contains("\"ctrl+k f\""), "error was: {text}");
+    // Rejected whole, like any other bad config.
+    assert_eq!(
+        keymap.lookup(&chord(KeyCode::Char('k'), KeyModifiers::CONTROL)),
+        None
+    );
+}
+
+#[test]
+fn a_sequence_of_three_keys_is_an_error() {
+    // Nothing needs one, and the menu has one level.
+    let mut keymap = Keymap::default_bindings();
+    let err = keymap.merge_toml("\"ctrl+k f g\" = \"save\"").unwrap_err();
+    let text = format!("{err:#}");
+    assert!(text.contains("ctrl+k f g"), "error was: {text}");
+}
+
+#[test]
+fn the_defaults_bind_no_chord_both_alone_and_as_a_prefix() {
+    // An empty config still runs the check over the whole table, defaults
+    // included.
+    Keymap::default_bindings().merge_toml("").unwrap();
+}

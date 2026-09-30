@@ -356,7 +356,7 @@ impl Keymap {
         for (spelling, action_name) in table {
             // Canonicalised on the way in, so the table holds exactly the form
             // `lookup` compares against.
-            let chord = crate::key::canonical_chord(&spelling).map_err(|e| anyhow!(e))?;
+            let chord = crate::key::canonical_sequence(&spelling).map_err(|e| anyhow!(e))?;
             if action_name.is_empty() {
                 // An empty action unbinds, which a user needs in order to free
                 // a chord their terminal or window manager wants for itself.
@@ -368,18 +368,41 @@ impl Keymap {
             staged.push((chord, Some(action)));
         }
 
+        let mut merged = self.bindings.clone();
         for (chord, action) in staged {
             match action {
                 Some(action) => {
-                    self.bindings.insert(chord, action);
+                    merged.insert(chord, action);
                 }
                 None => {
-                    self.bindings.remove(&chord);
+                    merged.remove(&chord);
                 }
             }
         }
+        // Over the merged table, because the clash is often between a user row
+        // and a default one: `"ctrl+k" = "save"` in keys.toml against the
+        // shipped `ctrl+k f`.
+        if let Some((prefix, sequence)) = prefix_clash(&merged) {
+            return Err(anyhow!(
+                "\"{prefix}\" is bound on its own and is also the start of \"{sequence}\";                  a key cannot be both, so unbind one of them"
+            ));
+        }
+        self.bindings = merged;
         Ok(())
     }
+}
+
+/// A chord bound on its own that also starts a sequence, if there is one.
+///
+/// Such a chord could never reach its sequence: the first press would already
+/// have matched.
+fn prefix_clash(bindings: &BTreeMap<String, Action>) -> Option<(&str, &str)> {
+    bindings.keys().find_map(|sequence| {
+        let (prefix, _) = sequence.split_once(' ')?;
+        bindings
+            .contains_key(prefix)
+            .then_some((prefix, sequence.as_str()))
+    })
 }
 
 impl Default for Keymap {
