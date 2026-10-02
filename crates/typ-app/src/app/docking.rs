@@ -100,3 +100,27 @@ impl App {
         self.tree.render(regions.content, buf, &ctx);
     }
 }
+
+impl App {
+    /// A key in resize mode with the dock focused: left and right move its
+    /// rule, `=` puts it back at its size, `enter` and `esc` leave. Returns
+    /// whether the mode took the key, as `handle_resize_chord` does.
+    pub(super) fn resize_dock_with(&mut self, code: crossterm::event::KeyCode) -> bool {
+        use crossterm::event::KeyCode;
+        let body = self.split_body(self.screen).0;
+        match code {
+            KeyCode::Left => self.dock.nudge_rule(body, -super::panes::NUDGE),
+            KeyCode::Right => self.dock.nudge_rule(body, super::panes::NUDGE),
+            KeyCode::Char('=') => self.dock.size = crate::dock::DOCK_SIZE,
+            // A left dock has no rule above or below it to move.
+            KeyCode::Up | KeyCode::Down => {}
+            KeyCode::Esc | KeyCode::Enter => self.resizing = false,
+            _ => {
+                self.resizing = false;
+                return false;
+            }
+        }
+        self.mark_dirty();
+        true
+    }
+}

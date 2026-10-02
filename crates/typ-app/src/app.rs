@@ -58,7 +58,7 @@ pub struct App {
     /// Resize mode is on: the arrows move a rule rather than the cursor.
     resizing: bool,
     /// The rule a held mouse button is dragging, if one is.
-    dragging: Option<crate::pane::SplitPath>,
+    dragging: Option<panes::Drag>,
     /// The one watch on the whole workspace, once `set_event_sender` has
     /// started it. See `background::start_workspace_watch`.
     workspace: Option<Workspace>,

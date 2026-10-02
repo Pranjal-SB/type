@@ -13,7 +13,16 @@ use crate::app::{App, Focus, Pane};
 use crate::pane::{Axis, PaneId};
 
 /// Cells one arrow moves a rule in resize mode.
-const NUDGE: i32 = 1;
+pub(super) const NUDGE: i32 = 1;
+
+/// What a held mouse button is dragging.
+#[derive(Debug, Clone)]
+pub(crate) enum Drag {
+    /// The rule of the split at this path.
+    Split(crate::pane::SplitPath),
+    /// The rule between the dock and the panes.
+    Dock,
+}
 
 /// Where one pane is drawn: the regions inside its rect.
 ///
@@ -248,6 +257,10 @@ impl App {
             self.resizing = false;
             return false;
         }
+        // The dock's rule, when the keys are in the dock.
+        if self.focus == Focus::Tree {
+            return self.resize_dock_with(chord.raw.code);
+        }
         let editor = self.editor_region(self.screen);
         let id = self.panes[self.pane].id;
         let (axis, delta) = match chord.raw.code {
@@ -281,17 +294,30 @@ impl App {
         true
     }
 
-    /// A press on a rule between panes starts dragging it. Returns whether
-    /// there was a rule there.
+    /// A press on a rule, between panes or beside the open dock, starts
+    /// dragging it. Returns whether there was a rule there.
     pub fn press_rule_at(&mut self, column: u16, row: u16, frame: Rect) -> bool {
-        self.dragging = self.layout.rule_at(self.editor_region(frame), column, row);
+        let regions = self.regions(frame);
+        self.dragging = if self.dock.open && regions.rule.contains((column, row).into()) {
+            Some(Drag::Dock)
+        } else {
+            self.layout
+                .rule_at(regions.rest, column, row)
+                .map(Drag::Split)
+        };
         self.dragging.is_some()
     }
 
     /// The pointer moved with the button held. Returns whether a rule moved.
     pub fn drag_rule_to(&mut self, column: u16, row: u16, frame: Rect) -> bool {
-        let Some(path) = self.dragging.clone() else {
-            return false;
+        let path = match self.dragging.clone() {
+            Some(Drag::Split(path)) => path,
+            Some(Drag::Dock) => {
+                self.dock.place_rule(self.split_body(frame).0, column);
+                self.mark_dirty();
+                return true;
+            }
+            None => return false,
         };
         let cell = match self.layout.axis_at(&path) {
             Some(Axis::Columns) => column,

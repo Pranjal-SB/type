@@ -13,6 +13,8 @@ use typ_core::Edge;
 pub const DOCK_SIZE: u16 = 30;
 /// Below this body width the dock takes a third instead of its size.
 const NARROW_THRESHOLD: u16 = 60;
+/// The narrowest an open dock may be dragged or nudged to, its rule included.
+pub const MIN_DOCK: u16 = 12;
 
 /// One dock's state.
 ///
@@ -65,7 +67,9 @@ impl Dock {
         } else if body.width < NARROW_THRESHOLD {
             (body.width / 3).max(1)
         } else {
-            self.size
+            // Never over half, so a terminal that shrinks under a wide dock
+            // still leaves the panes as much as the dock has.
+            self.size.min(body.width / 2)
         }
         .min(body.width);
         let list = width.saturating_sub(1);
@@ -81,5 +85,21 @@ impl Dock {
             rule: Rect::new(body.x + list, body.y, width - list, body.height),
             rest: Rect::new(body.x + width, body.y, body.width - width, body.height),
         }
+    }
+
+    /// Put the rule at `column`, clamped so the dock is at least
+    /// [`MIN_DOCK`] and at most half of `body`.
+    pub fn place_rule(&mut self, body: Rect, column: u16) {
+        let high = body.width / 2;
+        if MIN_DOCK > high {
+            return;
+        }
+        self.size = (column.saturating_sub(body.x) + 1).clamp(MIN_DOCK, high);
+    }
+
+    /// Move the rule `delta` columns, clamped as [`Dock::place_rule`] is.
+    pub fn nudge_rule(&mut self, body: Rect, delta: i32) {
+        let at = self.areas(body).rule.x as i32 + delta;
+        self.place_rule(body, at.clamp(0, u16::MAX as i32) as u16);
     }
 }
