@@ -449,6 +449,14 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                     return finish(app, events, changed);
                 }
 
+                // The folded dock's column is one target: a press opens it.
+                if matches!(m.kind, MouseEventKind::Down(MouseButton::Left))
+                    && app.press_dock_at(m.column, m.row, area)
+                {
+                    app.clear_transient();
+                    return finish(app, events, true);
+                }
+
                 // A rule between panes is dragged, not clicked through: the
                 // press picks it up, motion with the button held moves it.
                 let rule_drag = match m.kind {

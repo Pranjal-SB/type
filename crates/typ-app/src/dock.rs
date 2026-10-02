@@ -59,7 +59,10 @@ impl Dock {
     /// ponytail: left edge only; a right or bottom dock mirrors this when its
     /// first panel lands.
     pub fn areas(&self, body: Rect) -> DockAreas {
-        let width = if body.width < NARROW_THRESHOLD {
+        let width = if !self.open {
+            // Folded: the rule alone, `▸` at its top.
+            1
+        } else if body.width < NARROW_THRESHOLD {
             (body.width / 3).max(1)
         } else {
             self.size

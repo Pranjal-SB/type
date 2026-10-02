@@ -42,3 +42,21 @@ fn an_open_left_dock_is_thirty_columns_with_its_rule() {
     assert_eq!(areas.rule, Rect::new(29, 0, 1, 30));
     assert_eq!(areas.rest, Rect::new(30, 0, 70, 30));
 }
+
+#[test]
+fn a_folded_dock_is_its_rule_and_the_panes_take_the_rest() {
+    let folded = Dock {
+        open: false,
+        ..Dock::left()
+    };
+    for width in 0..130 {
+        for height in [0, 1, 2, 24] {
+            let body = Rect::new(3, 2, width, height);
+            tiles(body, &folded.areas(body));
+        }
+    }
+    let areas = folded.areas(Rect::new(0, 0, 100, 30));
+    assert_eq!(areas.rule, Rect::new(0, 0, 1, 30));
+    assert_eq!(areas.rest, Rect::new(1, 0, 99, 30));
+    assert_eq!(areas.content.width, 0);
+}

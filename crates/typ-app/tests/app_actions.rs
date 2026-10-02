@@ -181,6 +181,14 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
                 app.status_left()
             );
         },
+        // The palette's path, which is also the mouse's: a row in ctrl+p.
+        Action::ToggleLeftDock => |app, a| {
+            run(app, a);
+            assert_eq!(app.focus(), Focus::Tree);
+            run(app, a);
+            assert!(!app.dock_open(), "the focused dock did not fold");
+            assert_eq!(app.focus(), Focus::Editor);
+        },
         Action::OpenMenu => |app, a| {
             run(app, a);
             assert_eq!(app.pending_prefix(), Some("ctrl+k"));

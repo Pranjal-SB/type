@@ -129,6 +129,9 @@ pub enum Action {
     /// Resize mode: the arrows move the current pane's nearest rule a cell at
     /// a time, `=` evens it, `enter` or `esc` leaves.
     ResizePanes,
+    /// The left dock, in three steps (interface §5): closed opens and focuses
+    /// it, open without focus focuses it, focused folds it to its rule.
+    ToggleLeftDock,
     Copy,
     Cut,
     Paste,
@@ -422,6 +425,7 @@ impl Action {
         Action::FocusNeighbour(Edge::Top),
         Action::FocusNeighbour(Edge::Bottom),
         Action::ResizePanes,
+        Action::ToggleLeftDock,
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -515,6 +519,7 @@ impl Action {
             Action::FocusNeighbour(Edge::Top) => "focus_pane_up",
             Action::FocusNeighbour(Edge::Bottom) => "focus_pane_down",
             Action::ResizePanes => "resize_panes",
+            Action::ToggleLeftDock => "toggle_left_dock",
             Action::FocusPane(n) => FOCUS_PANE_NAMES
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -629,6 +634,7 @@ impl Action {
             Action::FocusNeighbour(Edge::Top) => "focus the pane above",
             Action::FocusNeighbour(Edge::Bottom) => "focus the pane below",
             Action::ResizePanes => "resize panes",
+            Action::ToggleLeftDock => "open, focus or fold the left dock",
             Action::FocusPane(n) => FOCUS_PANE_DESCRIPTIONS
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -680,7 +686,7 @@ impl Action {
             Action::NextTab | Action::PrevTab | Action::CloseTab | Action::GoToTab(_) => {
                 Group::Tabs
             }
-            Action::FocusNext | Action::FocusPrevious => Group::Panels,
+            Action::FocusNext | Action::FocusPrevious | Action::ToggleLeftDock => Group::Panels,
             Action::SplitRight
             | Action::SplitDown
             | Action::ClosePane

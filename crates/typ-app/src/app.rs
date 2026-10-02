@@ -2,6 +2,7 @@ use std::path::Path;
 
 mod background;
 mod dispatch;
+mod docking;
 mod door;
 pub(crate) mod panes;
 mod picker;
@@ -586,12 +587,14 @@ impl App {
     }
 
     fn step_focus(&mut self, delta: isize) {
-        let at = FOCUS_ORDER
-            .iter()
-            .position(|f| *f == self.focus)
-            .unwrap_or(0);
-        let next = (at as isize + delta).rem_euclid(FOCUS_ORDER.len() as isize);
-        self.set_focus(FOCUS_ORDER[next as usize]);
+        // A folded dock holds no focus, so the walk steps over it.
+        let order: Vec<Focus> = FOCUS_ORDER
+            .into_iter()
+            .filter(|f| *f != Focus::Tree || self.dock.open)
+            .collect();
+        let at = order.iter().position(|f| *f == self.focus).unwrap_or(0);
+        let next = (at as isize + delta).rem_euclid(order.len() as isize);
+        self.set_focus(order[next as usize]);
     }
 
     /// Move focus, remembering where it came from.

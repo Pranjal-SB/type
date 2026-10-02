@@ -27,28 +27,7 @@ impl App {
         let tree_area = regions.content;
         let (w, h) = (frame.area().width, frame.area().height);
 
-        let tree_ctx = RenderContext {
-            theme: &self.theme,
-            syntax: &self.syntax_theme,
-            // The tree draws files, not their contents.
-            diagnostics: &[],
-            is_focused: self.focus == Focus::Tree,
-            panel_index: 0,
-            terminal_width: w,
-            terminal_height: h,
-        };
-
-        // The app draws the lines; each panel draws its content inside them.
-        typ_core::chrome::labelled_rule(
-            regions.heading,
-            frame.buffer_mut(),
-            &self.tree.title(),
-            self.focus == Focus::Tree,
-            &self.theme,
-            self.theme.chrome_bg,
-        );
-        self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
-        typ_core::chrome::rule(regions.rule, frame.buffer_mut(), &self.theme, self.theme.bg);
+        self.render_dock(&regions, frame.buffer_mut(), (w, h));
 
         self.screen = frame.area();
         let panes = self.pane_areas(regions.rest);

@@ -218,6 +218,7 @@ impl App {
             Action::FocusPane(n) => self.focus_pane((n as usize).saturating_sub(1)),
             Action::FocusNeighbour(edge) => self.focus_neighbour(edge),
             Action::ResizePanes => self.resizing = true,
+            Action::ToggleLeftDock => self.toggle_left_dock(),
             Action::RestartLanguageServers => {
                 let started = self.lsp.restart_all();
                 self.status = Some(match started {
