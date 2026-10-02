@@ -173,6 +173,14 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             assert_eq!(app.pane_count(), 1);
             assert_eq!(app.active_tab(), TABS - 1, "{}", a.name());
         },
+        Action::ResizePanes => |app, a| {
+            run(app, a);
+            assert!(
+                app.status_left().contains("arrows move the rule"),
+                "{}",
+                app.status_left()
+            );
+        },
         Action::OpenMenu => |app, a| {
             run(app, a);
             assert_eq!(app.pending_prefix(), Some("ctrl+k"));

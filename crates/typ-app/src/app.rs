@@ -52,6 +52,10 @@ pub struct App {
     /// and a chord arrives with no area of its own. 80x24 until the first
     /// frame, the terminal's default size.
     screen: ratatui::layout::Rect,
+    /// Resize mode is on: the arrows move a rule rather than the cursor.
+    resizing: bool,
+    /// The rule a held mouse button is dragging, if one is.
+    dragging: Option<crate::pane::SplitPath>,
     /// A pane close was refused because a tab in it held unsaved work, and
     /// which pane. Closing the same pane again goes through; anything else in
     /// between abandons it, as `close_pending` does for a tab.
@@ -265,6 +269,9 @@ const SEGMENT_GAP: &str = "  ";
 /// (interface §5); docks and the status bar join it when they exist.
 const FOCUS_ORDER: [Focus; 2] = [Focus::Tree, Focus::Editor];
 
+/// What the status bar says while resize mode is on.
+const RESIZE_HINT: &str = "Resize: arrows move the rule  ·  = evens it  ·  Enter or Esc done";
+
 /// Shown when there is nothing more urgent to say. Discoverability is part of
 /// the product: bindings nobody can find are bindings that do not exist.
 const HINT: &str = "Tab focus  ·  Enter open  ·  Ctrl+S save  ·  Ctrl+Q quit";
@@ -278,6 +285,8 @@ impl App {
             layout: crate::pane::Layout::Leaf(crate::pane::PaneId(0)),
             next_pane: 1,
             screen: ratatui::layout::Rect::new(0, 0, 80, 24),
+            resizing: false,
+            dragging: None,
             close_pane_pending: None,
             registry: Registry::with_builtins(),
             keymap: Keymap::default_bindings(),
@@ -368,6 +377,10 @@ impl App {
                 Some(message) => format!("{} {}  {message}", prompt.label(), prompt.input()),
                 None => format!("{} {}", prompt.label(), prompt.input()),
             };
+        }
+        // The mode owns the arrows, so it says so for as long as it is on.
+        if self.resizing {
+            return RESIZE_HINT.to_string();
         }
         if let Some(message) = &self.status {
             return message.clone();

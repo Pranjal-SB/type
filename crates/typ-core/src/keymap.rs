@@ -318,6 +318,7 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("ctrl+k \\", Action::SplitRight),
     ("ctrl+k -", Action::SplitDown),
     ("ctrl+k x", Action::ClosePane),
+    ("ctrl+k =", Action::ResizePanes),
     ("ctrl+k 1", Action::FocusPane(1)),
     ("ctrl+k 2", Action::FocusPane(2)),
     ("ctrl+k 3", Action::FocusPane(3)),

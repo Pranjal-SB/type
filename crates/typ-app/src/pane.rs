@@ -20,6 +20,16 @@ pub enum Axis {
     Rows,
 }
 
+/// The smallest a pane may be dragged or nudged to: wide enough for a gutter
+/// and a few characters, tall enough for its tab row and two lines.
+pub const MIN_COLUMNS: u16 = 10;
+pub const MIN_ROWS: u16 = 3;
+
+/// Which split a rule belongs to: the turns from the root, `false` into the
+/// first child and `true` into the second. Valid until the layout next
+/// changes shape, which is why nothing holds one past a drag.
+pub type SplitPath = Vec<bool>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Layout {
     Leaf(PaneId),
@@ -64,6 +74,160 @@ impl Layout {
             out.push((*axis, rule));
             a.collect_rules(first, out);
             b.collect_rules(second, out);
+        }
+    }
+
+    /// The split whose rule is under `(column, row)`, if any.
+    pub fn rule_at(&self, area: Rect, column: u16, row: u16) -> Option<SplitPath> {
+        let Layout::Split { axis, ratio, a, b } = self else {
+            return None;
+        };
+        let (first, rule, second) = divide(area, *axis, *ratio);
+        if rule.contains((column, row).into()) {
+            return Some(Vec::new());
+        }
+        let (turn, child, child_area) = if first.contains((column, row).into()) {
+            (false, a, first)
+        } else {
+            (true, b, second)
+        };
+        let mut path = child.rule_at(child_area, column, row)?;
+        path.insert(0, turn);
+        Some(path)
+    }
+
+    /// The split nearest `leaf` along `axis`: its closest ancestor that
+    /// divides that way. The rule an arrow in resize mode moves.
+    pub fn nearest_split(&self, leaf: PaneId, axis: Axis) -> Option<SplitPath> {
+        let Layout::Split {
+            axis: here, a, b, ..
+        } = self
+        else {
+            return None;
+        };
+        let (turn, child) = if a.contains(leaf) {
+            (false, a)
+        } else if b.contains(leaf) {
+            (true, b)
+        } else {
+            return None;
+        };
+        if let Some(mut path) = child.nearest_split(leaf, axis) {
+            path.insert(0, turn);
+            return Some(path);
+        }
+        (*here == axis).then(Vec::new)
+    }
+
+    fn contains(&self, leaf: PaneId) -> bool {
+        match self {
+            Layout::Leaf(id) => *id == leaf,
+            Layout::Split { a, b, .. } => a.contains(leaf) || b.contains(leaf),
+        }
+    }
+
+    /// The axis of the split at `path`, if `path` names a split.
+    pub fn axis_at(&self, path: &[bool]) -> Option<Axis> {
+        match (self, path.split_first()) {
+            (Layout::Split { axis, .. }, None) => Some(*axis),
+            (Layout::Split { a, .. }, Some((false, rest))) => a.axis_at(rest),
+            (Layout::Split { b, .. }, Some((true, rest))) => b.axis_at(rest),
+            (Layout::Leaf(_), _) => None,
+        }
+    }
+
+    /// Put the rule of the split at `path` at `cell`, an absolute column for a
+    /// side-by-side split or row for a stacked one, clamped so neither side
+    /// goes under its minimum.
+    pub fn place_rule(&mut self, area: Rect, path: &[bool], cell: u16) {
+        self.with_split(area, path, &mut |area, axis, ratio, a, b| {
+            let (origin, total) = match axis {
+                Axis::Columns => (area.x, area.width),
+                Axis::Rows => (area.y, area.height),
+            };
+            let room = total.saturating_sub(1);
+            if room == 0 {
+                return;
+            }
+            let low = a.min_extent(axis);
+            let high = room.saturating_sub(b.min_extent(axis));
+            let first = cell.saturating_sub(origin);
+            // When both minimums cannot fit, the split stays where it is
+            // rather than favouring one side.
+            if low > high {
+                return;
+            }
+            let first = first.clamp(low, high);
+            // Half a cell over, so `divide`'s floor lands on `first` exactly
+            // whatever the float makes of the division.
+            *ratio = (first as f32 + 0.5) / room as f32;
+        });
+    }
+
+    /// Move the rule of the split at `path` by `delta` cells, clamped.
+    pub fn nudge_rule(&mut self, area: Rect, path: &[bool], delta: i32) {
+        let Some(axis) = self.axis_at(path) else {
+            return;
+        };
+        let Some(rule) = self.rule_rect(area, path) else {
+            return;
+        };
+        let at = match axis {
+            Axis::Columns => rule.x,
+            Axis::Rows => rule.y,
+        };
+        let to = (at as i32 + delta).clamp(0, u16::MAX as i32) as u16;
+        self.place_rule(area, path, to);
+    }
+
+    /// Even the split at `path` again.
+    pub fn even(&mut self, area: Rect, path: &[bool]) {
+        self.with_split(area, path, &mut |_, _, ratio, _, _| *ratio = 0.5);
+    }
+
+    /// The rule rect of the split at `path`.
+    fn rule_rect(&self, area: Rect, path: &[bool]) -> Option<Rect> {
+        let Layout::Split { axis, ratio, a, b } = self else {
+            return None;
+        };
+        let (first, rule, second) = divide(area, *axis, *ratio);
+        match path.split_first() {
+            None => Some(rule),
+            Some((false, rest)) => a.rule_rect(first, rest),
+            Some((true, rest)) => b.rule_rect(second, rest),
+        }
+    }
+
+    /// Run `change` on the split at `path`, given the area it divides.
+    fn with_split(
+        &mut self,
+        area: Rect,
+        path: &[bool],
+        change: &mut dyn FnMut(Rect, Axis, &mut f32, &Layout, &Layout),
+    ) {
+        let Layout::Split { axis, ratio, a, b } = self else {
+            return;
+        };
+        let (first, _, second) = divide(area, *axis, *ratio);
+        match path.split_first() {
+            None => change(area, *axis, ratio, a, b),
+            Some((false, rest)) => a.with_split(first, rest, change),
+            Some((true, rest)) => b.with_split(second, rest, change),
+        }
+    }
+
+    /// The fewest cells this layout can be along `axis` without a pane in it
+    /// going under the minimum.
+    fn min_extent(&self, axis: Axis) -> u16 {
+        match self {
+            Layout::Leaf(_) => match axis {
+                Axis::Columns => MIN_COLUMNS,
+                Axis::Rows => MIN_ROWS,
+            },
+            Layout::Split {
+                axis: here, a, b, ..
+            } if *here == axis => a.min_extent(axis) + 1 + b.min_extent(axis),
+            Layout::Split { a, b, .. } => a.min_extent(axis).max(b.min_extent(axis)),
         }
     }
 

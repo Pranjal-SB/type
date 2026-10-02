@@ -126,6 +126,9 @@ pub enum Action {
     FocusPane(u8),
     /// Focus the pane beside the current one on that side.
     FocusNeighbour(Edge),
+    /// Resize mode: the arrows move the current pane's nearest rule a cell at
+    /// a time, `=` evens it, `enter` or `esc` leaves.
+    ResizePanes,
     Copy,
     Cut,
     Paste,
@@ -418,6 +421,7 @@ impl Action {
         Action::FocusNeighbour(Edge::Right),
         Action::FocusNeighbour(Edge::Top),
         Action::FocusNeighbour(Edge::Bottom),
+        Action::ResizePanes,
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -510,6 +514,7 @@ impl Action {
             Action::FocusNeighbour(Edge::Right) => "focus_pane_right",
             Action::FocusNeighbour(Edge::Top) => "focus_pane_up",
             Action::FocusNeighbour(Edge::Bottom) => "focus_pane_down",
+            Action::ResizePanes => "resize_panes",
             Action::FocusPane(n) => FOCUS_PANE_NAMES
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -623,6 +628,7 @@ impl Action {
             Action::FocusNeighbour(Edge::Right) => "focus the pane to the right",
             Action::FocusNeighbour(Edge::Top) => "focus the pane above",
             Action::FocusNeighbour(Edge::Bottom) => "focus the pane below",
+            Action::ResizePanes => "resize panes",
             Action::FocusPane(n) => FOCUS_PANE_DESCRIPTIONS
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -679,7 +685,8 @@ impl Action {
             | Action::SplitDown
             | Action::ClosePane
             | Action::FocusPane(_)
-            | Action::FocusNeighbour(_) => Group::Panes,
+            | Action::FocusNeighbour(_)
+            | Action::ResizePanes => Group::Panes,
             Action::GotoDefinition | Action::Hover | Action::RestartLanguageServers => Group::Code,
             Action::Quit | Action::OpenCommandPalette | Action::OpenMenu => Group::App,
         }

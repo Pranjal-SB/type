@@ -92,6 +92,12 @@ impl App {
             return self.handle_menu_chord(chord);
         }
 
+        // Resize mode owns the arrows and `=`. Any other key leaves it and
+        // then does what it always does, so the mode is never a trap.
+        if self.resizing && self.handle_resize_chord(&chord) {
+            return Ok(());
+        }
+
         let bound = match self.keymap.resolve(None, &chord) {
             typ_core::Resolved::Matched(action) => Some(action),
             // Nothing runs yet, so nothing transient is cleared: a close
@@ -211,6 +217,7 @@ impl App {
             // Counted from one, as the number in the tab row is.
             Action::FocusPane(n) => self.focus_pane((n as usize).saturating_sub(1)),
             Action::FocusNeighbour(edge) => self.focus_neighbour(edge),
+            Action::ResizePanes => self.resizing = true,
             Action::RestartLanguageServers => {
                 let started = self.lsp.restart_all();
                 self.status = Some(match started {

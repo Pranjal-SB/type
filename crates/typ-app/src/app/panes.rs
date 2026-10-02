@@ -12,6 +12,9 @@ use typ_core::{Edge, Panel, PanelEvent};
 use crate::app::{App, Focus, Pane};
 use crate::pane::{Axis, PaneId};
 
+/// Cells one arrow moves a rule in resize mode.
+const NUDGE: i32 = 1;
+
 /// Where one pane is drawn: the regions inside its rect.
 ///
 /// One function computes these (`App::pane_areas`) and both the render and
@@ -236,6 +239,81 @@ impl App {
                 .panel
                 .handle_scroll(delta, area.content),
         )
+    }
+
+    /// A key in resize mode. Returns whether the mode took it; a key it does
+    /// not take has already ended the mode.
+    pub(super) fn handle_resize_chord(&mut self, chord: &typ_core::KeyChord) -> bool {
+        use crossterm::event::KeyCode;
+        if !chord.raw.modifiers.is_empty() {
+            self.resizing = false;
+            return false;
+        }
+        let editor = self.editor_region(self.screen);
+        let id = self.panes[self.pane].id;
+        let (axis, delta) = match chord.raw.code {
+            KeyCode::Left => (Axis::Columns, -NUDGE),
+            KeyCode::Right => (Axis::Columns, NUDGE),
+            KeyCode::Up => (Axis::Rows, -NUDGE),
+            KeyCode::Down => (Axis::Rows, NUDGE),
+            KeyCode::Char('=') => {
+                for axis in [Axis::Columns, Axis::Rows] {
+                    if let Some(path) = self.layout.nearest_split(id, axis) {
+                        self.layout.even(editor, &path);
+                    }
+                }
+                self.mark_dirty();
+                return true;
+            }
+            KeyCode::Esc | KeyCode::Enter => {
+                self.resizing = false;
+                self.mark_dirty();
+                return true;
+            }
+            _ => {
+                self.resizing = false;
+                return false;
+            }
+        };
+        if let Some(path) = self.layout.nearest_split(id, axis) {
+            self.layout.nudge_rule(editor, &path, delta);
+            self.mark_dirty();
+        }
+        true
+    }
+
+    /// A press on a rule between panes starts dragging it. Returns whether
+    /// there was a rule there.
+    pub fn press_rule_at(&mut self, column: u16, row: u16, frame: Rect) -> bool {
+        self.dragging = self.layout.rule_at(self.editor_region(frame), column, row);
+        self.dragging.is_some()
+    }
+
+    /// The pointer moved with the button held. Returns whether a rule moved.
+    pub fn drag_rule_to(&mut self, column: u16, row: u16, frame: Rect) -> bool {
+        let Some(path) = self.dragging.clone() else {
+            return false;
+        };
+        let cell = match self.layout.axis_at(&path) {
+            Some(Axis::Columns) => column,
+            Some(Axis::Rows) => row,
+            None => return false,
+        };
+        self.layout
+            .place_rule(self.editor_region(frame), &path, cell);
+        self.mark_dirty();
+        true
+    }
+
+    /// The button came up. Returns whether a drag ended.
+    pub fn release_rule(&mut self) -> bool {
+        self.dragging.take().is_some()
+    }
+
+    /// The frame the next key is about. `step` says so on every event, and
+    /// `render` on every frame.
+    pub fn set_screen(&mut self, frame: Rect) {
+        self.screen = frame;
     }
 
     /// Where `id` is in `panes`.
