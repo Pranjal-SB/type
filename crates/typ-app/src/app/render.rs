@@ -15,6 +15,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 use typ_core::{Panel, RenderContext};
 
+use crate::app::panes::PaneArea;
 use crate::app::{App, Focus, SEGMENT_GAP};
 use crate::pane::Axis;
 
@@ -49,9 +50,10 @@ impl App {
         self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
         typ_core::chrome::rule(regions.rule, frame.buffer_mut(), &self.theme, self.theme.bg);
 
+        self.screen = frame.area();
         let panes = self.pane_areas(regions.editor);
-        for &(index, bar, content) in &panes {
-            self.render_pane(index, bar, content, frame.buffer_mut(), (w, h));
+        for (number, area) in panes.iter().enumerate() {
+            self.render_pane(number + 1, area, frame.buffer_mut(), (w, h));
         }
         for (axis, rule) in self.layout.rules(regions.editor) {
             let buf = frame.buffer_mut();
@@ -64,8 +66,8 @@ impl App {
         }
         let editor_area = panes
             .iter()
-            .find(|(index, _, _)| *index == self.pane)
-            .map_or(Rect::default(), |&(_, _, content)| content);
+            .find(|area| area.index == self.pane)
+            .map_or(Rect::default(), |area| area.content);
 
         self.render_status(status_area, frame.buffer_mut());
         if let (Some(menu), Some(area)) = (&self.menu, menu_area) {
@@ -189,45 +191,25 @@ impl App {
     pub fn areas(&self, area: Rect) -> (Rect, Rect) {
         let (body, _) = self.split_body(area);
         let regions = crate::layout::split(body);
-        let (_, editor) = self.current_pane_area(regions.editor);
-        (regions.tree, editor)
+        (regions.tree, self.current_pane_area(regions.editor).content)
     }
 
-    /// Every pane's `(index into panes, tab row, content)`, in screen order.
-    ///
-    /// The one place a pane's rect comes from: `render` paints what this says
-    /// and every hit-test asks it, so the two cannot disagree by a cell.
-    pub(super) fn pane_areas(&self, editor: Rect) -> Vec<(usize, Rect, Rect)> {
-        self.layout
-            .rects(editor)
-            .into_iter()
-            .filter_map(|(id, rect)| {
-                let index = self.panes.iter().position(|pane| pane.id == id)?;
-                let (bar, content) = crate::layout::split_tabs(rect);
-                Some((index, bar, content))
-            })
-            .collect()
-    }
-
-    /// The current pane's `(tab row, content)` inside the editor region.
-    pub(super) fn current_pane_area(&self, editor: Rect) -> (Rect, Rect) {
-        self.pane_areas(editor)
-            .into_iter()
-            .find(|(index, _, _)| *index == self.pane)
-            .map_or((Rect::default(), Rect::default()), |(_, bar, content)| {
-                (bar, content)
-            })
-    }
-
-    /// One pane: the visible tab's text, then its tab row over the top.
+    /// One pane: the visible tab's text, then its tab row over the top, led by
+    /// the pane's number when there is more than one.
     fn render_pane(
         &mut self,
-        index: usize,
-        bar: Rect,
-        content: Rect,
+        number: usize,
+        area: &PaneArea,
         buf: &mut ratatui::buffer::Buffer,
         (w, h): (u16, u16),
     ) {
+        let PaneArea {
+            index,
+            number: number_area,
+            bar,
+            content,
+            ..
+        } = *area;
         let focused = self.focus == Focus::Editor && index == self.pane;
         // Resolved before the pane is borrowed mutably: the result borrows
         // `self.lsp` alone, so the tab's borrow ends with the call.
@@ -248,6 +230,27 @@ impl App {
         if bar.height > 0 {
             let labels: Vec<String> = pane.tabs.iter().map(|tab| tab.panel.title()).collect();
             crate::tabbar::draw(buf, bar, &labels, pane.active, &self.theme, focused);
+        }
+        if number_area.width > 0 {
+            // The pane's label (interface §4): accent and bold on the pane
+            // with the keys, the tab row's own quiet colour on the rest.
+            let style = if focused {
+                Style::default()
+                    .fg(self.theme.border_focused)
+                    .bg(self.theme.chrome_bg)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(self.theme.status_bar_inactive_fg)
+                    .bg(self.theme.chrome_bg)
+            };
+            buf.set_stringn(
+                number_area.x,
+                number_area.y,
+                format!(" {number} "),
+                number_area.width as usize,
+                style,
+            );
         }
     }
 }

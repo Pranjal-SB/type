@@ -208,6 +208,9 @@ impl App {
             Action::SplitRight => self.split(crate::pane::Axis::Columns),
             Action::SplitDown => self.split(crate::pane::Axis::Rows),
             Action::ClosePane => self.request_close_pane(),
+            // Counted from one, as the number in the tab row is.
+            Action::FocusPane(n) => self.focus_pane((n as usize).saturating_sub(1)),
+            Action::FocusNeighbour(edge) => self.focus_neighbour(edge),
             Action::RestartLanguageServers => {
                 let started = self.lsp.restart_all();
                 self.status = Some(match started {

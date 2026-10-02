@@ -117,10 +117,14 @@ fn the_door_rows_split_and_close() {
 #[test]
 fn a_click_on_the_menu_row_splits() {
     // The mouse path: the door's rows are clickable, and every action is one.
+    // A tall frame, so the menu (a third of it at most) shows every row.
+    const TALL: Rect = Rect::new(0, 0, 120, 90);
     let (mut app, _dir) = app("menu-click");
     press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL);
-    let buf = draw(&mut app);
-    let (x, y) = (0..FRAME.height)
+    let mut terminal = Terminal::new(TestBackend::new(TALL.width, TALL.height)).unwrap();
+    terminal.draw(|frame| app.render(frame)).unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let (x, y) = (0..TALL.height)
         .find_map(|y| {
             let text = row(&buf, y);
             let byte = text.find("split right")?;
@@ -133,7 +137,7 @@ fn a_click_on_the_menu_row_splits() {
         row: y,
         modifiers: KeyModifiers::NONE,
     };
-    typ_app::run::step(&mut app, AppEvent::Input(Event::Mouse(event)), FRAME).unwrap();
+    typ_app::run::step(&mut app, AppEvent::Input(Event::Mouse(event)), TALL).unwrap();
 
     assert_eq!(app.pane_count(), 2);
 }

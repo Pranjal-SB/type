@@ -9,7 +9,7 @@ use std::ops::Bound;
 
 use anyhow::{Context, Result, anyhow};
 
-use crate::{Action, Direction, KeyChord, Motion};
+use crate::{Action, Direction, Edge, KeyChord, Motion};
 
 /// What a key means, given what was pressed before it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -318,6 +318,21 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("ctrl+k \\", Action::SplitRight),
     ("ctrl+k -", Action::SplitDown),
     ("ctrl+k x", Action::ClosePane),
+    ("ctrl+k 1", Action::FocusPane(1)),
+    ("ctrl+k 2", Action::FocusPane(2)),
+    ("ctrl+k 3", Action::FocusPane(3)),
+    ("ctrl+k 4", Action::FocusPane(4)),
+    ("ctrl+k 5", Action::FocusPane(5)),
+    ("ctrl+k 6", Action::FocusPane(6)),
+    ("ctrl+k 7", Action::FocusPane(7)),
+    ("ctrl+k 8", Action::FocusPane(8)),
+    ("ctrl+k 9", Action::FocusPane(9)),
+    // Spatial, interface §5. An arrow with one modifier is Universal tier
+    // (`controls.md` §1), and nothing else here uses Alt+arrow.
+    ("alt+left", Action::FocusNeighbour(Edge::Left)),
+    ("alt+right", Action::FocusNeighbour(Edge::Right)),
+    ("alt+up", Action::FocusNeighbour(Edge::Top)),
+    ("alt+down", Action::FocusNeighbour(Edge::Bottom)),
     ("f3", Action::SearchNext),
     ("shift+f3", Action::SearchPrevious),
     ("ctrl+h", Action::ReplaceOpen),

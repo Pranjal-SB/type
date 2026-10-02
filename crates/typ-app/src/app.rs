@@ -3,7 +3,7 @@ use std::path::Path;
 mod background;
 mod dispatch;
 mod door;
-mod panes;
+pub(crate) mod panes;
 mod picker;
 mod render;
 /// Search, replace and goto-line. A child module rather than a sibling so it
@@ -45,6 +45,13 @@ pub struct App {
     layout: crate::pane::Layout,
     /// The id the next pane gets. Never reused, so a stale id names nothing.
     next_pane: u32,
+    /// The frame the last render drew into.
+    ///
+    /// What a key that moves between panes measures against: `alt+right`
+    /// means the pane beside this one on the screen the user is looking at,
+    /// and a chord arrives with no area of its own. 80x24 until the first
+    /// frame, the terminal's default size.
+    screen: ratatui::layout::Rect,
     /// A pane close was refused because a tab in it held unsaved work, and
     /// which pane. Closing the same pane again goes through; anything else in
     /// between abandons it, as `close_pending` does for a tab.
@@ -270,6 +277,7 @@ impl App {
             pane: 0,
             layout: crate::pane::Layout::Leaf(crate::pane::PaneId(0)),
             next_pane: 1,
+            screen: ratatui::layout::Rect::new(0, 0, 80, 24),
             close_pane_pending: None,
             registry: Registry::with_builtins(),
             keymap: Keymap::default_bindings(),

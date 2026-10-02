@@ -155,6 +155,24 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             assert_eq!(app.pane_count(), 1);
             assert!(app.status().is_some(), "{} said nothing", a.name());
         },
+        // One pane: the first is the only one there is, and taking it brings
+        // the keys back to the editor. Any other number names no pane.
+        Action::FocusPane(_) => |app, a| {
+            app.set_focus(Focus::Tree);
+            run(app, a);
+            let Action::FocusPane(n) = a else {
+                unreachable!()
+            };
+            let expected = if n == 1 { Focus::Editor } else { Focus::Tree };
+            assert_eq!(app.focus(), expected, "{}", a.name());
+            assert_eq!(app.current_pane(), 0);
+        },
+        // Nothing beside a lone pane: nothing moves.
+        Action::FocusNeighbour(_) => |app, a| {
+            run(app, a);
+            assert_eq!(app.pane_count(), 1);
+            assert_eq!(app.active_tab(), TABS - 1, "{}", a.name());
+        },
         Action::OpenMenu => |app, a| {
             run(app, a);
             assert_eq!(app.pending_prefix(), Some("ctrl+k"));

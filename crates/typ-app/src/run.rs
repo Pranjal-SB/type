@@ -341,6 +341,8 @@ fn route_scroll(app: &mut App, m: MouseEvent, delta: i32, area: Rect) -> Vec<Pan
     let (tree_area, editor_area) = app.areas(area);
     if m.column < tree_area.width {
         app.tree_mut().handle_scroll(delta, tree_area)
+    } else if let Some(events) = app.scroll_pane_at(m, delta, area) {
+        events
     } else {
         app.editor_mut().handle_scroll(delta, editor_area)
     }
@@ -443,6 +445,17 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                 if app.pending_prefix().is_some() {
                     app.route_menu_mouse(m, area)?;
                     return finish(app, events, changed);
+                }
+
+                // A press in a pane makes it the current one first, so the tab
+                // row and the text below route to the pane under the pointer.
+                // A press on the pane's number is that and nothing more.
+                if matches!(m.kind, MouseEventKind::Down(_))
+                    && app.press_pane_at(m.column, m.row, area)
+                {
+                    app.clear_transient();
+                    app.set_focus(Focus::Editor);
+                    return finish(app, events, true);
                 }
 
                 // The tab bar sits inside the editor's columns but above its
