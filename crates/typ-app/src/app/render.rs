@@ -27,7 +27,7 @@ impl App {
 
         // Resolved before the panels are borrowed mutably: the result borrows
         // `self.lsp` alone, so the tab's borrow ends with the call.
-        let diagnostics = crate::app::diagnostics_for(&self.lsp, &self.tabs[self.active]);
+        let diagnostics = crate::app::servers::diagnostics_for(&self.lsp, &self.tabs[self.active]);
 
         let tree_ctx = RenderContext {
             theme: &self.theme,
