@@ -15,7 +15,7 @@ use super::{App, Tab};
 /// What one tab's frame carries.
 ///
 /// A free function rather than a method because `App::render` needs the result
-/// while borrowing `self.tabs` mutably to draw into it: taking the two fields
+/// while borrowing a pane mutably to draw into it: taking the two fields
 /// separately keeps the tab's borrow from outliving the call, which a method on
 /// `&self` could not.
 pub(super) fn diagnostics_for<'a>(
@@ -42,7 +42,12 @@ impl App {
     /// For tests: it lets one end a piece of work at a moment it chooses rather
     /// than racing whatever the server would have done on its own.
     pub fn notify_server_for_test(&mut self, method: &str) {
-        if let Some(path) = self.tabs[self.active].panel.path().map(|p| p.to_path_buf()) {
+        if let Some(path) = self.panes[self.pane]
+            .shown()
+            .panel
+            .path()
+            .map(|p| p.to_path_buf())
+        {
             self.lsp.notify(&path, method, serde_json::Value::Null);
         }
     }
@@ -96,8 +101,7 @@ impl App {
     /// skipped here is a `Vec` that grows for the length of the session.
     pub fn sync_language_servers(&mut self) {
         let docs: Vec<crate::lsp::DocSnapshot> = self
-            .tabs
-            .iter_mut()
+            .all_tabs_mut()
             .filter_map(|tab| {
                 let edits = tab.panel.take_edits();
                 let path = tab.panel.path()?;
@@ -117,7 +121,7 @@ impl App {
     /// The same call the frame makes, so what a test reads here is what the
     /// panel was handed.
     pub fn diagnostics(&self) -> &[typ_core::Diagnostic] {
-        diagnostics_for(&self.lsp, &self.tabs[self.active])
+        diagnostics_for(&self.lsp, self.panes[self.pane].shown())
     }
 
     /// A server said something. Returns whether the screen changed.
@@ -183,10 +187,14 @@ impl App {
         // the document map is keyed by the tab's raw path, so a URI naming the
         // same file differently (a lowercase drive letter, a symlinked
         // directory) found the tab and then missed the map. Gap 114.
-        let Some(index) = self.tab_for(&named) else {
+        let Some((pane, index)) = self.tab_for(&named) else {
             return false;
         };
-        let Some(path) = self.tabs[index].panel.path().map(Path::to_path_buf) else {
+        let Some(path) = self.panes[pane].tabs[index]
+            .panel
+            .path()
+            .map(Path::to_path_buf)
+        else {
             return false;
         };
 
@@ -200,7 +208,7 @@ impl App {
         }
 
         let encoding = self.lsp.encoding(server);
-        let buffer = self.tabs[index].panel.buffer();
+        let buffer = self.panes[pane].tabs[index].panel.buffer();
         let converted: Vec<typ_core::Diagnostic> = published
             .diagnostics
             .iter()
@@ -208,7 +216,7 @@ impl App {
             .collect();
 
         self.lsp.set_pushed(&path, converted);
-        index == self.active
+        index == self.panes[pane].active
     }
 
     /// Ask the active file's server about the cursor's position.
@@ -229,7 +237,7 @@ impl App {
         // superseded before they are answered.
         self.lsp.cancel(kind);
 
-        let tab = &self.tabs[self.active];
+        let tab = &self.panes[self.pane].shown();
         let Some(path) = tab.panel.path().map(|p| p.to_path_buf()) else {
             self.status = Some(crate::lsp::NoAnswer::NoServer.message().to_string());
             return;
@@ -283,8 +291,8 @@ impl App {
 
         // **Stale.** The question was about a position the cursor has left, and
         // a jump to where the user used to be is a jump nobody asked for.
-        let moved = self.tabs[self.active].panel.path() != Some(&pending.asked_at.0)
-            || self.tabs[self.active].panel.cursor() != pending.asked_at.1;
+        let moved = self.panes[self.pane].shown().panel.path() != Some(&pending.asked_at.0)
+            || self.panes[self.pane].shown().panel.cursor() != pending.asked_at.1;
         if moved {
             return false;
         }
@@ -333,10 +341,11 @@ impl App {
         // server that named it: the two conversions of invariant 4, in the
         // order `to_diagnostic` uses them.
         let encoding = self.lsp.encoding(server);
-        let buffer = self.tabs[self.active].panel.buffer();
+        let buffer = self.panes[self.pane].shown().panel.buffer();
         let char_index = typ_lsp::from_lsp(encoding, buffer.rope().slice(..), position);
         let target = buffer.position(char_index);
-        self.tabs[self.active]
+        self.panes[self.pane]
+            .shown_mut()
             .panel
             .select_range(typ_buffer::Selection::caret(target));
         true
@@ -344,7 +353,7 @@ impl App {
 
     /// The active buffer was written to disk.
     pub(super) fn notify_saved(&mut self) {
-        let tab = &self.tabs[self.active];
+        let tab = &self.panes[self.pane].shown();
         let (Some(path), rope) = (tab.panel.path(), tab.panel.buffer().snapshot()) else {
             return;
         };

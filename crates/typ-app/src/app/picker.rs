@@ -314,8 +314,7 @@ impl App {
     /// twenty tabs open that is twenty needless copies per keystroke.
     fn request_grep(&mut self, query: String) -> u64 {
         let overrides: Vec<(std::path::PathBuf, String)> = self
-            .tabs
-            .iter()
+            .all_tabs()
             .filter_map(|tab| {
                 let path = tab.panel.path()?;
                 tab.panel

@@ -6,6 +6,7 @@ pub mod layout;
 pub mod log;
 pub mod lsp;
 pub mod menu;
+pub mod pane;
 pub mod prompt;
 pub mod run;
 pub mod status;

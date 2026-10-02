@@ -200,7 +200,7 @@ impl App {
             Action::Quit => self.request_quit(),
             Action::NextTab => self.next_tab(),
             Action::PrevTab => self.prev_tab(),
-            Action::CloseTab => self.request_close_tab(self.active),
+            Action::CloseTab => self.request_close_tab(self.panes[self.pane].active),
             // Counted from one, and a digit past the last open file is a
             // no-op rather than a clamp: landing on the last tab because you
             // pressed Alt+9 with three open is a jump you did not ask for.
@@ -215,7 +215,7 @@ impl App {
             }
             Action::GotoDefinition => self.ask_server(crate::lsp::Ask::Definition),
             Action::Hover => self.ask_server(crate::lsp::Ask::Hover),
-            Action::Save => match self.tabs[self.active].panel.save() {
+            Action::Save => match self.panes[self.pane].shown_mut().panel.save() {
                 Ok(()) => {
                     self.status = Some("Saved.".to_string());
                     // After the atomic save, never before it: a server told
@@ -267,7 +267,7 @@ impl App {
                     // the file; a project-search result that opens at line 0 has
                     // thrown away the only thing the search found out.
                     if self.open_or_report(&path) && (line > 0 || col > 0) {
-                        self.tabs[self.active].panel.goto(line, col);
+                        self.panes[self.pane].shown_mut().panel.goto(line, col);
                     }
                 }
                 PanelEvent::OpenWith { path, .. } => {

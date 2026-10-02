@@ -34,13 +34,14 @@ pub enum Focus {
 
 pub struct App {
     tree: TreePanel,
-    /// Every open file. **Never empty** — closing the last tab leaves an empty
-    /// buffer, which is the state the editor starts in. An empty `tabs` would
-    /// make `editor()` return an `Option` and every one of its callers handle a
-    /// state that never occurs.
-    tabs: Vec<Tab>,
-    /// Index into `tabs`. Always valid, for the same reason.
-    active: usize,
+    /// Every pane, in no particular order: `layout` says where each one is.
+    /// **Never empty**, for the reason a pane's `tabs` never is.
+    panes: Vec<Pane>,
+    /// Index into `panes` of the current pane: the one focus goes back to, and
+    /// where the tree opens a file. Always valid.
+    pane: usize,
+    /// Where each pane is on screen.
+    layout: crate::pane::Layout,
     registry: Registry,
     keymap: Keymap,
     theme: ThemeColors,
@@ -149,6 +150,37 @@ pub struct App {
     teaching: Option<(String, std::time::Instant)>,
 }
 
+/// One region of the editor area and the files open in it.
+struct Pane {
+    id: crate::pane::PaneId,
+    /// Every file open in this pane. **Never empty**: closing the last tab
+    /// leaves an empty buffer, which is the state the editor starts in. An
+    /// empty `tabs` would make `editor()` return an `Option` and every one of
+    /// its callers handle a state that never occurs.
+    tabs: Vec<Tab>,
+    /// Index into `tabs`. Always valid, for the same reason.
+    active: usize,
+}
+
+impl Pane {
+    fn new(id: crate::pane::PaneId) -> Self {
+        Pane {
+            id,
+            tabs: vec![Tab::new(EditorPanel::from_str(""))],
+            active: 0,
+        }
+    }
+
+    /// The tab on screen in this pane.
+    fn shown(&self) -> &Tab {
+        &self.tabs[self.active]
+    }
+
+    fn shown_mut(&mut self) -> &mut Tab {
+        &mut self.tabs[self.active]
+    }
+}
+
 /// One open file, and the parse state that belongs to it rather than to the app.
 ///
 /// **Both fields were app-global until tabs, and both were wrong for two
@@ -227,8 +259,9 @@ impl App {
     pub fn new(root: &Path) -> Result<Self> {
         Ok(Self {
             tree: TreePanel::new(root)?,
-            tabs: vec![Tab::new(EditorPanel::from_str(""))],
-            active: 0,
+            panes: vec![Pane::new(crate::pane::PaneId(0))],
+            pane: 0,
+            layout: crate::pane::Layout::Leaf(crate::pane::PaneId(0)),
             registry: Registry::with_builtins(),
             keymap: Keymap::default_bindings(),
             theme: ThemeColors::default(),
@@ -293,8 +326,10 @@ impl App {
         self.find_worker = Some(FindWorker::spawn(sender.clone()));
         self.lsp.set_sender(sender.clone());
         self.sender = Some(sender);
-        for index in 0..self.tabs.len() {
-            self.watch_tab(index);
+        for pane in 0..self.panes.len() {
+            for index in 0..self.panes[pane].tabs.len() {
+                self.watch_tab(pane, index);
+            }
         }
         // Whatever is already open has never been parsed.
         self.request_parse_if_stale();
@@ -342,20 +377,20 @@ impl App {
     /// list and its emphasis rules live in `status.rs` rather than here, that is
     /// a change of source rather than a rewrite of content.
     pub fn status_segments(&self) -> Vec<Segment> {
-        let cursor = self.tabs[self.active].panel.cursor();
-        let path = self.tabs[self.active].panel.path();
+        let cursor = self.panes[self.pane].shown().panel.cursor();
+        let path = self.panes[self.pane].shown().panel.path();
         let file_type = crate::status::file_type_of(path);
-        let file_name = self.tabs[self.active].panel.file_name();
+        let file_name = self.panes[self.pane].shown().panel.file_name();
         segments(&StatusFacts {
             file_name: &file_name,
-            modified: self.tabs[self.active].panel.is_dirty(),
+            modified: self.panes[self.pane].shown().panel.is_dirty(),
             file_type: file_type.as_deref(),
-            line_ending: self.tabs[self.active].panel.line_ending().label(),
-            indent_width: self.tabs[self.active].panel.tab_width(),
-            selection_count: self.tabs[self.active].panel.selections().len(),
+            line_ending: self.panes[self.pane].shown().panel.line_ending().label(),
+            indent_width: self.panes[self.pane].shown().panel.tab_width(),
+            selection_count: self.panes[self.pane].shown().panel.selections().len(),
             line: cursor.line,
             col: cursor.col,
-            total_lines: self.tabs[self.active].panel.line_count(),
+            total_lines: self.panes[self.pane].shown().panel.line_count(),
             errors: self.count_diagnostics(typ_core::Severity::Error),
             warnings: self.count_diagnostics(typ_core::Severity::Warning),
             progress: &self.lsp.progress(),
@@ -403,10 +438,10 @@ impl App {
         }
         // **Every tab, not the active one.** Quitting closes all of them, so a
         // dirty buffer two tabs over is exactly as unsaved as the one on
-        // screen — and it is the one the user has forgotten about.
+        // screen, and it is the one the user has forgotten about. Every pane
+        // too, for the same reason.
         let blocker = self
-            .tabs
-            .iter()
+            .all_tabs()
             .find_map(|tab| tab.panel.needs_close_confirmation())
             .or_else(|| self.tree.needs_close_confirmation());
         match blocker {
@@ -431,12 +466,12 @@ impl App {
     pub fn focused_name(&self) -> &'static str {
         match self.focus {
             Focus::Tree => self.tree.name(),
-            Focus::Editor => self.tabs[self.active].panel.name(),
+            Focus::Editor => self.panes[self.pane].shown().panel.name(),
         }
     }
 
     pub fn editor_title(&self) -> String {
-        self.tabs[self.active].panel.title()
+        self.panes[self.pane].shown().panel.title()
     }
 
     /// The next region in `FOCUS_ORDER`, wrapping.
@@ -489,14 +524,17 @@ impl App {
 
     fn apply_indent_width(&mut self) {
         if let Some(width) = self.indent_width {
-            self.tabs[self.active].panel.set_tab_width(width);
+            self.panes[self.pane].shown_mut().panel.set_tab_width(width);
         }
     }
 
     /// Which whitespace the editor marks.
     pub fn set_whitespace(&mut self, whitespace: Whitespace) {
         self.whitespace = whitespace;
-        self.tabs[self.active].panel.set_whitespace(whitespace);
+        self.panes[self.pane]
+            .shown_mut()
+            .panel
+            .set_whitespace(whitespace);
     }
 
     pub fn set_keymap(&mut self, keymap: Keymap) {
@@ -563,7 +601,27 @@ impl App {
     pub fn focused_mut(&mut self) -> &mut dyn Panel {
         match self.focus {
             Focus::Tree => &mut self.tree,
-            Focus::Editor => &mut self.tabs[self.active].panel,
+            Focus::Editor => &mut self.panes[self.pane].shown_mut().panel,
         }
+    }
+
+    /// Every open tab, in every pane.
+    ///
+    /// What "all the open files" means once there is more than one pane: quit
+    /// asks about each, the servers hear about each, a search overrides each.
+    fn all_tabs(&self) -> impl Iterator<Item = &Tab> {
+        self.panes.iter().flat_map(|pane| pane.tabs.iter())
+    }
+
+    fn all_tabs_mut(&mut self) -> impl Iterator<Item = &mut Tab> {
+        self.panes.iter_mut().flat_map(|pane| pane.tabs.iter_mut())
+    }
+
+    /// The first tab `wanted` picks, in any pane, as `(pane, tab)` indices.
+    fn find_tab(&self, wanted: impl Fn(&Tab) -> bool) -> Option<(usize, usize)> {
+        self.panes
+            .iter()
+            .enumerate()
+            .find_map(|(index, pane)| pane.tabs.iter().position(&wanted).map(|tab| (index, tab)))
     }
 }
