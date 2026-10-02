@@ -37,7 +37,7 @@ fn render(p: &mut EditorPanel, area: Rect) {
         terminal_width: area.width,
         terminal_height: area.height,
     };
-    let mut buf = Buffer::empty(area);
+    let mut buf = Buffer::empty(Rect::new(0, 0, area.right() + 1, area.bottom() + 1));
     p.render(area, &mut buf, &ctx);
 }
 
@@ -81,7 +81,7 @@ fn backspace_at_column_zero_joins_the_previous_line() {
 fn page_down_moves_a_screen_at_a_time() {
     let text = (0..100).map(|i| format!("line {i}\n")).collect::<String>();
     let mut p = EditorPanel::from_str(&text);
-    render(&mut p, Rect::new(0, 0, 40, 12)); // 12 minus the border = 10 text rows
+    render(&mut p, Rect::new(1, 1, 38, 10)); // 10 text rows
     p.apply_action(mv(Motion::PageDown));
     assert_eq!(p.cursor().line, 10);
     p.apply_action(mv(Motion::PageUp));
@@ -101,13 +101,13 @@ fn undo_and_redo_round_trip_an_edit() {
 }
 
 #[test]
-fn the_cursor_sits_inside_the_border_at_the_text_position() {
+fn the_cursor_sits_inside_the_rect_at_the_text_position() {
     let mut p = EditorPanel::from_str("hello\n");
-    let area = Rect::new(0, 0, 40, 10);
+    let area = Rect::new(1, 1, 38, 8);
     render(&mut p, area);
     p.apply_action(mv(Motion::Right));
     p.apply_action(mv(Motion::Right));
-    // One column and one row of border, three columns of gutter — a diagnostic
+    // One column and one row of margin, three columns of gutter: a diagnostic
     // sign, a digit, a spacer — then two columns of text.
     assert_eq!(p.cursor_position(area), Some((6, 1)));
 }
@@ -115,10 +115,10 @@ fn the_cursor_sits_inside_the_border_at_the_text_position() {
 #[test]
 fn the_cursor_accounts_for_wide_characters() {
     let mut p = EditorPanel::from_str("日本語\n");
-    let area = Rect::new(0, 0, 40, 10);
+    let area = Rect::new(1, 1, 38, 8);
     render(&mut p, area);
     p.apply_action(mv(Motion::Right));
-    // One CJK grapheme is two display columns, plus the border and the gutter.
+    // One CJK grapheme is two display columns, plus the margin and the gutter.
     assert_eq!(p.cursor_position(area), Some((6, 1)));
 }
 
@@ -126,7 +126,7 @@ fn the_cursor_accounts_for_wide_characters() {
 fn the_cursor_follows_the_viewport_when_scrolled() {
     let text = (0..100).map(|i| format!("line {i}\n")).collect::<String>();
     let mut p = EditorPanel::from_str(&text);
-    let area = Rect::new(0, 0, 40, 10);
+    let area = Rect::new(1, 1, 38, 8);
     render(&mut p, area);
     p.handle_scroll(5, area);
     // The cursor is on line 0, which is now above the viewport.

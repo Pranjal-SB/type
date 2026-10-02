@@ -21,8 +21,9 @@ impl App {
     pub fn render(&mut self, frame: &mut ratatui::Frame) {
         let (_, status_area) = crate::layout::split_frame(frame.area());
         let (body, menu_area) = self.split_body(frame.area());
-        let (tree_area, pane) = crate::layout::split(body);
-        let (bar_area, editor_area) = crate::layout::split_tabs(pane, self.tabs.len());
+        let regions = crate::layout::split(body);
+        let tree_area = regions.tree;
+        let (bar_area, editor_area) = crate::layout::split_tabs(regions.editor);
         let (w, h) = (frame.area().width, frame.area().height);
 
         // Resolved before the panels are borrowed mutably: the result borrows
@@ -49,27 +50,20 @@ impl App {
             terminal_height: h,
         };
 
-        // The focused panel draws last.
-        //
-        // The two rects share a column — see `layout::split` — so one cell
-        // carries both panels' border, and a shared border cannot be two
-        // colours. Drawing the focused panel second gives that cell its colour,
-        // which is the right answer: the focused panel's box is the complete
-        // one, and the unfocused panel is the one that gives ground.
-        match self.focus {
-            Focus::Editor => {
-                self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
-                self.tabs[self.active]
-                    .panel
-                    .render(editor_area, frame.buffer_mut(), &editor_ctx);
-            }
-            Focus::Tree => {
-                self.tabs[self.active]
-                    .panel
-                    .render(editor_area, frame.buffer_mut(), &editor_ctx);
-                self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
-            }
-        }
+        // The app draws the lines; each panel draws its content inside them.
+        typ_core::chrome::labelled_rule(
+            regions.heading,
+            frame.buffer_mut(),
+            &self.tree.title(),
+            self.focus == Focus::Tree,
+            &self.theme,
+            self.theme.chrome_bg,
+        );
+        self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
+        typ_core::chrome::rule(regions.rule, frame.buffer_mut(), &self.theme, self.theme.bg);
+        self.tabs[self.active]
+            .panel
+            .render(editor_area, frame.buffer_mut(), &editor_ctx);
 
         if bar_area.height > 0 {
             let labels: Vec<String> = self.tabs.iter().map(|tab| tab.panel.title()).collect();
@@ -95,7 +89,7 @@ impl App {
 
         // The overlay draws last, over the body — after the status bar too, so a
         // tall picker on a short terminal covers the bar rather than being
-        // clipped by it. `chrome::frame` fills every cell of its rect, which is
+        // clipped by it. `chrome::float` clears every cell of its rect, which is
         // what stops the editor showing through.
         if self.picker.is_some() {
             // Modal, so everything behind it steps back: the frame minus the
@@ -202,9 +196,9 @@ impl App {
     /// would land every click one line above the pointer.
     pub fn areas(&self, area: Rect) -> (Rect, Rect) {
         let (body, _) = self.split_body(area);
-        let (tree, pane) = crate::layout::split(body);
-        let (_, editor) = crate::layout::split_tabs(pane, self.tabs.len());
-        (tree, editor)
+        let regions = crate::layout::split(body);
+        let (_, editor) = crate::layout::split_tabs(regions.editor);
+        (regions.tree, editor)
     }
 }
 

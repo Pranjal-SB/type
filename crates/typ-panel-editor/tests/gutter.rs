@@ -24,7 +24,7 @@ fn render(panel: &mut EditorPanel, area: Rect) -> Buffer {
         terminal_width: area.width,
         terminal_height: area.height,
     };
-    let mut buf = Buffer::empty(area);
+    let mut buf = Buffer::empty(Rect::new(0, 0, area.right() + 1, area.bottom() + 1));
     panel.render(area, &mut buf, &ctx);
     buf
 }
@@ -34,10 +34,10 @@ fn row(buf: &Buffer, y: u16) -> String {
 }
 
 const AREA: Rect = Rect {
-    x: 0,
-    y: 0,
-    width: 24,
-    height: 6,
+    x: 1,
+    y: 1,
+    width: 22,
+    height: 4,
 };
 
 // --- width ---------------------------------------------------------------
@@ -95,12 +95,12 @@ fn line_numbers_start_at_one() {
     let mut panel = EditorPanel::from_str("alpha\nbeta\n");
     let buf = render(&mut panel, AREA);
     assert!(
-        row(&buf, 1).starts_with("│ 1 alpha"),
+        row(&buf, 1).starts_with("  1 alpha"),
         "row 1 was: {}",
         row(&buf, 1)
     );
     assert!(
-        row(&buf, 2).starts_with("│ 2 beta"),
+        row(&buf, 2).starts_with("  2 beta"),
         "row 2 was: {}",
         row(&buf, 2)
     );
@@ -113,7 +113,7 @@ fn numbers_are_right_aligned_so_the_text_edge_stays_straight() {
     let buf = render(&mut panel, AREA);
     // Two-digit file: line 1 pads to " 1", line 10 does not pad.
     assert!(
-        row(&buf, 1).starts_with("│  1 line 1"),
+        row(&buf, 1).starts_with("   1 line 1"),
         "row 1 was: {}",
         row(&buf, 1)
     );
@@ -124,7 +124,7 @@ fn the_cursors_line_is_styled_differently_from_the_rest() {
     let theme = ThemeColors::default();
     let mut panel = EditorPanel::from_str("alpha\nbeta\n");
     let buf = render(&mut panel, AREA);
-    // The cursor starts on line 0, drawn at row 1 inside the border. x=1 is the
+    // The cursor starts on line 0, drawn at row 1, the rect's first. x=1 is the
     // diagnostic sign's column, so the digits are at x=2.
     let current = buf[(2, 1)].style().fg;
     let other = buf[(2, 2)].style().fg;
@@ -147,7 +147,7 @@ fn the_number_column_does_not_scroll_sideways_with_the_text() {
     let buf = render(&mut panel, AREA);
     assert!(panel.left_col() > 0, "the text must have scrolled");
     assert!(
-        row(&buf, 1).starts_with("│ 1 "),
+        row(&buf, 1).starts_with("  1 "),
         "the gutter is fixed furniture, not part of the scrolled text: {}",
         row(&buf, 1)
     );
@@ -160,7 +160,7 @@ fn a_click_lands_on_the_grapheme_under_the_pointer_not_gutter_width_to_its_left(
     let mut panel = EditorPanel::from_str("hello\nworld\n");
     render(&mut panel, AREA);
 
-    // Border at x=0, gutter " 1 " at x=1..4 — a sign column, a digit, a spacer
+    // Margin at x=0, gutter " 1 " at x=1..4: a sign column, a digit, a spacer
     // — so the text starts at x=4 and the third grapheme of "hello" is drawn
     // at x=6.
     panel.handle_mouse(
@@ -186,7 +186,7 @@ fn the_terminal_cursor_is_drawn_past_the_gutter() {
     let (x, y) = panel
         .cursor_position(AREA)
         .expect("the cursor is on screen");
-    // One border, three gutter cells, one grapheme in.
+    // One margin cell, three gutter cells, one grapheme in.
     assert_eq!((x, y), (5, 1));
 }
 
@@ -212,7 +212,7 @@ fn a_click_in_the_gutter_lands_at_the_start_of_that_line() {
 
 #[test]
 fn the_text_area_loses_exactly_the_gutters_width() {
-    // 24 wide, two borders, three gutter cells: 19 columns of text. A line one
+    // 22 wide, three gutter cells: 19 columns of text. A line one
     // grapheme longer than that must scroll, and one exactly that long must not.
     let mut panel = EditorPanel::from_str(&format!("{}\n", "x".repeat(19)));
     render(&mut panel, AREA);
@@ -274,7 +274,7 @@ fn a_line_carrying_a_selection_does_not_tint_its_gutter() {
         anchor: Position { line: 0, col: 0 },
         head: Position { line: 0, col: 3 },
     }]);
-    let buf = render(&mut panel, Rect::new(0, 0, 30, 6));
+    let buf = render(&mut panel, Rect::new(1, 1, 28, 4));
 
     assert_eq!(buf[(1, 1)].bg, theme.gutter_bg);
 }

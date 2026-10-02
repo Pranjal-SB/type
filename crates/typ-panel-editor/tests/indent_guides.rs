@@ -13,10 +13,10 @@ use typ_core::{Panel, RenderContext, ThemeColors};
 use typ_panel_editor::EditorPanel;
 
 const AREA: Rect = Rect {
-    x: 0,
-    y: 0,
-    width: 32,
-    height: 8,
+    x: 1,
+    y: 1,
+    width: 30,
+    height: 6,
 };
 
 fn render(panel: &mut EditorPanel) -> Buffer {
@@ -30,7 +30,7 @@ fn render(panel: &mut EditorPanel) -> Buffer {
         terminal_width: AREA.width,
         terminal_height: AREA.height,
     };
-    let mut buf = Buffer::empty(AREA);
+    let mut buf = Buffer::empty(Rect::new(0, 0, AREA.right() + 1, AREA.bottom() + 1));
     panel.render(AREA, &mut buf, &ctx);
     buf
 }

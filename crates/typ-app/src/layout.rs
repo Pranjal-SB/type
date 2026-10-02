@@ -126,56 +126,66 @@ pub const HOVER_EXIT: &str = "esc";
 pub const HOVER_MIN_WIDTH: u16 = (HOVER_NAME.len() + HOVER_EXIT.len() + 9) as u16;
 pub const HOVER_MAX_HEIGHT: u16 = 12;
 
-/// Split the editor's rect into `(tab_bar, editor)`.
+/// Split a pane's rect into `(tab_row, content)`.
 ///
-/// **One function, because render and hit-testing both need the answer.** A bar
+/// **One function, because render and hit-testing both need the answer.** The
 /// row moves every screen coordinate inside the editor down by one, and two
 /// places computing that independently is the drift `picker_area` and
 /// `chrome::inner` both exist to prevent.
 ///
-/// A single tab gets no bar: a strip naming the only open file says nothing its
-/// own border does not, and charges a row for it. Helix ships the same rule as
-/// `bufferline = "multiple"`, though it defaults to showing no bar at all —
-/// having a picker over the open files, it treats the list as the feature and
-/// the bar as chrome.
-pub fn split_tabs(editor: Rect, tab_count: usize) -> (Rect, Rect) {
-    // Two rows is a border and nothing else, so spending one on tabs leaves a
-    // panel that cannot show a line of the file it is naming.
-    if tab_count < 2 || editor.height < 3 {
-        return (Rect::new(editor.x, editor.y, editor.width, 0), editor);
+/// Always a row, even for one tab. Before M4 a single tab got no bar, because
+/// the panel's box carried the file's name in its border. The box is gone and
+/// the tab is the editor's label now (interface §4): without it a lone file
+/// would have no name on screen and no place to show it has focus.
+pub fn split_tabs(pane: Rect) -> (Rect, Rect) {
+    // One row is all there is: give it to the text, the thing being edited.
+    if pane.height < 2 {
+        return (Rect::new(pane.x, pane.y, pane.width, 0), pane);
     }
-    let bar = Rect::new(editor.x, editor.y, editor.width, 1);
-    let rest = Rect::new(editor.x, editor.y + 1, editor.width, editor.height - 1);
+    let bar = Rect::new(pane.x, pane.y, pane.width, 1);
+    let rest = Rect::new(pane.x, pane.y + 1, pane.width, pane.height - 1);
     (bar, rest)
 }
 
-/// Split the body into `(tree_area, editor_area)`.
+/// The regions of the body, left to right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Body {
+    /// The tree's heading, a labelled rule along the sidebar's top row.
+    pub heading: Rect,
+    /// The tree's list, under its heading.
+    pub tree: Rect,
+    /// The one column between the sidebar and the editor.
+    pub rule: Rect,
+    /// Everything right of the rule: the editor's tab row and its text.
+    pub editor: Rect,
+}
+
+/// Split the body into the sidebar, its rule and the editor.
 ///
 /// A fixed sidebar matches what people arriving from GUI editors expect. On
 /// narrow terminals a fixed 30 columns would leave nothing for the editor, so
-/// it degrades to a third of the width.
-pub fn split(area: Rect) -> (Rect, Rect) {
+/// it degrades to a third of the width. The width counts the rule: the sidebar
+/// and the line beside it together take what the boxed sidebar took, and the
+/// editor gains the column its own box used to spend.
+pub fn split(area: Rect) -> Body {
     let sidebar = if area.width < NARROW_THRESHOLD {
         (area.width / 3).max(1)
     } else {
         SIDEBAR_WIDTH
-    };
-    let tree = Rect::new(area.x, area.y, sidebar, area.height);
-    // The editor starts on the tree's *last* column, not the one after it.
-    //
-    // Both panels draw a full box, so without the overlap the tree's right
-    // border and the editor's left border land in adjacent cells — two rules
-    // touching, in two different colours whenever one panel holds focus, which
-    // is the seam. Sharing the column means one vertical on screen, drawn
-    // twice, and `chrome::frame` merges the corners into tees. Neither panel
-    // has to know what sits beside it; the layout arranges for the collision to
-    // be harmless instead.
-    let shared = sidebar.saturating_sub(1);
-    let editor = Rect::new(
-        area.x + shared,
-        area.y,
-        area.width.saturating_sub(shared),
-        area.height,
-    );
-    (tree, editor)
+    }
+    .min(area.width);
+    let list = sidebar.saturating_sub(1);
+    let column = Rect::new(area.x, area.y, list, area.height);
+    let heading_rows = area.height.min(1);
+    Body {
+        heading: Rect::new(column.x, column.y, column.width, heading_rows),
+        tree: Rect::new(
+            column.x,
+            column.y + heading_rows,
+            column.width,
+            column.height - heading_rows,
+        ),
+        rule: Rect::new(area.x + list, area.y, sidebar - list, area.height),
+        editor: Rect::new(area.x + sidebar, area.y, area.width - sidebar, area.height),
+    }
 }

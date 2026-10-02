@@ -1,11 +1,10 @@
-//! The frame a panel draws around itself.
+//! The lines between docked regions, and the float drawn over them.
 //!
-//! A box, and the one cell where two of them meet. Every claim here is about a
-//! cell, because a cell is the only thing a terminal has.
+//! Every claim here is about a cell, because a cell is the only thing a
+//! terminal has.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
 use typ_core::{RenderContext, ThemeColors, chrome};
 
 fn context(theme: &ThemeColors, is_focused: bool) -> RenderContext<'_> {
@@ -20,13 +19,6 @@ fn context(theme: &ThemeColors, is_focused: bool) -> RenderContext<'_> {
     }
 }
 
-fn draw(area: Rect, title: &str, focused: bool) -> (Buffer, ThemeColors) {
-    let theme = ThemeColors::default();
-    let mut buf = Buffer::empty(area);
-    chrome::frame(area, &mut buf, title, &context(&theme, focused), theme.bg);
-    (buf, theme)
-}
-
 fn row(buf: &Buffer, y: u16) -> String {
     (buf.area.x..buf.area.right())
         .map(|x| buf[(x, y)].symbol())
@@ -35,10 +27,8 @@ fn row(buf: &Buffer, y: u16) -> String {
 
 #[test]
 fn the_content_area_is_exactly_what_a_bordered_block_reserved() {
-    // Geometry must not move. `text_area`, `gutter_area`, mouse hit-testing and
-    // the horizontal-scroll arithmetic all subtract this, and a one-cell drift
-    // lands every click in the wrong place — the failure no test of the
-    // gutter's own output would ever notice.
+    // Geometry must not move. The float's body and its mouse hit-testing both
+    // subtract this, and a one-cell drift lands every click in the wrong place.
     assert_eq!(
         chrome::inner(Rect::new(0, 0, 30, 7)),
         Rect::new(1, 1, 28, 5)
@@ -50,10 +40,7 @@ fn the_content_area_is_exactly_what_a_bordered_block_reserved() {
 }
 
 #[test]
-fn a_panel_too_small_to_hold_a_frame_reports_no_content_rather_than_underflowing() {
-    // The sidebar degrades to a third of the width below 60 columns, so a panel
-    // three cells wide is reachable and one cell wide is reachable at the
-    // minimum. Unguarded subtraction here panics rather than drawing badly.
+fn a_float_too_small_to_hold_a_border_reports_no_content_rather_than_underflowing() {
     for width in 0..3u16 {
         for height in 0..3u16 {
             let inner = chrome::inner(Rect::new(0, 0, width, height));
@@ -63,158 +50,72 @@ fn a_panel_too_small_to_hold_a_frame_reports_no_content_rather_than_underflowing
     }
 }
 
-#[test]
-fn the_title_sits_in_the_top_rule_with_a_space_either_side() {
-    let (buf, _) = draw(Rect::new(0, 0, 20, 5), "notes", true);
-    assert_eq!(row(&buf, 0), "┌─ notes ──────────┐");
-}
+// ---------------------------------------------------------------------------
+// Rules (interface §2)
+// ---------------------------------------------------------------------------
 
-#[test]
-fn the_bottom_rule_closes_the_frame() {
-    let (buf, _) = draw(Rect::new(0, 0, 20, 5), "notes", true);
-    assert_eq!(row(&buf, 4), "└──────────────────┘");
-}
-
-#[test]
-fn the_box_has_sides() {
-    // A panel is a closed shape again. Brackets removed the seam and took the
-    // boundary with it — the tree and the editor stopped reading as two things.
-    // The complaint was never that a border existed, it was that two of them
-    // touched in different colours, and that is the layout's problem now.
-    let (buf, _) = draw(Rect::new(0, 0, 20, 5), "notes", true);
-    for y in 1..4 {
-        assert_eq!(buf[(0, y)].symbol(), "│", "left side missing at row {y}");
-        assert_eq!(buf[(19, y)].symbol(), "│", "right side missing at row {y}");
-    }
-}
-
-#[test]
-fn two_panels_sharing_a_column_meet_in_a_tee() {
-    // The layout overlaps the rects by one column, so the left panel writes `┐`
-    // into the shared cell and the right panel writes `┌`. Neither is correct
-    // and a tee is, so the frame merges what it finds instead of overwriting.
-    //
-    // This works because `set_style` patches style without touching symbols:
-    // the first panel's corner survives the second panel's background fill and
-    // is still there to be merged with.
+fn heading(width: u16, label: &str, focused: bool) -> (Buffer, ThemeColors) {
     let theme = ThemeColors::default();
-    let mut buf = Buffer::empty(Rect::new(0, 0, 40, 5));
-    let left = Rect::new(0, 0, 20, 5);
-    let right = Rect::new(19, 0, 21, 5);
-    chrome::frame(left, &mut buf, "left", &context(&theme, false), theme.bg);
-    chrome::frame(right, &mut buf, "right", &context(&theme, true), theme.bg);
-
-    assert_eq!(buf[(19, 0)].symbol(), "┬", "top junction should be a tee");
-    assert_eq!(
-        buf[(19, 4)].symbol(),
-        "┴",
-        "bottom junction should be a tee"
-    );
-    assert_eq!(
-        buf[(19, 2)].symbol(),
-        "│",
-        "the shared side stays one vertical"
-    );
-    // A shared border cannot be two colours. The focused panel draws last, so
-    // the junction belongs to it and the focused box is the complete one.
-    assert_eq!(buf[(19, 0)].fg, theme.border_focused);
-}
-
-#[test]
-fn a_lone_panel_keeps_ordinary_corners() {
-    // The merge must only fire where two frames actually meet. A panel drawn on
-    // an empty buffer has nothing to merge with and gets plain corners.
-    let (buf, _) = draw(Rect::new(0, 0, 20, 5), "notes", true);
-    assert_eq!(buf[(0, 0)].symbol(), "┌");
-    assert_eq!(buf[(19, 0)].symbol(), "┐");
-    assert_eq!(buf[(0, 4)].symbol(), "└");
-    assert_eq!(buf[(19, 4)].symbol(), "┘");
-}
-
-#[test]
-fn every_cell_carries_the_given_background_not_the_terminals() {
-    // A blank cell left at `Color::Reset` shows through to whatever the user's
-    // terminal background happens to be, which draws stripes of the wrong
-    // colour down the screen wherever the frame reserved a cell and drew
-    // nothing in it.
-    let (buf, theme) = draw(Rect::new(0, 0, 20, 5), "notes", true);
-    for y in 0..5 {
-        for x in 0..20 {
-            assert_eq!(buf[(x, y)].bg, theme.bg, "reset cell at {x},{y}");
-        }
-    }
-    assert_ne!(theme.bg, Color::Reset);
-}
-
-#[test]
-fn the_background_is_the_callers_choice_not_the_themes_page_colour() {
-    // The sidebar and the editor no longer share a surface, so the frame cannot
-    // assume one.
-    let theme = ThemeColors::default();
-    let area = Rect::new(0, 0, 20, 5);
+    let area = Rect::new(0, 0, width, 1);
     let mut buf = Buffer::empty(area);
-    chrome::frame(
-        area,
-        &mut buf,
-        "notes",
-        &context(&theme, true),
-        theme.status_bar_bg,
-    );
-    assert_eq!(buf[(5, 2)].bg, theme.status_bar_bg);
-    assert_ne!(theme.status_bar_bg, theme.bg);
+    chrome::labelled_rule(area, &mut buf, label, focused, &theme, theme.chrome_bg);
+    (buf, theme)
 }
 
 #[test]
-fn a_focused_panel_lights_its_border_and_an_unfocused_one_recedes() {
-    let (focused, theme) = draw(Rect::new(0, 0, 20, 5), "notes", true);
-    let (unfocused, _) = draw(Rect::new(0, 0, 20, 5), "notes", false);
-    assert_eq!(focused[(0, 0)].fg, theme.border_focused);
-    assert_eq!(unfocused[(0, 0)].fg, theme.border);
-    assert_ne!(theme.border, theme.border_focused);
+fn a_labelled_rule_reads_rule_label_rule() {
+    let (buf, _) = heading(20, "notes", false);
+    assert_eq!(row(&buf, 0), "── notes ───────────");
 }
 
 #[test]
-fn a_title_longer_than_the_panel_is_clipped_rather_than_overflowing() {
-    let (buf, _) = draw(Rect::new(0, 0, 12, 4), "a-very-long-directory-name", true);
-    assert_eq!(row(&buf, 0).chars().count(), 12);
-    // The box still closes. A title that overran would eat its own corner and
-    // then keep going into whatever is drawn to the right of this panel.
-    assert_eq!(buf[(11, 0)].symbol(), "┐");
-}
-
-#[test]
-fn a_panel_narrower_than_its_own_frame_draws_nothing_and_does_not_panic() {
-    for width in 0..4u16 {
-        for height in 0..3u16 {
-            let area = Rect::new(0, 0, width, height);
-            let theme = ThemeColors::default();
-            let mut buf = Buffer::empty(area);
-            chrome::frame(area, &mut buf, "x", &context(&theme, true), theme.bg);
-        }
-    }
-}
-
-#[test]
-fn a_focused_title_is_accent_and_bold_and_an_unfocused_one_recedes() {
-    // Interface §4: the focused region's label is accent and bold, and
-    // everything unfocused recedes. The title is the panel's label.
+fn a_focused_label_is_accent_and_bold_and_so_is_the_rule_before_it() {
     use ratatui::style::Modifier;
-    let (focused, theme) = draw(Rect::new(0, 0, 20, 5), "notes", true);
-    let (unfocused, _) = draw(Rect::new(0, 0, 20, 5), "notes", false);
+    let (focused, theme) = heading(20, "notes", true);
+    let (unfocused, _) = heading(20, "notes", false);
 
-    // `┌─ notes ─`: the name is columns 3 to 7.
+    for x in 0..2 {
+        assert_eq!(focused[(x, 0)].fg, theme.border_focused, "column {x}");
+        assert_eq!(unfocused[(x, 0)].fg, theme.border, "column {x}");
+    }
+    // `── notes `: the name is columns 3 to 7.
     for x in 3..8 {
         assert_eq!(focused[(x, 0)].fg, theme.border_focused, "column {x}");
-        assert!(
-            focused[(x, 0)].modifier.contains(Modifier::BOLD),
-            "column {x}"
-        );
+        assert!(focused[(x, 0)].modifier.contains(Modifier::BOLD));
         assert_eq!(unfocused[(x, 0)].fg, theme.receded_fg, "column {x}");
         assert!(!unfocused[(x, 0)].modifier.contains(Modifier::BOLD));
     }
-    // The rule either side of the name is still the rule.
-    assert_eq!(unfocused[(1, 0)].fg, theme.border);
-    assert!(!focused[(1, 0)].modifier.contains(Modifier::BOLD));
+    // The rule after the name is still the rule.
+    assert_eq!(focused[(10, 0)].fg, theme.border);
+    assert_eq!(focused[(10, 0)].bg, theme.chrome_bg);
+}
+
+#[test]
+fn a_label_longer_than_the_rule_is_clipped_and_one_cell_of_rule_survives() {
+    let (buf, _) = heading(12, "a-very-long-directory-name", false);
+    let text = row(&buf, 0);
+    assert_eq!(text.chars().count(), 12);
+    assert!(text.ends_with('─'), "{text:?}");
+}
+
+#[test]
+fn a_rule_too_narrow_for_its_label_is_still_a_rule_and_does_not_panic() {
+    for width in 0..6u16 {
+        let (buf, _) = heading(width, "notes", true);
+        assert!(row(&buf, 0).chars().all(|c| c == '─'));
+    }
+}
+
+#[test]
+fn a_vertical_rule_is_one_column_in_border() {
+    let theme = ThemeColors::default();
+    let mut buf = Buffer::empty(Rect::new(0, 0, 5, 4));
+    chrome::rule(Rect::new(2, 0, 1, 4), &mut buf, &theme, theme.bg);
+    for y in 0..4 {
+        assert_eq!(row(&buf, y), "  │  ");
+        assert_eq!(buf[(2, y)].fg, theme.border);
+        assert_eq!(buf[(2, y)].bg, theme.bg);
+    }
 }
 
 // ---------------------------------------------------------------------------

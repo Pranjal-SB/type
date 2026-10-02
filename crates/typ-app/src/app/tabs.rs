@@ -262,8 +262,7 @@ impl App {
     /// Where the tab bar is, or a zero-height rect when there is not one.
     pub fn tab_bar_area(&self, area: Rect) -> Rect {
         let (body, _) = crate::layout::split_frame(area);
-        let (_, pane) = crate::layout::split(body);
-        crate::layout::split_tabs(pane, self.tabs.len()).0
+        crate::layout::split_tabs(crate::layout::split(body).editor).0
     }
 
     /// Give a mouse event to the tab bar. Returns whether the bar took it.

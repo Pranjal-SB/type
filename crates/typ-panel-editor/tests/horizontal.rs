@@ -14,7 +14,7 @@ fn render(panel: &mut EditorPanel, area: Rect) -> Buffer {
         terminal_width: area.width,
         terminal_height: area.height,
     };
-    let mut buf = Buffer::empty(area);
+    let mut buf = Buffer::empty(Rect::new(0, 0, area.right() + 1, area.bottom() + 1));
     panel.render(area, &mut buf, &ctx);
     buf
 }
@@ -24,10 +24,10 @@ fn row(buf: &Buffer, y: u16) -> String {
 }
 
 const AREA: Rect = Rect {
-    x: 0,
-    y: 0,
-    width: 12,
-    height: 4,
+    x: 1,
+    y: 1,
+    width: 10,
+    height: 2,
 };
 
 fn to_line_end(panel: &mut EditorPanel) {
@@ -42,13 +42,13 @@ fn a_short_line_is_not_scrolled() {
     let mut p = EditorPanel::from_str("abc\n");
     let buf = render(&mut p, AREA);
     assert_eq!(p.left_col(), 0);
-    assert_eq!(row(&buf, 1), "│ 1 abc    │");
+    assert_eq!(row(&buf, 1), "  1 abc     ");
 }
 
 #[test]
 fn moving_past_the_right_edge_scrolls_the_view() {
     let mut p = EditorPanel::from_str("abcdefghijklmnop\n");
-    render(&mut p, AREA); // learn the width: 12 minus borders = 10 columns
+    render(&mut p, AREA); // learn the width: 10 columns
     to_line_end(&mut p);
     let buf = render(&mut p, AREA);
     assert!(p.left_col() > 0, "the view must follow the cursor");
@@ -126,8 +126,8 @@ fn a_click_in_a_scrolled_view_lands_on_the_character_under_it() {
     let left = p.left_col();
     assert!(left > 0, "this test is only meaningful once scrolled");
 
-    // Click the first text cell. Inner area starts at x=1 because of the
-    // border, so this is display column 0 of the window.
+    // Click the first text cell. The rect starts at x=1, one cell of
+    // margin, so this is display column 0 of the window.
     p.handle_mouse(
         MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),

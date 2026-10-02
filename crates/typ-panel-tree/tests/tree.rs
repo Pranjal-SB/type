@@ -77,7 +77,7 @@ fn pressing_enter_on_a_directory_does_not_emit_open_file() {
 #[test]
 fn the_sidebar_sits_on_the_chrome_surface_not_the_editors_page() {
     // The tree, the gutter and the editor were all `bg`: three regions in one
-    // colour, which is why no amount of border made them read as separate
+    // colour, which is why no line between them made them read as separate
     // things. Chrome is raised, content is the floor.
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
@@ -85,7 +85,7 @@ fn the_sidebar_sits_on_the_chrome_surface_not_the_editors_page() {
 
     let theme = ThemeColors::default();
     let mut panel = TreePanel::new(&fixture("surface")).unwrap();
-    let area = Rect::new(0, 0, 20, 6);
+    let area = Rect::new(1, 1, 19, 5);
     let ctx = RenderContext {
         theme: &theme,
         syntax: typ_core::SyntaxTheme::empty(),
@@ -95,21 +95,21 @@ fn the_sidebar_sits_on_the_chrome_surface_not_the_editors_page() {
         terminal_width: 20,
         terminal_height: 6,
     };
-    let mut buf = Buffer::empty(area);
+    let mut buf = Buffer::empty(Rect::new(0, 0, 20, 6));
     panel.render(area, &mut buf, &ctx);
 
     assert_ne!(
         theme.chrome_bg, theme.bg,
         "a sidebar the same colour as the page is the thing being fixed"
     );
-    // The border row, an unselected entry, and the empty rows below them. One
-    // row left on `bg` is a band across the sidebar.
+    // An unselected entry and the empty rows below it, every cell of the
+    // panel's rect. One row left on `bg` is a band across the sidebar.
     //
     // Row 1 is skipped on purpose: it is the selected entry and carries
     // `selection_primary_bg`, which is the tree saying where the cursor is and
     // has nothing to do with the surface underneath it.
-    for y in [0, 2, 3, 4, 5] {
-        for x in 0..20 {
+    for y in [2, 3, 4, 5] {
+        for x in 1..20 {
             assert_eq!(
                 buf[(x, y)].bg,
                 theme.chrome_bg,
@@ -134,7 +134,7 @@ fn an_unfocused_tree_recedes_and_keeps_its_selection() {
     use typ_core::{RenderContext, ThemeColors};
 
     let theme = ThemeColors::default();
-    let area = Rect::new(0, 0, 20, 6);
+    let area = Rect::new(1, 1, 19, 5);
     let paint = |is_focused: bool| {
         let mut panel = TreePanel::new(&fixture(&format!("recede-{is_focused}"))).unwrap();
         let ctx = RenderContext {
@@ -146,7 +146,7 @@ fn an_unfocused_tree_recedes_and_keeps_its_selection() {
             terminal_width: 20,
             terminal_height: 6,
         };
-        let mut buf = Buffer::empty(area);
+        let mut buf = Buffer::empty(Rect::new(0, 0, 20, 6));
         panel.render(area, &mut buf, &ctx);
         buf
     };

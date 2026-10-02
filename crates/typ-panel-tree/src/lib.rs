@@ -143,11 +143,6 @@ impl TreePanel {
             }]
         }
     }
-
-    /// The list area inside the panel's frame.
-    fn list_area(area: Rect) -> Rect {
-        typ_core::chrome::inner(area)
-    }
 }
 
 /// One directory's children, directories first, each alphabetically.
@@ -216,11 +211,11 @@ impl Panel for TreePanel {
         // The sidebar is chrome, not content: it frames the work rather than
         // being it, so it sits on the raised surface with the status bar and
         // leaves `bg` to the editor. Before this the tree, the gutter and the
-        // editor were all one colour and no border made them read as separate.
-        typ_core::chrome::frame(area, buf, &self.title(), ctx, ctx.theme.chrome_bg);
-        let inner = Self::list_area(area);
+        // editor were all one colour and nothing made them read as separate.
+        // Content only: the app draws the heading and the rule beside it.
+        buf.set_style(area, Style::default().bg(ctx.theme.chrome_bg));
 
-        self.height = inner.height as usize;
+        self.height = area.height as usize;
         let end = (self.top_line + self.height).min(self.entries.len());
         let lines: Vec<Line> = (self.top_line..end)
             .map(|i| {
@@ -264,7 +259,7 @@ impl Panel for TreePanel {
             .collect();
         Paragraph::new(lines)
             .style(Style::default().bg(ctx.theme.chrome_bg))
-            .render(inner, buf);
+            .render(area, buf);
     }
 
     fn handle_key(&mut self, chord: KeyChord) -> Vec<PanelEvent> {
@@ -293,26 +288,25 @@ impl Panel for TreePanel {
         vec![PanelEvent::NeedsRedraw]
     }
 
-    fn handle_mouse(&mut self, event: MouseEvent, panel_area: Rect) -> Vec<PanelEvent> {
+    fn handle_mouse(&mut self, event: MouseEvent, area: Rect) -> Vec<PanelEvent> {
         if event.kind != MouseEventKind::Down(MouseButton::Left) {
             return Vec::new();
         }
-        let inner = Self::list_area(panel_area);
         // **Inside the list, or nowhere.** `saturating_sub` turns every row
-        // above `inner.y` into row 0, so without this the panel's own title bar
-        // acted as a click on the first visible entry, and on a fresh tree,
+        // above `area.y` into row 0, so without this the heading above the
+        // list acted as a click on the first visible entry, and on a fresh tree,
         // where `selected == top_line == 0`, that is not a select but an
         // activate: it opened the first file or expanded the first directory.
-        // The bottom border is the same mistake one row past the end. The
+        // A row below the list is the same mistake one row past the end. The
         // picker's `row_at` has done this since M2.8. Gap 75.
-        if event.row < inner.y
-            || event.row >= inner.bottom()
-            || event.column < inner.x
-            || event.column >= inner.right()
+        if event.row < area.y
+            || event.row >= area.bottom()
+            || event.column < area.x
+            || event.column >= area.right()
         {
             return Vec::new();
         }
-        let row = (event.row - inner.y) as usize;
+        let row = (event.row - area.y) as usize;
         let idx = self.top_line + row;
         if idx >= self.entries.len() {
             return Vec::new();

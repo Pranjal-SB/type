@@ -23,20 +23,11 @@ fn row(buf: &Buffer, y: u16) -> String {
 }
 
 #[test]
-fn one_tab_gets_no_bar() {
-    // A strip naming the only open file says nothing the file's own border does
-    // not already say, and costs a row of the buffer to say it.
-    let editor = Rect::new(0, 0, 40, 10);
-    let (bar, rest) = split_tabs(editor, 1);
-
-    assert_eq!(bar.height, 0);
-    assert_eq!(rest, editor, "the editor gave up a row for an empty bar");
-}
-
-#[test]
-fn two_tabs_take_a_row_off_the_top_of_the_editor() {
+fn the_tab_row_takes_a_row_off_the_top_of_the_editor_even_for_one_tab() {
+    // The tab is the editor's label now that no box carries the name
+    // (interface §4), so one open file still gets its row.
     let editor = Rect::new(4, 2, 40, 10);
-    let (bar, rest) = split_tabs(editor, 2);
+    let (bar, rest) = split_tabs(editor);
 
     assert_eq!(bar, Rect::new(4, 2, 40, 1));
     assert_eq!(rest, Rect::new(4, 3, 40, 9));
@@ -49,10 +40,10 @@ fn two_tabs_take_a_row_off_the_top_of_the_editor() {
 
 #[test]
 fn an_editor_too_short_to_spare_a_row_keeps_all_of_them() {
-    // Two rows is a border and nothing else. Taking one for tabs leaves a panel
-    // that cannot show a single line of the file it is naming.
-    let editor = Rect::new(0, 0, 40, 2);
-    let (bar, rest) = split_tabs(editor, 3);
+    // One row is all there is, and it goes to the text being edited rather
+    // than to the name of it.
+    let editor = Rect::new(0, 0, 40, 1);
+    let (bar, rest) = split_tabs(editor);
 
     assert_eq!(bar.height, 0);
     assert_eq!(rest, editor);
@@ -236,24 +227,17 @@ fn the_editor_hit_test_starts_below_the_bar() {
 
     app.open_path(&dir.join("a.rs")).unwrap();
     let (_, one_tab) = app.areas(frame);
-    assert_eq!(app.tab_bar_area(frame).height, 0, "one tab drew a bar");
-
-    app.open_path(&dir.join("b.rs")).unwrap();
     let bar = app.tab_bar_area(frame);
-    let (_, two_tabs) = app.areas(frame);
-
-    assert_eq!(bar.height, 1);
+    assert_eq!(bar.height, 1, "one tab drew no bar");
     assert_eq!(
-        two_tabs.y,
+        one_tab.y,
         bar.y + bar.height,
         "the editor does not start where the bar ends"
     );
-    assert_eq!(
-        two_tabs.y,
-        one_tab.y + 1,
-        "the editor did not move down when the bar appeared"
-    );
-    assert_eq!(two_tabs.height, one_tab.height - 1);
+
+    app.open_path(&dir.join("b.rs")).unwrap();
+    let (_, two_tabs) = app.areas(frame);
+    assert_eq!(two_tabs, one_tab, "a second tab moved the editor");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
