@@ -16,6 +16,7 @@ use ratatui::widgets::{Paragraph, Widget};
 use typ_core::{Panel, RenderContext};
 
 use crate::app::{App, Focus, SEGMENT_GAP};
+use crate::pane::Axis;
 
 impl App {
     pub fn render(&mut self, frame: &mut ratatui::Frame) {
@@ -51,6 +52,15 @@ impl App {
         let panes = self.pane_areas(regions.editor);
         for &(index, bar, content) in &panes {
             self.render_pane(index, bar, content, frame.buffer_mut(), (w, h));
+        }
+        for (axis, rule) in self.layout.rules(regions.editor) {
+            let buf = frame.buffer_mut();
+            match axis {
+                Axis::Columns => typ_core::chrome::rule(rule, buf, &self.theme, self.theme.bg),
+                Axis::Rows => {
+                    typ_core::chrome::horizontal_rule(rule, buf, &self.theme, self.theme.bg)
+                }
+            }
         }
         let editor_area = panes
             .iter()

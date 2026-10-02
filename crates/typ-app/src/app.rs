@@ -3,6 +3,7 @@ use std::path::Path;
 mod background;
 mod dispatch;
 mod door;
+mod panes;
 mod picker;
 mod render;
 /// Search, replace and goto-line. A child module rather than a sibling so it
@@ -42,6 +43,12 @@ pub struct App {
     pane: usize,
     /// Where each pane is on screen.
     layout: crate::pane::Layout,
+    /// The id the next pane gets. Never reused, so a stale id names nothing.
+    next_pane: u32,
+    /// A pane close was refused because a tab in it held unsaved work, and
+    /// which pane. Closing the same pane again goes through; anything else in
+    /// between abandons it, as `close_pending` does for a tab.
+    close_pane_pending: Option<crate::pane::PaneId>,
     registry: Registry,
     keymap: Keymap,
     theme: ThemeColors,
@@ -262,6 +269,8 @@ impl App {
             panes: vec![Pane::new(crate::pane::PaneId(0))],
             pane: 0,
             layout: crate::pane::Layout::Leaf(crate::pane::PaneId(0)),
+            next_pane: 1,
+            close_pane_pending: None,
             registry: Registry::with_builtins(),
             keymap: Keymap::default_bindings(),
             theme: ThemeColors::default(),
@@ -420,6 +429,7 @@ impl App {
         self.status = None;
         self.quit_pending = false;
         self.close_pending = None;
+        self.close_pane_pending = None;
         // The hover described a position. Any key at all may have left it, and
         // a box standing over somewhere the cursor no longer is says something
         // true about the wrong thing. `handle_chord` calls this before running

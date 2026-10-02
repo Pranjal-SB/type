@@ -244,7 +244,7 @@ impl App {
     /// in the same place: config the new panel has never seen, a file that may
     /// not be watched yet or may have changed while hidden, and a buffer that
     /// may want parsing.
-    fn settle_active_tab(&mut self) {
+    pub(super) fn settle_active_tab(&mut self) {
         // Every path that makes a tab active lands here, which is what keeps
         // the stamp honest — a switch that forgot it would make the tab look
         // older than one nobody has touched.

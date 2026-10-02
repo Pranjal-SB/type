@@ -51,6 +51,73 @@ impl Layout {
         out
     }
 
+    /// Every rule between panes, with the axis of the split it divides.
+    pub fn rules(&self, area: Rect) -> Vec<(Axis, Rect)> {
+        let mut out = Vec::new();
+        self.collect_rules(area, &mut out);
+        out
+    }
+
+    fn collect_rules(&self, area: Rect, out: &mut Vec<(Axis, Rect)>) {
+        if let Layout::Split { axis, ratio, a, b } = self {
+            let (first, rule, second) = divide(area, *axis, *ratio);
+            out.push((*axis, rule));
+            a.collect_rules(first, out);
+            b.collect_rules(second, out);
+        }
+    }
+
+    /// Every pane, in screen order.
+    pub fn ids(&self) -> Vec<PaneId> {
+        self.rects(Rect::default())
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    /// The first pane in screen order.
+    fn first(&self) -> PaneId {
+        match self {
+            Layout::Leaf(id) => *id,
+            Layout::Split { a, .. } => a.first(),
+        }
+    }
+
+    /// Split the leaf `target`, `new` taking the second half. Returns whether
+    /// `target` was found.
+    pub fn split_leaf(&mut self, target: PaneId, axis: Axis, new: PaneId) -> bool {
+        match self {
+            Layout::Leaf(id) if *id == target => {
+                *self = Layout::split(axis, Layout::Leaf(target), Layout::Leaf(new));
+                true
+            }
+            Layout::Leaf(_) => false,
+            Layout::Split { a, b, .. } => {
+                a.split_leaf(target, axis, new) || b.split_leaf(target, axis, new)
+            }
+        }
+    }
+
+    /// Remove the leaf `target`; its sibling takes the whole of the split.
+    ///
+    /// Returns the pane that should have focus next: the first, in screen
+    /// order, of whatever took the space. `None` when `target` is not here or
+    /// is the only leaf, which never closes.
+    pub fn remove(&mut self, target: PaneId) -> Option<PaneId> {
+        let Layout::Split { a, b, .. } = self else {
+            return None;
+        };
+        let survivor = if **a == Layout::Leaf(target) {
+            std::mem::replace(&mut **b, Layout::Leaf(target))
+        } else if **b == Layout::Leaf(target) {
+            std::mem::replace(&mut **a, Layout::Leaf(target))
+        } else {
+            return a.remove(target).or_else(|| b.remove(target));
+        };
+        *self = survivor;
+        Some(self.first())
+    }
+
     fn collect(&self, area: Rect, out: &mut Vec<(PaneId, Rect)>) {
         match self {
             Layout::Leaf(id) => out.push((*id, area)),

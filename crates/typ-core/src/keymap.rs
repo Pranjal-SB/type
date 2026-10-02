@@ -313,6 +313,11 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("ctrl+k r", Action::RestartLanguageServers),
     ("ctrl+k h", Action::Hover),
     ("ctrl+k d", Action::GotoDefinition),
+    // Panes (interface §5). `ctrl+k r` would be resize there, but v0.3.3
+    // shipped it for the servers; resize takes `ctrl+k =` instead.
+    ("ctrl+k \\", Action::SplitRight),
+    ("ctrl+k -", Action::SplitDown),
+    ("ctrl+k x", Action::ClosePane),
     ("f3", Action::SearchNext),
     ("shift+f3", Action::SearchPrevious),
     ("ctrl+h", Action::ReplaceOpen),

@@ -21,7 +21,7 @@ use crate::prompt::{Prompt, PromptKind};
 /// dirty buffer `quit` and `close_tab` could never complete from it: the
 /// message just came back forever. Gap 68.
 fn answers_its_own_confirmation(action: Action) -> bool {
-    matches!(action, Action::Quit | Action::CloseTab)
+    matches!(action, Action::Quit | Action::CloseTab | Action::ClosePane)
 }
 
 /// The prefix `Action::OpenMenu` opens, when no key was pressed to say which.
@@ -205,6 +205,9 @@ impl App {
             // no-op rather than a clamp: landing on the last tab because you
             // pressed Alt+9 with three open is a jump you did not ask for.
             Action::GoToTab(n) => self.activate_tab((n as usize).saturating_sub(1)),
+            Action::SplitRight => self.split(crate::pane::Axis::Columns),
+            Action::SplitDown => self.split(crate::pane::Axis::Rows),
+            Action::ClosePane => self.request_close_pane(),
             Action::RestartLanguageServers => {
                 let started = self.lsp.restart_all();
                 self.status = Some(match started {

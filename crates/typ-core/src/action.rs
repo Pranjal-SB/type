@@ -103,6 +103,14 @@ pub enum Action {
     /// Jump to the nth open file, counting from one — every tabbed application
     /// counts these from one, including the terminals this runs inside.
     GoToTab(u8),
+    /// Split the current pane, the new one to its right, and open the file
+    /// picker in it: a pane starts empty (one file, one pane, for now).
+    SplitRight,
+    /// Split the current pane, the new one below it.
+    SplitDown,
+    /// Close the current pane and every tab in it, after asking if any of them
+    /// holds unsaved work. The last pane does not close.
+    ClosePane,
     Copy,
     Cut,
     Paste,
@@ -169,6 +177,7 @@ pub enum Group {
     Files,
     Tabs,
     Panels,
+    Panes,
     Code,
     App,
 }
@@ -182,6 +191,7 @@ impl Group {
         Group::Files,
         Group::Tabs,
         Group::Panels,
+        Group::Panes,
         Group::Code,
         Group::App,
     ];
@@ -195,6 +205,7 @@ impl Group {
             Group::Files => "files",
             Group::Tabs => "tabs",
             Group::Panels => "panels",
+            Group::Panes => "panes",
             Group::Code => "code",
             Group::App => "app",
         }
@@ -350,6 +361,9 @@ impl Action {
         Action::GoToTab(7),
         Action::GoToTab(8),
         Action::GoToTab(9),
+        Action::SplitRight,
+        Action::SplitDown,
+        Action::ClosePane,
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -435,6 +449,9 @@ impl Action {
             Action::NextTab => "next_tab",
             Action::PrevTab => "prev_tab",
             Action::CloseTab => "close_tab",
+            Action::SplitRight => "split_right",
+            Action::SplitDown => "split_down",
+            Action::ClosePane => "close_pane",
             Action::GotoDefinition => "goto_definition",
             Action::Hover => "hover",
             Action::RestartLanguageServers => "restart_language_servers",
@@ -537,6 +554,9 @@ impl Action {
             Action::NextTab => "switch to the next tab",
             Action::PrevTab => "switch to the previous tab",
             Action::CloseTab => "close the tab",
+            Action::SplitRight => "split right",
+            Action::SplitDown => "split down",
+            Action::ClosePane => "close the pane",
             Action::GoToTab(n) => GO_TO_TAB_DESCRIPTIONS
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -585,6 +605,7 @@ impl Action {
                 Group::Tabs
             }
             Action::FocusNext | Action::FocusPrevious => Group::Panels,
+            Action::SplitRight | Action::SplitDown | Action::ClosePane => Group::Panes,
             Action::GotoDefinition | Action::Hover | Action::RestartLanguageServers => Group::Code,
             Action::Quit | Action::OpenCommandPalette | Action::OpenMenu => Group::App,
         }

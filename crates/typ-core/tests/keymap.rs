@@ -161,8 +161,10 @@ fn every_default_chord_is_one_a_config_may_spell() {
     for action in Action::ALL {
         for chord in defaults.bindings_for(*action) {
             let mut keymap = Keymap::default_bindings();
+            // Escaped as TOML escapes a basic string: `ctrl+k \` is a chord.
+            let key = chord.replace('\\', "\\\\").replace('"', "\\\"");
             keymap
-                .merge_toml(&format!("\"{chord}\" = \"{}\"", action.name()))
+                .merge_toml(&format!("\"{key}\" = \"{}\"", action.name()))
                 .unwrap_or_else(|e| panic!("{chord} was refused: {e:#}"));
         }
     }
