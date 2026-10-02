@@ -20,6 +20,7 @@ fn facts(errors: usize, warnings: usize) -> StatusFacts<'static> {
         total_lines: 10,
         errors,
         warnings,
+        zoomed: false,
     }
 }
 

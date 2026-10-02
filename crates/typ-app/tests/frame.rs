@@ -63,7 +63,7 @@ fn the_opening_frame_draws_both_panels_and_the_status_bar() {
     // and numbering it from the first frame is what makes the column furniture
     // rather than something that appears once there is text.
     let expected = [
-        "── opening ──────────────────│ untitled ×                   ",
+        "── opening ─────────────── ◰─│ untitled ×                  ◰",
         "> src                        │ 1                            ",
         "  main.rs                    │                              ",
         "                             │                              ",

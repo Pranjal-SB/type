@@ -219,6 +219,7 @@ impl App {
             Action::FocusNeighbour(edge) => self.focus_neighbour(edge),
             Action::ResizePanes => self.resizing = true,
             Action::ToggleLeftDock => self.toggle_left_dock(),
+            Action::Zoom => self.toggle_zoom(),
             Action::RestartLanguageServers => {
                 let started = self.lsp.restart_all();
                 self.status = Some(match started {

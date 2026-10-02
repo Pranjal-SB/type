@@ -40,6 +40,9 @@ pub struct DockAreas {
     pub rule: Rect,
     /// Everything else: where the panes go.
     pub rest: Rect,
+    /// The ` ◰` cut into the heading's right end, one cell of rule after it.
+    /// Zero wide when the heading is too narrow to carry it.
+    pub zoom: Rect,
 }
 
 impl Dock {
@@ -72,10 +75,16 @@ impl Dock {
             self.size.min(body.width / 2)
         }
         .min(body.width);
-        let list = width.saturating_sub(1);
+        // Zoomed, the dock is the whole body and the panes get nothing.
+        let (width, list) = if self.zoomed && self.open {
+            (body.width, body.width)
+        } else {
+            (width, width.saturating_sub(1))
+        };
         let heading_rows = body.height.min(1);
+        let heading = Rect::new(body.x, body.y, list, heading_rows);
         DockAreas {
-            heading: Rect::new(body.x, body.y, list, heading_rows),
+            heading,
             content: Rect::new(
                 body.x,
                 body.y + heading_rows,
@@ -84,6 +93,7 @@ impl Dock {
             ),
             rule: Rect::new(body.x + list, body.y, width - list, body.height),
             rest: Rect::new(body.x + width, body.y, body.width - width, body.height),
+            zoom: crate::layout::zoom_button(heading, 1),
         }
     }
 
@@ -101,5 +111,20 @@ impl Dock {
     pub fn nudge_rule(&mut self, body: Rect, delta: i32) {
         let at = self.areas(body).rule.x as i32 + delta;
         self.place_rule(body, at.clamp(0, u16::MAX as i32) as u16);
+    }
+}
+
+impl DockAreas {
+    /// The dock hidden: no heading, list or rule, the panes the whole body.
+    /// What a zoomed pane is given.
+    pub fn hidden(body: Rect) -> Self {
+        let nothing = Rect::new(body.x, body.y, 0, 0);
+        DockAreas {
+            heading: nothing,
+            content: nothing,
+            rule: nothing,
+            rest: body,
+            zoom: nothing,
+        }
     }
 }

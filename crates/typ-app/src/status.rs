@@ -33,6 +33,8 @@ pub enum SegmentId {
     Selections,
     Position,
     Percentage,
+    /// A region is zoomed to the whole body.
+    Zoom,
 }
 
 /// How loudly a segment is drawn.
@@ -93,6 +95,8 @@ pub struct StatusFacts<'a> {
     pub warnings: usize,
     /// Work the servers have said they are doing, oldest first.
     pub progress: &'a [&'a str],
+    /// A region has the whole body, and the others are hidden.
+    pub zoomed: bool,
 }
 
 /// The right-hand segments, in order.
@@ -102,6 +106,16 @@ pub struct StatusFacts<'a> {
 /// you nothing.
 pub fn segments(facts: &StatusFacts) -> Vec<Segment> {
     let mut out = Vec::with_capacity(7);
+
+    // First: the rest of the layout is hidden, and this says it is still
+    // there. Accent, because it is a state to notice and the way back.
+    if facts.zoomed {
+        out.push(Segment {
+            id: SegmentId::Zoom,
+            text: "zoomed".to_string(),
+            emphasis: Emphasis::Accent,
+        });
+    }
 
     out.push(Segment {
         id: SegmentId::FileName,

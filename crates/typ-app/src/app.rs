@@ -38,6 +38,11 @@ pub struct App {
     tree: TreePanel,
     /// Where the tree is, and in what posture.
     dock: crate::dock::Dock,
+    /// The pane `ctrl+k z` zoomed, if one is. In force only while that pane
+    /// has the keys; see `docking::zoomed`.
+    zoomed_pane: Option<crate::pane::PaneId>,
+    /// When the dock's heading was last pressed, for a double-click to zoom.
+    heading_pressed: Option<std::time::Instant>,
     /// Every pane, in no particular order: `layout` says where each one is.
     /// **Never empty**, for the reason a pane's `tabs` never is.
     panes: Vec<Pane>,
@@ -353,6 +358,8 @@ impl App {
         Ok(Self {
             tree: TreePanel::new(root)?,
             dock: crate::dock::Dock::left(),
+            zoomed_pane: None,
+            heading_pressed: None,
             panes: vec![Pane::new(crate::pane::PaneId(0))],
             pane: 0,
             layout: crate::pane::Layout::Leaf(crate::pane::PaneId(0)),
@@ -500,6 +507,7 @@ impl App {
             errors: self.count_diagnostics(typ_core::Severity::Error),
             warnings: self.count_diagnostics(typ_core::Severity::Warning),
             progress: &self.lsp.progress(),
+            zoomed: self.zoomed().is_some(),
         })
     }
 
@@ -600,6 +608,10 @@ impl App {
     /// Move focus, remembering where it came from.
     pub fn set_focus(&mut self, focus: Focus) {
         if focus != self.focus {
+            // A zoom belongs to the region it was asked from, and ends
+            // when the keys leave it.
+            self.dock.zoomed = false;
+            self.zoomed_pane = None;
             self.came_from = Some(self.focus);
             self.focus = focus;
         }

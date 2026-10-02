@@ -141,3 +141,19 @@ pub fn split_tabs(pane: Rect) -> (Rect, Rect) {
     let rest = Rect::new(pane.x, pane.y + 1, pane.width, pane.height - 1);
     (bar, rest)
 }
+
+/// What the zoom button shows (interface §2, the posture toggle).
+pub const ZOOM: &str = "\u{25f0}";
+
+/// The narrowest row that carries a zoom button: anything less is all label.
+const ZOOM_MIN_ROW: u16 = 8;
+
+/// Where a zoom button goes in `row`: ` ◰`, two cells, `trailing` cells in
+/// from the right end. The dock's heading leaves one cell of rule after it; a
+/// tab row ends on it. One function for render and hit-testing.
+pub fn zoom_button(row: Rect, trailing: u16) -> Rect {
+    if row.height == 0 || row.width < ZOOM_MIN_ROW {
+        return Rect::new(row.right(), row.y, 0, row.height.min(1));
+    }
+    Rect::new(row.right() - 2 - trailing, row.y, 2, 1)
+}

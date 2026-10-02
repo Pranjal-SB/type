@@ -132,6 +132,9 @@ pub enum Action {
     /// The left dock, in three steps (interface §5): closed opens and focuses
     /// it, open without focus focuses it, focused folds it to its rule.
     ToggleLeftDock,
+    /// Give the focused region, the dock or a pane, the whole body; again
+    /// puts the layout back as it was.
+    Zoom,
     Copy,
     Cut,
     Paste,
@@ -426,6 +429,7 @@ impl Action {
         Action::FocusNeighbour(Edge::Bottom),
         Action::ResizePanes,
         Action::ToggleLeftDock,
+        Action::Zoom,
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -520,6 +524,7 @@ impl Action {
             Action::FocusNeighbour(Edge::Bottom) => "focus_pane_down",
             Action::ResizePanes => "resize_panes",
             Action::ToggleLeftDock => "toggle_left_dock",
+            Action::Zoom => "zoom",
             Action::FocusPane(n) => FOCUS_PANE_NAMES
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -635,6 +640,7 @@ impl Action {
             Action::FocusNeighbour(Edge::Bottom) => "focus the pane below",
             Action::ResizePanes => "resize panes",
             Action::ToggleLeftDock => "open, focus or fold the left dock",
+            Action::Zoom => "zoom the focused region, or restore it",
             Action::FocusPane(n) => FOCUS_PANE_DESCRIPTIONS
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -686,7 +692,9 @@ impl Action {
             Action::NextTab | Action::PrevTab | Action::CloseTab | Action::GoToTab(_) => {
                 Group::Tabs
             }
-            Action::FocusNext | Action::FocusPrevious | Action::ToggleLeftDock => Group::Panels,
+            Action::FocusNext | Action::FocusPrevious | Action::ToggleLeftDock | Action::Zoom => {
+                Group::Panels
+            }
             Action::SplitRight
             | Action::SplitDown
             | Action::ClosePane

@@ -15,6 +15,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 use typ_core::{Panel, RenderContext};
 
+use crate::app::docking::Zoom;
 use crate::app::panes::PaneArea;
 use crate::app::{App, Focus, SEGMENT_GAP};
 use crate::pane::Axis;
@@ -34,7 +35,12 @@ impl App {
         for (number, area) in panes.iter().enumerate() {
             self.render_pane(number + 1, area, frame.buffer_mut(), (w, h));
         }
-        for (axis, rule) in self.layout.rules(regions.rest) {
+        // A zoom hides every rule between panes with the panes it hid.
+        let rules = match self.zoomed() {
+            None => self.layout.rules(regions.rest),
+            Some(_) => Vec::new(),
+        };
+        for (axis, rule) in rules {
             let buf = frame.buffer_mut();
             match axis {
                 Axis::Columns => typ_core::chrome::rule(rule, buf, &self.theme, self.theme.bg),
@@ -178,7 +184,15 @@ impl App {
     /// The dock's regions and the panes' area in `frame`: the one place the
     /// body is divided, for render and every hit-test.
     pub(crate) fn regions(&self, frame: Rect) -> crate::dock::DockAreas {
-        self.dock.areas(self.split_body(frame).0)
+        let body = self.split_body(frame).0;
+        match self.zoomed() {
+            Some(Zoom::Pane(_)) => crate::dock::DockAreas::hidden(body),
+            zoom => crate::dock::Dock {
+                zoomed: zoom == Some(Zoom::Dock),
+                ..self.dock
+            }
+            .areas(body),
+        }
     }
 
     /// One pane: the visible tab's text, then its tab row over the top, led by
@@ -195,6 +209,7 @@ impl App {
             number: number_area,
             bar,
             content,
+            zoom,
             ..
         } = *area;
         let focused = self.focus == Focus::Editor && index == self.pane;
@@ -211,6 +226,7 @@ impl App {
             terminal_width: w,
             terminal_height: h,
         };
+        let zoomed = self.zoomed() == Some(Zoom::Pane(self.panes[index].id));
         let pane = &mut self.panes[index];
         pane.shown_mut().panel.render(content, buf, &ctx);
 
@@ -218,6 +234,7 @@ impl App {
             let labels: Vec<String> = pane.tabs.iter().map(|tab| tab.panel.title()).collect();
             crate::tabbar::draw(buf, bar, &labels, pane.active, &self.theme, focused);
         }
+        crate::app::docking::draw_zoom(buf, zoom, zoomed, &self.theme);
         if number_area.width > 0 {
             // The pane's label (interface §4): accent and bold on the pane
             // with the keys, the tab row's own quiet colour on the rest.

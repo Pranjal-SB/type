@@ -9,6 +9,7 @@ use crossterm::event::MouseEvent;
 use ratatui::layout::Rect;
 use typ_core::{Edge, Panel, PanelEvent};
 
+use crate::app::docking::Zoom;
 use crate::app::{App, Focus, Pane};
 use crate::pane::{Axis, PaneId};
 
@@ -42,6 +43,8 @@ pub(crate) struct PaneArea {
     pub bar: Rect,
     /// The visible tab's text.
     pub content: Rect,
+    /// The ` ◰` at the right end of the tab row.
+    pub zoom: Rect,
 }
 
 impl App {
@@ -50,9 +53,9 @@ impl App {
     pub(crate) fn pane_areas(&self, editor: Rect) -> Vec<PaneArea> {
         let numbered = self.panes.len() > 1;
         let mut areas: Vec<PaneArea> = self
-            .layout
-            .rects(editor)
+            .visible_panes(editor)
             .into_iter()
+            .filter(|(_, whole)| !whole.is_empty())
             .filter_map(|(id, whole)| {
                 let index = self.index_of(id)?;
                 let (row, content) = crate::layout::split_tabs(whole);
@@ -60,9 +63,10 @@ impl App {
                 // name. Clamped so a sliver of a pane is not overrun.
                 let width = if numbered { 3.min(row.width) } else { 0 };
                 let number = Rect { width, ..row };
+                let zoom = crate::layout::zoom_button(row, 0);
                 let bar = Rect {
                     x: row.x + width,
-                    width: row.width - width,
+                    width: zoom.x.saturating_sub(row.x + width),
                     ..row
                 };
                 Some(PaneArea {
@@ -71,11 +75,21 @@ impl App {
                     number,
                     bar,
                     content,
+                    zoom,
                 })
             })
             .collect();
         areas.sort_by_key(|area| (area.whole.y, area.whole.x));
         areas
+    }
+
+    /// The panes on screen and where: every leaf, or the zoomed pane alone
+    /// with the whole region.
+    fn visible_panes(&self, editor: Rect) -> Vec<(PaneId, Rect)> {
+        match self.zoomed() {
+            Some(Zoom::Pane(id)) => vec![(id, editor)],
+            _ => self.layout.rects(editor),
+        }
     }
 
     /// The current pane's areas inside the editor region.
@@ -89,6 +103,7 @@ impl App {
                 number: Rect::default(),
                 bar: Rect::default(),
                 content: Rect::default(),
+                zoom: Rect::default(),
             })
     }
 
@@ -150,6 +165,9 @@ impl App {
     /// Make the pane at `index` in `panes` the one with the keys.
     fn make_current(&mut self, index: usize) {
         self.pane = index;
+        if self.zoomed_pane != Some(self.panes[index].id) {
+            self.zoomed_pane = None;
+        }
         self.set_focus(Focus::Editor);
         self.warn_if_changed_on_disk();
         self.mark_dirty();
@@ -226,6 +244,11 @@ impl App {
             self.warn_if_changed_on_disk();
             self.mark_dirty();
         }
+        if area.zoom.contains((column, row).into()) {
+            self.set_focus(Focus::Editor);
+            self.toggle_zoom();
+            return true;
+        }
         area.number.contains((column, row).into())
     }
 
@@ -301,8 +324,11 @@ impl App {
         self.dragging = if self.dock.open && regions.rule.contains((column, row).into()) {
             Some(Drag::Dock)
         } else {
-            self.layout
-                .rule_at(regions.rest, column, row)
+            // A zoomed pane hides every rule between panes.
+            self.zoomed()
+                .is_none()
+                .then(|| self.layout.rule_at(regions.rest, column, row))
+                .flatten()
                 .map(Drag::Split)
         };
         self.dragging.is_some()

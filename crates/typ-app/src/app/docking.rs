@@ -87,6 +87,12 @@ impl App {
             &self.theme,
             self.theme.chrome_bg,
         );
+        draw_zoom(
+            buf,
+            regions.zoom,
+            self.zoomed() == Some(Zoom::Dock),
+            &self.theme,
+        );
         let ctx = typ_core::RenderContext {
             theme: &self.theme,
             syntax: &self.syntax_theme,
@@ -123,4 +129,102 @@ impl App {
         self.mark_dirty();
         true
     }
+}
+
+/// What is zoomed to the whole body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Zoom {
+    Dock,
+    Pane(crate::pane::PaneId),
+}
+
+/// Two presses on the dock's heading this close together are a double-click.
+/// What Windows and most desktops default to.
+const DOUBLE_CLICK: std::time::Duration = std::time::Duration::from_millis(500);
+
+impl App {
+    /// What is zoomed, if anything. A zoom holds while its region has the
+    /// keys, so the layout it hid is never one key away from being stranded.
+    pub(crate) fn zoomed(&self) -> Option<Zoom> {
+        match self.focus {
+            Focus::Tree if self.dock.zoomed && self.dock.open => Some(Zoom::Dock),
+            Focus::Editor => {
+                let id = self.panes[self.pane].id;
+                (self.zoomed_pane == Some(id)).then_some(Zoom::Pane(id))
+            }
+            _ => None,
+        }
+    }
+
+    /// `ctrl+k z`: zoom the focused region, or put the layout back. Nothing
+    /// in the layout changes, so the way back is exact.
+    pub(super) fn toggle_zoom(&mut self) {
+        let was = self.zoomed();
+        self.dock.zoomed = false;
+        self.zoomed_pane = None;
+        if was.is_none() {
+            match self.focus {
+                Focus::Tree => self.dock.zoomed = self.dock.open,
+                Focus::Editor => self.zoomed_pane = Some(self.panes[self.pane].id),
+            }
+        }
+        self.mark_dirty();
+    }
+
+    /// A press on the open dock's heading: it focuses the dock, a press on
+    /// its ` ◰` zooms it, and so does a second press inside `DOUBLE_CLICK`.
+    /// Returns whether the press was there.
+    pub fn press_dock_heading(
+        &mut self,
+        column: u16,
+        row: u16,
+        frame: Rect,
+        now: std::time::Instant,
+    ) -> bool {
+        let regions = self.regions(frame);
+        let at = (column, row).into();
+        if !self.dock.open || !regions.heading.contains(at) {
+            return false;
+        }
+        let double = self
+            .heading_pressed
+            .is_some_and(|then| now.saturating_duration_since(then) <= DOUBLE_CLICK);
+        self.set_focus(Focus::Tree);
+        if regions.zoom.contains(at) || double {
+            self.toggle_zoom();
+            self.heading_pressed = None;
+        } else {
+            self.heading_pressed = Some(now);
+        }
+        self.mark_dirty();
+        true
+    }
+}
+
+/// The ` ◰` in `area`, which is zero wide when its row is too narrow. Accent
+/// and bold on the zoomed region, where it is the way back; the tab row's
+/// quiet colour everywhere else.
+pub(super) fn draw_zoom(
+    buf: &mut ratatui::buffer::Buffer,
+    area: Rect,
+    zoomed: bool,
+    theme: &typ_core::ThemeColors,
+) {
+    use ratatui::style::{Modifier, Style};
+    let area = area.intersection(buf.area);
+    if area.width < 2 {
+        return;
+    }
+    let quiet = Style::default()
+        .fg(theme.status_bar_inactive_fg)
+        .bg(theme.chrome_bg);
+    let style = if zoomed {
+        quiet.fg(theme.border_focused).add_modifier(Modifier::BOLD)
+    } else {
+        quiet
+    };
+    buf[(area.x, area.y)].set_symbol(" ").set_style(quiet);
+    buf[(area.x + 1, area.y)]
+        .set_symbol(crate::layout::ZOOM)
+        .set_style(style);
 }

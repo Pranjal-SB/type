@@ -189,6 +189,16 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             assert!(!app.dock_open(), "the focused dock did not fold");
             assert_eq!(app.focus(), Focus::Editor);
         },
+        Action::Zoom => |app, a| {
+            run(app, a);
+            assert!(
+                app.status_right().contains("zoomed"),
+                "{}",
+                app.status_right()
+            );
+            run(app, a);
+            assert!(!app.status_right().contains("zoomed"));
+        },
         Action::OpenMenu => |app, a| {
             run(app, a);
             assert_eq!(app.pending_prefix(), Some("ctrl+k"));
