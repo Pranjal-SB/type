@@ -74,7 +74,7 @@ fn the_opening_frame_draws_both_panels_and_the_status_bar() {
         // is the fixed cost, so a message can never shove the position off the
         // end of the bar. Sixty columns is a tight terminal and this is what
         // tight looks like.
-        "Tab focus  ·  Enter open  untitled  LF  Spaces: 4  1:1  100%",
+        "F6 focus  ·  Enter open   untitled  LF  Spaces: 4  1:1  100%",
     ];
     assert_eq!(rows, expected);
 

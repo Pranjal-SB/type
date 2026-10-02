@@ -397,6 +397,30 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
         floors.quiet,
         ground,
     );
+    // The same colours drawn on `chrome_bg`: the tab rows, the pane numbers,
+    // the menu and the floats. The status bar's ground is its own slot, and a
+    // theme that tunes it apart from `chrome_bg` was only ever measured there.
+    for (name, colour) in [
+        ("status_bar_accent on chrome_bg", theme.status_bar_accent),
+        ("fg on chrome_bg", theme.fg),
+    ] {
+        at_least(
+            &mut bad,
+            name,
+            colour,
+            theme.chrome_bg,
+            floors.content,
+            ground,
+        );
+    }
+    at_least(
+        &mut bad,
+        "status_bar_inactive_fg on chrome_bg",
+        theme.status_bar_inactive_fg,
+        theme.chrome_bg,
+        floors.quiet,
+        ground,
+    );
     emphasised(
         &mut bad,
         "status_bar_fg over status_bar_inactive_fg",

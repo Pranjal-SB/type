@@ -15,7 +15,7 @@ mod tabs;
 
 use anyhow::Result;
 use typ_buffer::SearchQuery;
-use typ_core::{Keymap, Panel, ThemeColors};
+use typ_core::{Action, Keymap, Panel, ThemeColors};
 use typ_find::{FileHit, FindWorker, LineHit};
 use typ_panel_editor::EditorPanel;
 use typ_panel_editor::render::Whitespace;
@@ -296,7 +296,54 @@ const RESIZE_HINT: &str = "Resize: arrows move the rule  ·  = evens it  ·  Ent
 
 /// Shown when there is nothing more urgent to say. Discoverability is part of
 /// the product: bindings nobody can find are bindings that do not exist.
-const HINT: &str = "Tab focus  ·  Enter open  ·  Ctrl+S save  ·  Ctrl+Q quit";
+///
+/// Each chord is read from the keymap, so a rebind moves the hint with it. It
+/// said `Tab focus` from M1 until long after Tab became indent, because it was
+/// written down. `Enter open` stays written: it is the tree's raw key.
+fn hint(keymap: &Keymap) -> String {
+    let label = |action, what| chord_label(keymap, action).map(|chord| format!("{chord} {what}"));
+    [
+        label(Action::FocusNext, "focus"),
+        Some("Enter open".to_string()),
+        label(Action::Save, "save"),
+        label(Action::Quit, "quit"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join("  ·  ")
+}
+
+/// The chord to show for `action`, spelled the way a key cap is: `F6`,
+/// `Ctrl+S`. Of several, the one with fewest modifiers, then the shortest:
+/// `f6` over `ctrl+tab`, which a terminal without the kitty protocol cannot
+/// tell from Tab.
+fn chord_label(keymap: &Keymap, action: Action) -> Option<String> {
+    let chord = keymap
+        .bindings_for(action)
+        .into_iter()
+        .min_by_key(|chord| (chord.matches('+').count(), chord.len()))?;
+    Some(
+        chord
+            .split(' ')
+            .map(|step| {
+                step.split('+')
+                    .map(capitalised)
+                    .collect::<Vec<_>>()
+                    .join("+")
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
+fn capitalised(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
 
 impl App {
     pub fn new(root: &Path) -> Result<Self> {
@@ -412,7 +459,7 @@ impl App {
         }
         match &self.teaching {
             Some((line, _)) => line.clone(),
-            None => HINT.to_string(),
+            None => hint(&self.keymap),
         }
     }
 

@@ -76,7 +76,7 @@ scrim = "scrim"
 status_bar_bg = "chrome"
 status_bar_fg = "foreground"
 status_bar_inactive_fg = "comment"
-status_bar_accent = "purple"
+status_bar_accent = "cyan"  # purple is 5.06 on the chrome, under the 6.5 for text read alone
 
 tree_directory_fg = "cyan"
 tree_file_fg = "foreground"
