@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.3.3, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.4.0, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -60,7 +60,10 @@ file instead of assumed, whitespace can be shown when you ask for it, and indent
 drawn, blank lines included. Focus is shown by what steps back: the panel without it
 drops to one quiet colour, syntax and all, and the picker and hover box are rounded floats that
 name themselves and their exit. `Ctrl+K` opens a menu of everything bound under it, drawn from
-the keymap, and running a row from it shows the direct chord for two seconds.
+the keymap, and running a row from it shows the direct chord for two seconds. Regions are
+divided by lines rather than boxed, and the editor area splits into panes you can move between,
+resize by dragging the rule or from the keyboard, and close; one watch covers the whole
+project.
 
 Every shipped theme is checked against a contrast rubric at truecolor **and again after
 degradation**, which is the half nobody else checks: quantising moves every colour by a
@@ -198,6 +201,19 @@ has it as "show the ctrl+k menu".
 | `Ctrl+K D` | Go to the definition (also `F12`) |
 | `Ctrl+K H` | Describe what is under the cursor (also `Alt+H`) |
 | `Ctrl+K R` | Restart the language servers |
+
+**Panes**
+
+| Key | Mouse | Action |
+|---|---|---|
+| `Ctrl+K \` | the menu row | Split the pane to the right; the picker opens in the new one |
+| `Ctrl+K -` | the menu row | Split the pane downward |
+| `Ctrl+K X` | the menu row | Close the pane, asking first about unsaved tabs |
+| `Ctrl+K 1`...`9` | click the pane's number, or anywhere in it | Focus that pane |
+| `Alt+←` `→` `↑` `↓` | click | Focus the pane beside this one |
+| `Ctrl+K =`, then arrows; `=` evens, `Enter` or `Esc` done | drag the rule | Resize |
+
+A file is open in one pane at a time; opening it again goes to the pane that has it.
 
 **Tree**
 
@@ -358,8 +374,10 @@ for now.
 | v0.3.0 | M3 | Code intelligence: LSP client, diagnostics, goto-definition, hover | shipped in v0.3.1 |
 | v0.3.1 | - | Audit: 80 defects found and 73 fixed, including two that lost unsaved work | shipped |
 | v0.3.2 | M3.2 | Shell, slice 1: rules at 3:1, focus by receding, the picker and hover as floats | shipped |
-| v0.3.3 | M3.3 | Shell, slice 2: the `Ctrl+K` menu, sequence bindings, a focus stack | **current** |
-| v0.4.0 | M4 | Workspace: splits, sessions, workspace-wide file watching | next |
+| v0.3.3 | M3.3 | Shell, slice 2: the `Ctrl+K` menu, sequence bindings, a focus stack | shipped |
+| v0.4.0 | M4 | Panes: rules not boxes, the layout tree, splits, pane focus and resize, one workspace watcher | **current** |
+| v0.4.1 | M4.1 | Docks: the left dock and its labelled rule, `Ctrl+B`, postures, `F6` over every region | next |
+| v0.4.2 | M4.2 | Layouts: presets, adapt to width, sessions | next |
 | v0.5.0 | M5 | Terminal panel and git integration | |
 | v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |
 
