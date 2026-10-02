@@ -10,6 +10,14 @@ use anyhow::Result;
 
 use super::{App, Pane};
 
+/// A watch's report, as the loop receives it.
+fn to_app_event(path: std::path::PathBuf, what: typ_buffer::WatchEvent) -> typ_core::AppEvent {
+    match what {
+        typ_buffer::WatchEvent::Changed => typ_core::AppEvent::FileChanged(path),
+        typ_buffer::WatchEvent::Failed(reason) => typ_core::AppEvent::WatchFailed { path, reason },
+    }
+}
+
 impl App {
     /// Ask for a parse if the buffer has changed since the last request.
     ///
@@ -98,32 +106,128 @@ impl App {
         index == self.panes[pane].active
     }
 
-    /// Watch the file in tab `index` of `pane`, if it has one and nothing is
-    /// watching it yet.
+    /// Start the one watch on the workspace, on a thread of its own.
+    ///
+    /// Off the render thread twice over: building a recursive watch walks the
+    /// tree on some platforms, and the ignore rules events are filtered by are
+    /// read from disk. Both happen on the `typ-watch` thread, which then holds
+    /// the watch until the app drops.
+    pub(super) fn start_workspace_watch(&mut self, sender: crate::run::AppSender) {
+        let root = self.root.clone();
+        let (alive, until_dropped) = std::sync::mpsc::channel::<()>();
+        let (armed, ready) = std::sync::mpsc::channel();
+        let spawned = std::thread::Builder::new()
+            .name("typ-watch".into())
+            .spawn(move || {
+                let ignore = typ_find::Ignore::new(&root);
+                let rules = ignore.clone();
+                let events = sender.clone();
+                match typ_buffer::watch_tree(
+                    &root,
+                    move |path| !rules.ignores(path),
+                    move |path, what| {
+                        let _ = events.send(to_app_event(path, what));
+                    },
+                ) {
+                    Ok(watch) => {
+                        let _ = armed.send(Some(ignore));
+                        // Blocks until the app drops its end, then drops the
+                        // watch with it.
+                        let _ = until_dropped.recv();
+                        drop(watch);
+                    }
+                    Err(e) => {
+                        let _ = armed.send(None);
+                        let _ = sender.send(typ_core::AppEvent::WatchFailed {
+                            path: root,
+                            reason: format!("{e:#}"),
+                        });
+                    }
+                }
+            });
+        if let Err(e) = spawned {
+            crate::log_warn!("the workspace watcher thread did not start: {e}");
+            return;
+        }
+        self.watches_started += 1;
+        self.workspace = Some(super::Workspace {
+            _alive: alive,
+            ready,
+            ignore: None,
+        });
+    }
+
+    /// Wait up to `timeout` for the workspace watch to be armed. Returns
+    /// whether it is.
+    ///
+    /// For tests, and only for tests: a write made before the watch is armed
+    /// is never reported, and a test that raced it would fail on a slow
+    /// runner. The editor itself never waits; it gives a file opened in that
+    /// window a watch of its own.
+    pub fn await_workspace_watch(&mut self, timeout: std::time::Duration) -> bool {
+        let Some(workspace) = &mut self.workspace else {
+            return false;
+        };
+        if workspace.ignore.is_none()
+            && let Ok(ignore) = workspace.ready.recv_timeout(timeout)
+        {
+            workspace.ignore = ignore;
+        }
+        workspace.ignore.is_some()
+    }
+
+    /// Whether the workspace watch reports changes to `path`: armed, `path`
+    /// under the root as the root is spelled, and not something the walk
+    /// skips. A covered file needs no watch of its own.
+    fn covered(&mut self, path: &Path) -> bool {
+        let Some(workspace) = &mut self.workspace else {
+            return false;
+        };
+        if workspace.ignore.is_none()
+            && let Ok(ignore) = workspace.ready.try_recv()
+        {
+            workspace.ignore = ignore;
+        }
+        let Some(ignore) = &workspace.ignore else {
+            return false;
+        };
+        path.starts_with(&self.root) && !ignore.ignores(path)
+    }
+
+    /// How many OS watches the app has started.
+    pub fn watches_started(&self) -> usize {
+        self.watches_started
+    }
+
+    /// Watch the file in tab `index` of `pane` on its own, if the workspace
+    /// watch does not already report it and nothing else watches it yet: a
+    /// file outside the root, or one the walk ignores.
     ///
     /// A failure here is not worth interrupting anyone over: the editor keeps
     /// working, it just stops noticing outside writes. It goes to the log,
     /// which is where the answer will be looked for.
     pub(super) fn watch_tab(&mut self, pane: usize, index: usize) {
-        let tab = &mut self.panes[pane].tabs[index];
-        if tab.watch.is_some() {
-            return;
-        }
-        let (Some(sender), Some(path)) = (self.sender.clone(), tab.panel.path()) else {
+        let Some(path) = self.panes[pane].tabs[index]
+            .panel
+            .path()
+            .map(Path::to_path_buf)
+        else {
             return;
         };
-        let path = path.to_path_buf();
+        if self.panes[pane].tabs[index].watch.is_some() || self.covered(&path) {
+            return;
+        }
+        let tab = &mut self.panes[pane].tabs[index];
+        let Some(sender) = self.sender.clone() else {
+            return;
+        };
         match typ_buffer::watch_file(&path, move |changed, what| {
-            let event = match what {
-                typ_buffer::WatchEvent::Changed => typ_core::AppEvent::FileChanged(changed),
-                typ_buffer::WatchEvent::Failed(reason) => typ_core::AppEvent::WatchFailed {
-                    path: changed,
-                    reason,
-                },
-            };
-            let _ = sender.send(event);
+            let _ = sender.send(to_app_event(changed, what));
         }) {
-            Ok(watch) => tab.watch = Some(watch),
+            Ok(watch) => {
+                tab.watch = Some(watch);
+                self.watches_started += 1;
+            }
             Err(e) => crate::log_warn!("watching {} failed: {e:#}", path.display()),
         }
     }
@@ -154,7 +258,21 @@ impl App {
     ///
     /// **Any tab, not only the active one.** A clean background tab reloads in
     /// place; a dirty one is flagged and warns when it is switched to. Gap 85.
+    ///
+    /// The workspace root itself is what a watch names when the OS lost events
+    /// under it: anything may have changed, so every open file is checked.
     pub fn handle_external_change(&mut self, path: &Path) -> Result<bool> {
+        if path == self.root {
+            let open: Vec<std::path::PathBuf> = self
+                .all_tabs()
+                .filter_map(|tab| tab.panel.path().map(Path::to_path_buf))
+                .collect();
+            let mut changed = false;
+            for file in open {
+                changed |= self.handle_external_change(&file)?;
+            }
+            return Ok(changed);
+        }
         let Some((pane, index)) = self.find_tab(|tab| tab.panel.path() == Some(path)) else {
             return Ok(false);
         };
@@ -207,6 +325,13 @@ impl App {
     /// The watch on a file failed. Say so: until it is re-established an
     /// outside write goes unnoticed, and Ctrl+S would overwrite it.
     pub fn handle_watch_failure(&mut self, path: &Path, reason: &str) -> bool {
+        // The workspace watch: every file under the root just went unwatched.
+        if path == self.root {
+            self.status = Some(format!(
+                "No longer watching the project for outside changes: {reason}"
+            ));
+            return true;
+        }
         // Only a file on screen, in whichever pane: one behind a tab is said
         // when it next matters, which is its next outside write.
         let Some(shown) = self

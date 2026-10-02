@@ -46,6 +46,7 @@ impl App {
             tabs.len() == 1 && tabs[0].panel.path().is_none() && !tabs[0].panel.is_dirty();
         if scratch {
             self.panes[self.pane].tabs[0] = Tab::new(self.panel_for(path)?);
+            self.watch_tab(self.pane, 0);
             self.settle_active_tab();
             return Ok(());
         }
@@ -104,6 +105,7 @@ impl App {
         // and whitespace into `tabs[active]` — run it while `active` still
         // points at the tab being left and the settings land on the wrong file.
         pane.active = pane.tabs.len() - 1;
+        self.watch_tab(self.pane, self.panes[self.pane].active);
         self.settle_active_tab();
         Ok(())
     }
@@ -257,8 +259,8 @@ impl App {
             .panel
             .set_whitespace(self.whitespace);
         self.set_focus(Focus::Editor);
-        // A no-op for a tab already watched, so a switch costs nothing here.
-        self.watch_tab(self.pane, self.panes[self.pane].active);
+        // No watch here: a file is watched when it opens, by the workspace or
+        // by its own, so a switch costs the OS nothing.
         self.warn_if_changed_on_disk();
         self.request_parse_if_stale();
     }

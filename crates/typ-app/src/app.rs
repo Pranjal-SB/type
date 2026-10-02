@@ -56,6 +56,12 @@ pub struct App {
     resizing: bool,
     /// The rule a held mouse button is dragging, if one is.
     dragging: Option<crate::pane::SplitPath>,
+    /// The one watch on the whole workspace, once `set_event_sender` has
+    /// started it. See `background::start_workspace_watch`.
+    workspace: Option<Workspace>,
+    /// How many OS watches the app has started: the workspace's and each
+    /// per-file one. What a test counts to show a tab switch starts none.
+    watches_started: usize,
     /// A pane close was refused because a tab in it held unsaved work, and
     /// which pane. Closing the same pane again goes through; anything else in
     /// between abandons it, as `close_pending` does for a tab.
@@ -168,6 +174,20 @@ pub struct App {
     teaching: Option<(String, std::time::Instant)>,
 }
 
+/// The workspace watch, from the render thread's side.
+///
+/// The watch itself lives on its own thread, which builds it (a recursive
+/// watch walks the tree on some platforms) and holds it until `alive` drops
+/// with the app. `ready` brings back the ignore rules once the watch is armed:
+/// until then nothing counts as covered and an opened file gets its own watch,
+/// which is redundant at worst.
+struct Workspace {
+    _alive: std::sync::mpsc::Sender<()>,
+    ready: std::sync::mpsc::Receiver<Option<typ_find::Ignore>>,
+    /// The rules events are filtered by, `None` until `ready` says.
+    ignore: Option<typ_find::Ignore>,
+}
+
 /// One region of the editor area and the files open in it.
 struct Pane {
     id: crate::pane::PaneId,
@@ -236,10 +256,12 @@ struct Tab {
     /// jobs down to the newest: the newest request is always the one that runs
     /// and always arrives. Anything else was mid-parse when the buffer changed.
     awaited_generation: Option<u64>,
-    /// The watch on this tab's file. **One per tab, not one for the active
-    /// tab:** a single watch that followed the active tab never heard about a
-    /// write to any other open file, and switching back showed it stale. Gap
-    /// 85. Dropped with the tab, which is what stops the watching.
+    /// This tab's own watch, for a file the workspace watch does not report:
+    /// outside the root, or ignored by the walk's rules. `None` for the rest,
+    /// which the one workspace watch covers. Never a watch that follows the
+    /// active tab: that one never heard about a write to any other open file,
+    /// and switching back showed it stale (gap 85). Dropped with the tab,
+    /// which is what stops the watching.
     watch: Option<typ_buffer::FileWatch>,
     /// The file changed on disk while this tab held unsaved work and was not
     /// on screen. Said on arrival, because a status written while the user was
@@ -287,6 +309,8 @@ impl App {
             screen: ratatui::layout::Rect::new(0, 0, 80, 24),
             resizing: false,
             dragging: None,
+            workspace: None,
+            watches_started: 0,
             close_pane_pending: None,
             registry: Registry::with_builtins(),
             keymap: Keymap::default_bindings(),
@@ -351,6 +375,7 @@ impl App {
         self.parse_worker = Some(ParseWorker::spawn(sender.clone()));
         self.find_worker = Some(FindWorker::spawn(sender.clone()));
         self.lsp.set_sender(sender.clone());
+        self.start_workspace_watch(sender.clone());
         self.sender = Some(sender);
         for pane in 0..self.panes.len() {
             for index in 0..self.panes[pane].tabs.len() {

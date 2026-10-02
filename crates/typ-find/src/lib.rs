@@ -6,11 +6,13 @@
 //! must not depend on `typ-core` — not even in dev-dependencies, where the
 //! cycle surfaces as a publish-order failure rather than a build failure.
 
+mod ignored;
 mod rank;
 mod search;
 mod walk;
 mod worker;
 
+pub use ignored::Ignore;
 pub use rank::{FileHit, rank};
 pub use search::{LineHit, Search, search};
 pub use walk::walk;
