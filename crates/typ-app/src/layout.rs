@@ -1,10 +1,5 @@
 use ratatui::layout::Rect;
 
-/// Preferred sidebar width in columns.
-const SIDEBAR_WIDTH: u16 = 30;
-/// Below this total width the sidebar takes a share instead of a fixed size.
-const NARROW_THRESHOLD: u16 = 60;
-
 /// Split the frame into `(body, status_bar)`.
 ///
 /// The status bar is one row and is never optional: it is where the editor asks
@@ -32,7 +27,7 @@ pub fn split_menu(body: Rect, height: u16) -> (Rect, Rect) {
 ///
 /// Clamped rather than assumed to fit. A `Rect` wider than the buffer it is
 /// drawn into panics on the first write, and the terminal really does get this
-/// small — `split` already degrades the sidebar under 60 columns, so a picker
+/// small: the dock already degrades under 60 columns, so a picker
 /// asking for 60 is asking for more than the whole frame on a narrow terminal.
 ///
 /// Integer division puts the remainder at the bottom-right, which is the same
@@ -145,47 +140,4 @@ pub fn split_tabs(pane: Rect) -> (Rect, Rect) {
     let bar = Rect::new(pane.x, pane.y, pane.width, 1);
     let rest = Rect::new(pane.x, pane.y + 1, pane.width, pane.height - 1);
     (bar, rest)
-}
-
-/// The regions of the body, left to right.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Body {
-    /// The tree's heading, a labelled rule along the sidebar's top row.
-    pub heading: Rect,
-    /// The tree's list, under its heading.
-    pub tree: Rect,
-    /// The one column between the sidebar and the editor.
-    pub rule: Rect,
-    /// Everything right of the rule: the editor's tab row and its text.
-    pub editor: Rect,
-}
-
-/// Split the body into the sidebar, its rule and the editor.
-///
-/// A fixed sidebar matches what people arriving from GUI editors expect. On
-/// narrow terminals a fixed 30 columns would leave nothing for the editor, so
-/// it degrades to a third of the width. The width counts the rule: the sidebar
-/// and the line beside it together take what the boxed sidebar took, and the
-/// editor gains the column its own box used to spend.
-pub fn split(area: Rect) -> Body {
-    let sidebar = if area.width < NARROW_THRESHOLD {
-        (area.width / 3).max(1)
-    } else {
-        SIDEBAR_WIDTH
-    }
-    .min(area.width);
-    let list = sidebar.saturating_sub(1);
-    let column = Rect::new(area.x, area.y, list, area.height);
-    let heading_rows = area.height.min(1);
-    Body {
-        heading: Rect::new(column.x, column.y, column.width, heading_rows),
-        tree: Rect::new(
-            column.x,
-            column.y + heading_rows,
-            column.width,
-            column.height - heading_rows,
-        ),
-        rule: Rect::new(area.x + list, area.y, sidebar - list, area.height),
-        editor: Rect::new(area.x + sidebar, area.y, area.width - sidebar, area.height),
-    }
 }

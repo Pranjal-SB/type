@@ -85,8 +85,7 @@ impl App {
 
     /// The editor region of `frame`.
     fn editor_region(&self, frame: Rect) -> Rect {
-        let (body, _) = self.split_body(frame);
-        crate::layout::split(body).editor
+        self.regions(frame).rest
     }
 
     /// Split the current pane, the new one on the second side of `axis`.

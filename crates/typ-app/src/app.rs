@@ -35,6 +35,8 @@ pub enum Focus {
 
 pub struct App {
     tree: TreePanel,
+    /// Where the tree is, and in what posture.
+    dock: crate::dock::Dock,
     /// Every pane, in no particular order: `layout` says where each one is.
     /// **Never empty**, for the reason a pane's `tabs` never is.
     panes: Vec<Pane>,
@@ -349,6 +351,7 @@ impl App {
     pub fn new(root: &Path) -> Result<Self> {
         Ok(Self {
             tree: TreePanel::new(root)?,
+            dock: crate::dock::Dock::left(),
             panes: vec![Pane::new(crate::pane::PaneId(0))],
             pane: 0,
             layout: crate::pane::Layout::Leaf(crate::pane::PaneId(0)),

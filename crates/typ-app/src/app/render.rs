@@ -22,9 +22,9 @@ use crate::pane::Axis;
 impl App {
     pub fn render(&mut self, frame: &mut ratatui::Frame) {
         let (_, status_area) = crate::layout::split_frame(frame.area());
-        let (body, menu_area) = self.split_body(frame.area());
-        let regions = crate::layout::split(body);
-        let tree_area = regions.tree;
+        let (_, menu_area) = self.split_body(frame.area());
+        let regions = self.regions(frame.area());
+        let tree_area = regions.content;
         let (w, h) = (frame.area().width, frame.area().height);
 
         let tree_ctx = RenderContext {
@@ -51,11 +51,11 @@ impl App {
         typ_core::chrome::rule(regions.rule, frame.buffer_mut(), &self.theme, self.theme.bg);
 
         self.screen = frame.area();
-        let panes = self.pane_areas(regions.editor);
+        let panes = self.pane_areas(regions.rest);
         for (number, area) in panes.iter().enumerate() {
             self.render_pane(number + 1, area, frame.buffer_mut(), (w, h));
         }
-        for (axis, rule) in self.layout.rules(regions.editor) {
+        for (axis, rule) in self.layout.rules(regions.rest) {
             let buf = frame.buffer_mut();
             match axis {
                 Axis::Columns => typ_core::chrome::rule(rule, buf, &self.theme, self.theme.bg),
@@ -189,9 +189,17 @@ impl App {
     ///
     /// With panes, "the editor" is the current pane's text.
     pub fn areas(&self, area: Rect) -> (Rect, Rect) {
-        let (body, _) = self.split_body(area);
-        let regions = crate::layout::split(body);
-        (regions.tree, self.current_pane_area(regions.editor).content)
+        let regions = self.regions(area);
+        (
+            regions.content,
+            self.current_pane_area(regions.rest).content,
+        )
+    }
+
+    /// The dock's regions and the panes' area in `frame`: the one place the
+    /// body is divided, for render and every hit-test.
+    pub(crate) fn regions(&self, frame: Rect) -> crate::dock::DockAreas {
+        self.dock.areas(self.split_body(frame).0)
     }
 
     /// One pane: the visible tab's text, then its tab row over the top, led by

@@ -1,0 +1,82 @@
+//! A dock: a region against one edge of the body, headed by a labelled rule
+//! and divided from the panes by a plain one (interface §2).
+//!
+//! Geometry and posture only. What the left dock shows is the tree, which the
+//! app holds; this says where it goes, and render and hit-testing both ask
+//! [`Dock::areas`], so a click lands on the cell that was painted there.
+
+use ratatui::layout::Rect;
+use typ_core::Edge;
+
+/// Preferred dock width in columns, its rule included: what the boxed sidebar
+/// took before M4.
+pub const DOCK_SIZE: u16 = 30;
+/// Below this body width the dock takes a third instead of its size.
+const NARROW_THRESHOLD: u16 = 60;
+
+/// One dock's state.
+///
+/// `edge` is data for the docks to come (decision 2 of the M4 plan): only a
+/// left dock exists, and [`Dock::areas`] lays out that one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Dock {
+    pub edge: Edge,
+    /// Columns, rule included, while open.
+    pub size: u16,
+    pub open: bool,
+    pub zoomed: bool,
+}
+
+/// Where a dock and the panes beside it are drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DockAreas {
+    /// The labelled rule along the dock's top row.
+    pub heading: Rect,
+    /// The panel under the heading.
+    pub content: Rect,
+    /// The one column between the dock and the panes.
+    pub rule: Rect,
+    /// Everything else: where the panes go.
+    pub rest: Rect,
+}
+
+impl Dock {
+    /// The left dock as the app starts: open, at its preferred size.
+    pub fn left() -> Self {
+        Dock {
+            edge: Edge::Left,
+            size: DOCK_SIZE,
+            open: true,
+            zoomed: false,
+        }
+    }
+
+    /// Split `body` into the dock's regions and the rest.
+    ///
+    /// On a narrow terminal a fixed width would leave the panes nothing, so the
+    /// dock degrades to a third of the body. The width counts the rule.
+    ///
+    /// ponytail: left edge only; a right or bottom dock mirrors this when its
+    /// first panel lands.
+    pub fn areas(&self, body: Rect) -> DockAreas {
+        let width = if body.width < NARROW_THRESHOLD {
+            (body.width / 3).max(1)
+        } else {
+            self.size
+        }
+        .min(body.width);
+        let list = width.saturating_sub(1);
+        let heading_rows = body.height.min(1);
+        DockAreas {
+            heading: Rect::new(body.x, body.y, list, heading_rows),
+            content: Rect::new(
+                body.x,
+                body.y + heading_rows,
+                list,
+                body.height - heading_rows,
+            ),
+            rule: Rect::new(body.x + list, body.y, width - list, body.height),
+            rest: Rect::new(body.x + width, body.y, body.width - width, body.height),
+        }
+    }
+}
