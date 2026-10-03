@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.4.0, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.4.1, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -63,7 +63,9 @@ name themselves and their exit. `Ctrl+K` opens a menu of everything bound under 
 the keymap, and running a row from it shows the direct chord for two seconds. Regions are
 divided by lines rather than boxed, and the editor area splits into panes you can move between,
 resize by dragging the rule or from the keyboard, and close; one watch covers the whole
-project.
+project. The tree sits in a dock that `Ctrl+B` folds to a one-column rule and brings back, that
+resizes like a pane, and that zooms to the whole screen with any pane. `F6` walks every region,
+the status bar included, and `Esc` walks back the way you came.
 
 Every shipped theme is checked against a contrast rubric at truecolor **and again after
 degradation**, which is the half nobody else checks: quantising moves every colour by a
@@ -179,7 +181,8 @@ cargo build --release
 
 | Key | Action |
 |---|---|
-| `F6` `Shift+F6` | Move focus to the next / previous panel (`Ctrl+Tab` too, where the terminal reports it) |
+| `F6` `Shift+F6` | Move focus to the next / previous region: the dock, each pane, the status bar (`Ctrl+Tab` too, where the terminal reports it) |
+| `Esc` | Outside a pane, with nothing to cancel, back to the region focus came from, up to eight deep |
 | `Ctrl+K` | Open the menu of everything bound under it (below) |
 | `Ctrl+S` | Save |
 | `Ctrl+Q` | Quit |
@@ -212,8 +215,18 @@ has it as "show the ctrl+k menu".
 | `Ctrl+K 1`...`9` | click the pane's number, or anywhere in it | Focus that pane |
 | `Alt+←` `→` `↑` `↓` | click | Focus the pane beside this one |
 | `Ctrl+K =`, then arrows; `=` evens, `Enter` or `Esc` done | drag the rule | Resize |
+| `Ctrl+K Z` | the `◰` at the right of the tab row | Zoom the pane to the whole body, and back |
 
 A file is open in one pane at a time; opening it again goes to the pane that has it.
+
+**The dock**
+
+| Key | Mouse | Action |
+|---|---|---|
+| `Ctrl+B` | click the folded rule | Closed: open and focus it. Open: focus it. Focused: fold it to its rule |
+| | click its heading | Focus it |
+| `Ctrl+K =` with the dock focused, then `←` `→`; `=` resets | drag its rule | Resize, from 12 columns to half the screen |
+| `Ctrl+K Z` with the dock focused | the `◰` in its heading, or double-click the heading | Zoom it to the whole body, and back |
 
 **Tree**
 
@@ -222,7 +235,7 @@ A file is open in one pane at a time; opening it again goes to the pane that has
 | `↑` `↓` | Move the selection |
 | `Enter` | Open a file, or expand/collapse a directory |
 | `→` `←` | Expand / collapse a directory |
-| `Esc` | Back to the editor |
+| `Esc` | Back to where focus came from |
 
 **Editor**
 
@@ -309,7 +322,9 @@ Search is smart-case: a lowercase needle finds everything, one with a capital in
 **The status bar** carries the file name, its type, its line ending, the indent width, the
 cursor count when there is more than one, the position and how far through the file you are.
 Unsaved changes and a cursor count above one are accented, because both are states you can
-forget you are in.
+forget you are in. `F6` reaches the bar: `←` `→` move between the segments that do
+something and `Enter` does it. The position opens goto-line and the problem count jumps to the
+next problem (`F8` from anywhere); a click on either does the same.
 
 Keybindings are non-modal, and will stay usable that way. Every binding is a row in a table
 rather than a branch in a match, so rebinding is configuration. A vim layer (modes, counts,
@@ -375,8 +390,8 @@ for now.
 | v0.3.1 | - | Audit: 80 defects found and 73 fixed, including two that lost unsaved work | shipped |
 | v0.3.2 | M3.2 | Shell, slice 1: rules at 3:1, focus by receding, the picker and hover as floats | shipped |
 | v0.3.3 | M3.3 | Shell, slice 2: the `Ctrl+K` menu, sequence bindings, a focus stack | shipped |
-| v0.4.0 | M4 | Panes: rules not boxes, the layout tree, splits, pane focus and resize, one workspace watcher | **current** |
-| v0.4.1 | M4.1 | Docks: the left dock and its labelled rule, `Ctrl+B`, postures, `F6` over every region | next |
+| v0.4.0 | M4 | Panes: rules not boxes, the layout tree, splits, pane focus and resize, one workspace watcher | shipped |
+| v0.4.1 | M4.1 | Docks: the left dock, `Ctrl+B` and folding, dock resize, zoom, `F6` over every region and the status bar, a deeper focus stack | **current** |
 | v0.4.2 | M4.2 | Layouts: presets, adapt to width, sessions | next |
 | v0.5.0 | M5 | Terminal panel and git integration | |
 | v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |
