@@ -5,9 +5,9 @@
 //! nothing to do with editor state — it reads `App` and writes cells.
 //!
 //! `SEGMENT_GAP` stays in `app.rs` because the status *strings* are built there
-//! too, and a constant shared by two modules belongs to neither exclusively. A
-//! child module can read its parent's private items, which is what makes that
-//! work without widening anything.
+//! and drawn in `status_bar`, and a constant shared by two modules belongs to
+//! neither exclusively. A child module can read its parent's private items,
+//! which is what makes that work without widening anything.
 
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -17,7 +17,7 @@ use typ_core::{Panel, RenderContext};
 
 use crate::app::docking::Zoom;
 use crate::app::panes::PaneArea;
-use crate::app::{App, Focus, SEGMENT_GAP};
+use crate::app::{App, Focus};
 use crate::pane::Axis;
 
 impl App {
@@ -104,61 +104,23 @@ impl App {
         let focused_area = match self.focus {
             Focus::Tree => tree_area,
             Focus::Editor => editor_area,
+            Focus::Status => {
+                if let Some(at) = self.status_cursor(status_area) {
+                    frame.set_cursor_position(at);
+                }
+                return;
+            }
         };
         if let Some((x, y)) = self.focused().cursor_position(focused_area) {
             frame.set_cursor_position((x, y));
         }
     }
 
-    fn render_status(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-        let background = Style::default()
-            .fg(self.theme.status_bar_fg)
-            .bg(self.theme.status_bar_bg);
-        let left = self.status_left();
-        let right_segments = self.status_segments();
-        // Measured in cells, not chars. A CJK file name is one char and two
-        // cells per character, and counting chars pushed the right half's
-        // tail off the end of the bar. Gap 105.
-        let right_width: usize = right_segments
-            .iter()
-            .map(|s| typ_buffer::display_width(&s.text))
-            .sum::<usize>()
-            + SEGMENT_GAP.len() * right_segments.len().saturating_sub(1);
-
-        // The right half is the fixed cost; the left is truncated to whatever
-        // is left over, so a long message never pushes the position off-screen.
-        let width = area.width as usize;
-        let room = width.saturating_sub(right_width + 2);
-        let left = clip_to_cells(&left, room);
-        let gap = width.saturating_sub(typ_buffer::display_width(&left) + right_width);
-
-        // Each segment carries its own emphasis. This is where
-        // `status_bar_inactive_fg` and `status_bar_accent` earn their place:
-        // without them the bar is one weight of text and a reader has to parse
-        // it rather than glance at it.
-        let mut spans = vec![
-            Span::styled(left, background),
-            Span::styled(" ".repeat(gap), background),
-        ];
-        for (index, segment) in right_segments.iter().enumerate() {
-            if index > 0 {
-                spans.push(Span::styled(SEGMENT_GAP, background));
-            }
-            spans.push(Span::styled(
-                segment.text.clone(),
-                background.fg(segment.emphasis.colour(&self.theme)),
-            ));
-        }
-
-        Paragraph::new(Line::from(spans))
-            .style(background)
-            .render(area, buf);
-    }
-
     pub(super) fn focused(&self) -> &dyn Panel {
         match self.focus {
             Focus::Tree => &self.tree,
-            Focus::Editor => &self.panes[self.pane].shown().panel,
+            // The bar has no panel; see `focused_mut`.
+            Focus::Editor | Focus::Status => &self.panes[self.pane].shown().panel,
         }
     }
 
@@ -257,18 +219,6 @@ impl App {
             );
         }
     }
-}
-
-/// The longest prefix of `text` that fits in `room` cells, whole graphemes only.
-fn clip_to_cells(text: &str, room: usize) -> String {
-    use unicode_segmentation::UnicodeSegmentation;
-    let mut used = 0;
-    text.graphemes(true)
-        .take_while(|g| {
-            used += typ_buffer::display_width(g);
-            used <= room
-        })
-        .collect()
 }
 
 impl App {

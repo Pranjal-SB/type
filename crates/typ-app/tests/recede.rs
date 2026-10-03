@@ -65,7 +65,11 @@ fn the_keyboard_moves_the_recede() {
     assert_eq!(tree, theme.receded_fg, "the unfocused tree did not recede");
     assert_eq!(editor, theme.fg);
 
-    let f6 = AppEvent::Input(Event::Key(KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE)));
+    // Backwards from the one pane is the dock.
+    let f6 = AppEvent::Input(Event::Key(KeyEvent::new(
+        KeyCode::F(6),
+        KeyModifiers::SHIFT,
+    )));
     step(&mut app, f6, FRAME).unwrap();
     assert_eq!(app.focus(), Focus::Tree);
     let (tree, editor) = tree_and_editor_text(&draw(&mut app));

@@ -303,6 +303,8 @@ const DEFAULTS: &[(&str, Action)] = &[
     // non-modal editor in the field uses for this. `gd` belongs to the vim
     // layer, which does not exist.
     ("f12", Action::GotoDefinition),
+    // F8 is next problem in VS Code, and an F-key is Universal tier.
+    ("f8", Action::NextProblem),
     // **Deliberately not a chord anyone expects**, because the one everyone
     // expects is a prefix: VS Code puts hover on `Ctrl+K Ctrl+I`. `Ctrl+K H`
     // is the door's row for it; `Alt+H` is Universal, free, and rebindable,

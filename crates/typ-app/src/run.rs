@@ -519,6 +519,12 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                 // a press: a drag that runs off the bottom is still selecting.
                 // Either side: a zoom leaves one of the two with no rows at all.
                 let bottom = tree_area.bottom().max(editor_area.bottom());
+                // A segment that does something does it, as `enter` on it does.
+                if matches!(m.kind, MouseEventKind::Down(MouseButton::Left))
+                    && app.press_status_at(m.column, m.row, area)?
+                {
+                    return finish(app, events, true);
+                }
                 if matches!(m.kind, MouseEventKind::Down(_)) && m.row >= bottom {
                     return finish(app, events, changed);
                 }

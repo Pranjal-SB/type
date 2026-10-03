@@ -58,9 +58,12 @@ fn f6_cycles_focus() {
     // terminal can always report it.
     let mut app = app_with_file("focus");
     assert_eq!(app.focused_name(), "editor");
-    app.handle_chord(chord(KeyCode::F(6), KeyModifiers::NONE))
-        .unwrap();
-    assert_eq!(app.focused_name(), "tree");
+    // Past the one pane to the status bar, then round to the dock.
+    for expected in ["status bar", "tree"] {
+        app.handle_chord(chord(KeyCode::F(6), KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(app.focused_name(), expected);
+    }
 }
 
 #[test]
@@ -117,7 +120,7 @@ fn a_rebound_key_takes_effect() {
 fn an_action_the_panel_ignores_falls_through_to_the_app() {
     let mut app = app_with_file("fallthrough");
     // The tree has no Undo, so it must not swallow it.
-    app.cycle_focus();
+    app.set_focus(typ_app::Focus::Tree);
     assert_eq!(app.focused_name(), "tree");
     app.handle_chord(chord(KeyCode::Char('z'), KeyModifiers::CONTROL))
         .unwrap();
@@ -180,7 +183,7 @@ fn shift_arrow_extends_a_selection_from_the_keyboard() {
 #[test]
 fn arrow_keys_still_move_the_tree_selection() {
     let mut app = app_with_file("tree-arrows");
-    app.cycle_focus();
+    app.set_focus(typ_app::Focus::Tree);
     assert_eq!(app.focused_name(), "tree");
     let before = app.tree_mut().selected().map(|p| p.to_path_buf());
     app.handle_chord(chord(KeyCode::Down, KeyModifiers::NONE))

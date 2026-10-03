@@ -73,10 +73,11 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             run(app, a);
             assert!(app.should_quit(), "the confirming quit did not quit");
         },
+        // One pane, so past it to the status bar.
         Action::FocusNext => |app, a| {
             assert_eq!(app.focus(), Focus::Editor);
             run(app, a);
-            assert_eq!(app.focus(), Focus::Tree);
+            assert_eq!(app.focus(), Focus::Status);
         },
         Action::FocusPrevious => |app, a| {
             assert_eq!(app.focus(), Focus::Editor);
@@ -188,6 +189,11 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             run(app, a);
             assert!(!app.dock_open(), "the focused dock did not fold");
             assert_eq!(app.focus(), Focus::Editor);
+        },
+        // No server, no problems, and it has to say so.
+        Action::NextProblem => |app, a| {
+            run(app, a);
+            assert!(app.status().is_some(), "{} said nothing", a.name());
         },
         Action::Zoom => |app, a| {
             run(app, a);

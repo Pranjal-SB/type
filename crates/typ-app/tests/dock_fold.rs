@@ -164,6 +164,6 @@ fn f6_does_not_land_on_a_folded_dock() {
             FRAME,
         )
         .unwrap();
-        assert_eq!(app.focus(), Focus::Editor);
+        assert_ne!(app.focus(), Focus::Tree);
     }
 }

@@ -4,6 +4,7 @@ mod background;
 mod dispatch;
 mod docking;
 mod door;
+mod focus;
 pub(crate) mod panes;
 mod picker;
 mod render;
@@ -12,6 +13,8 @@ mod render;
 /// the extraction is meant to shorten this file, not to open it up.
 mod search;
 mod servers;
+/// The status bar as a region: its layout, its focus and its clicks.
+mod status_bar;
 mod tabs;
 
 use anyhow::Result;
@@ -32,6 +35,9 @@ use crate::status::{Segment, StatusFacts, segments};
 pub enum Focus {
     Tree,
     Editor,
+    /// The status bar, a segment at a time (interface §4). `App.pane` still
+    /// names the pane its segments describe.
+    Status,
 }
 
 pub struct App {
@@ -46,6 +52,8 @@ pub struct App {
     /// Every pane, in no particular order: `layout` says where each one is.
     /// **Never empty**, for the reason a pane's `tabs` never is.
     panes: Vec<Pane>,
+    /// The status segment that has the keys while `focus` is `Status`.
+    segment: crate::status::SegmentId,
     /// Index into `panes` of the current pane: the one focus goes back to, and
     /// where the tree opens a file. Always valid.
     pane: usize,
@@ -295,10 +303,6 @@ impl Tab {
 /// M6, and whitespace has neither.
 const SEGMENT_GAP: &str = "  ";
 
-/// The order `f6` walks. Fixed, so a screen-reader user can learn it
-/// (interface §5); docks and the status bar join it when they exist.
-const FOCUS_ORDER: [Focus; 2] = [Focus::Tree, Focus::Editor];
-
 /// What the status bar says while resize mode is on.
 const RESIZE_HINT: &str = "Resize: arrows move the rule  ·  = evens it  ·  Enter or Esc done";
 
@@ -359,6 +363,7 @@ impl App {
             tree: TreePanel::new(root)?,
             dock: crate::dock::Dock::left(),
             zoomed_pane: None,
+            segment: crate::status::SegmentId::Position,
             heading_pressed: None,
             panes: vec![Pane::new(crate::pane::PaneId(0))],
             pane: 0,
@@ -582,55 +587,12 @@ impl App {
         match self.focus {
             Focus::Tree => self.tree.name(),
             Focus::Editor => self.panes[self.pane].shown().panel.name(),
+            Focus::Status => "status bar",
         }
     }
 
     pub fn editor_title(&self) -> String {
         self.panes[self.pane].shown().panel.title()
-    }
-
-    /// The next region in `FOCUS_ORDER`, wrapping.
-    pub fn cycle_focus(&mut self) {
-        self.step_focus(1);
-    }
-
-    fn step_focus(&mut self, delta: isize) {
-        // A folded dock holds no focus, so the walk steps over it.
-        let order: Vec<Focus> = FOCUS_ORDER
-            .into_iter()
-            .filter(|f| *f != Focus::Tree || self.dock.open)
-            .collect();
-        let at = order.iter().position(|f| *f == self.focus).unwrap_or(0);
-        let next = (at as isize + delta).rem_euclid(order.len() as isize);
-        self.set_focus(order[next as usize]);
-    }
-
-    /// Move focus, remembering where it came from.
-    pub fn set_focus(&mut self, focus: Focus) {
-        if focus != self.focus {
-            // A zoom belongs to the region it was asked from, and ends
-            // when the keys leave it.
-            self.dock.zoomed = false;
-            self.zoomed_pane = None;
-            self.came_from = Some(self.focus);
-            self.focus = focus;
-        }
-    }
-
-    /// `esc` with nothing of the panel's own to cancel: back to where focus
-    /// came from. The editor is home, so `esc` there never moves focus: it is
-    /// the pane every other one returns to (interface §5, "back to the
-    /// editor"). Returns whether focus moved.
-    fn focus_back(&mut self) -> bool {
-        if self.focus == Focus::Editor || self.focused().captures_escape() {
-            return false;
-        }
-        let back = self
-            .came_from
-            .filter(|f| *f != self.focus)
-            .unwrap_or(Focus::Editor);
-        self.set_focus(back);
-        true
     }
 
     pub fn keymap(&self) -> &Keymap {
@@ -722,7 +684,9 @@ impl App {
     pub fn focused_mut(&mut self) -> &mut dyn Panel {
         match self.focus {
             Focus::Tree => &mut self.tree,
-            Focus::Editor => &mut self.panes[self.pane].shown_mut().panel,
+            // The bar has no panel of its own; `dispatch` keeps keys from
+            // reaching the one behind it.
+            Focus::Editor | Focus::Status => &mut self.panes[self.pane].shown_mut().panel,
         }
     }
 

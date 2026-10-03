@@ -21,10 +21,12 @@ fn a_new_app_focuses_the_tree() {
 }
 
 #[test]
-fn cycling_focus_moves_to_the_editor_and_back() {
+fn cycling_focus_moves_to_the_editor_the_status_bar_and_back() {
     let mut app = App::new(&fixture("cycle")).unwrap();
     app.cycle_focus();
     assert_eq!(app.focused_name(), "editor");
+    app.cycle_focus();
+    assert_eq!(app.focused_name(), "status bar");
     app.cycle_focus();
     assert_eq!(app.focused_name(), "tree");
 }

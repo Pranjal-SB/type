@@ -63,6 +63,26 @@ impl Emphasis {
     }
 }
 
+impl SegmentId {
+    /// What `enter` on the segment does, or a click on it. `None` for the
+    /// segments that only say something; the bar's keys skip those.
+    pub fn action(self) -> Option<typ_core::Action> {
+        use typ_core::Action;
+        match self {
+            SegmentId::Position => Some(Action::GotoLine),
+            SegmentId::Diagnostics => Some(Action::NextProblem),
+            SegmentId::Zoom => Some(Action::Zoom),
+            SegmentId::FileName
+            | SegmentId::FileType
+            | SegmentId::LineEnding
+            | SegmentId::Indent
+            | SegmentId::Progress
+            | SegmentId::Selections
+            | SegmentId::Percentage => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Segment {
     pub id: SegmentId,

@@ -147,6 +147,9 @@ pub enum Action {
     GotoDefinition,
     /// Show what the server knows about the thing under the cursor.
     Hover,
+    /// Put the cursor on the next problem a server reported in this file,
+    /// wrapping to the first.
+    NextProblem,
     /// Start every stopped language server again.
     ///
     /// The other half of a crash-loop guard: something has to be able to say
@@ -437,6 +440,7 @@ impl Action {
         Action::Outdent,
         Action::GotoDefinition,
         Action::Hover,
+        Action::NextProblem,
         Action::RestartLanguageServers,
         Action::OpenMenu,
     ];
@@ -531,6 +535,7 @@ impl Action {
                 .unwrap_or("focus_pane"),
             Action::GotoDefinition => "goto_definition",
             Action::Hover => "hover",
+            Action::NextProblem => "next_problem",
             Action::RestartLanguageServers => "restart_language_servers",
             Action::OpenMenu => "open_menu",
             Action::GoToTab(n) => GO_TO_TAB_NAMES
@@ -656,6 +661,7 @@ impl Action {
             Action::Outdent => "outdent the selected lines",
             Action::GotoDefinition => "go to the definition",
             Action::Hover => "describe what is under the cursor",
+            Action::NextProblem => "go to the next problem",
             Action::RestartLanguageServers => "restart the language servers",
             Action::OpenMenu => "show the ctrl+k menu",
         }
@@ -701,7 +707,10 @@ impl Action {
             | Action::FocusPane(_)
             | Action::FocusNeighbour(_)
             | Action::ResizePanes => Group::Panes,
-            Action::GotoDefinition | Action::Hover | Action::RestartLanguageServers => Group::Code,
+            Action::GotoDefinition
+            | Action::Hover
+            | Action::NextProblem
+            | Action::RestartLanguageServers => Group::Code,
             Action::Quit | Action::OpenCommandPalette | Action::OpenMenu => Group::App,
         }
     }

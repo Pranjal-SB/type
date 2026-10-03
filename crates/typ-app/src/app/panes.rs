@@ -163,7 +163,7 @@ impl App {
     }
 
     /// Make the pane at `index` in `panes` the one with the keys.
-    fn make_current(&mut self, index: usize) {
+    pub(super) fn make_current(&mut self, index: usize) {
         self.pane = index;
         if self.zoomed_pane != Some(self.panes[index].id) {
             self.zoomed_pane = None;

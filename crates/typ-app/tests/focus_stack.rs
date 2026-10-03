@@ -47,7 +47,8 @@ fn esc_in_the_tree_goes_back_to_the_editor_with_its_selection() {
     select_all(&mut app);
     let selected: Vec<_> = app.editor().selections().iter().copied().collect();
 
-    press(&mut app, KeyCode::F(6), KeyModifiers::NONE);
+    // Backwards from the one pane is the dock.
+    press(&mut app, KeyCode::F(6), KeyModifiers::SHIFT);
     assert_eq!(app.focus(), Focus::Tree);
     esc(&mut app);
 
@@ -90,6 +91,8 @@ fn shift_f6_goes_the_other_way_round() {
     let mut app = app("previous");
     press(&mut app, KeyCode::F(6), KeyModifiers::SHIFT);
     assert_eq!(app.focus(), Focus::Tree);
+    press(&mut app, KeyCode::F(6), KeyModifiers::SHIFT);
+    assert_eq!(app.focus(), Focus::Status, "the walk wraps to the bar");
     press(&mut app, KeyCode::F(6), KeyModifiers::SHIFT);
     assert_eq!(app.focus(), Focus::Editor);
 }
