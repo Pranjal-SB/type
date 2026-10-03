@@ -180,3 +180,33 @@ fn the_idle_hint_names_the_chord_bound_to_focus_next() {
     let hint = app.status_left();
     assert!(hint.starts_with("F8 focus"), "hint: {hint}");
 }
+
+/// The idle hint gives up whole parts when the bar is narrow. Clipping by cells
+/// left `Ctrl+S save  ·  ` at 80 columns: a separator leading to nothing, or a
+/// chord cut from what it does.
+#[test]
+fn a_narrow_bar_drops_whole_parts_of_the_hint() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    let dir = fixture("hint-parts");
+    let mut app = App::new(&dir).unwrap();
+    app.open_path(&dir.join("hello.rs")).unwrap();
+    let full = app.status_left();
+    for width in 45..=120u16 {
+        let mut terminal = Terminal::new(TestBackend::new(width, 6)).unwrap();
+        terminal.draw(|frame| app.render(frame)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let row: String = (0..width).map(|x| buffer[(x, 5)].symbol()).collect();
+        let right = app.status_right();
+        let left: String = row.chars().take(width as usize - right.len()).collect();
+        let left = left.trim_end();
+        assert!(!left.ends_with('\u{b7}'), "{width} columns: {row:?}");
+        assert!(
+            full.starts_with(left)
+                && (left.is_empty()
+                    || full.len() == left.len()
+                    || full[left.len()..].starts_with("  \u{b7}  ")),
+            "{width} columns cut a part: {row:?}"
+        );
+    }
+}

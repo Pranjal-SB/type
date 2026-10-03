@@ -448,6 +448,13 @@ fn chrome_text_has_to_read_on_chrome_bg() {
             },
         ),
         (
+            "border_focused on chrome_bg",
+            ThemeColors {
+                border_focused: theme.chrome_bg,
+                ..theme
+            },
+        ),
+        (
             "status_bar_inactive_fg on chrome_bg",
             ThemeColors {
                 status_bar_inactive_fg: theme.border,

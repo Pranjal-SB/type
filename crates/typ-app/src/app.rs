@@ -312,7 +312,10 @@ const RESIZE_HINT: &str = "Resize: arrows move the rule  ·  = evens it  ·  Ent
 /// Each chord is read from the keymap, so a rebind moves the hint with it. It
 /// said `Tab focus` from M1 until long after Tab became indent, because it was
 /// written down. `Enter open` stays written: it is the tree's raw key.
-fn hint(keymap: &Keymap) -> String {
+///
+/// In parts, because a narrow bar drops whole ones: clipped by cells it ended
+/// on a separator leading nowhere, or on a chord cut from what it does.
+fn hint_parts(keymap: &Keymap) -> Vec<String> {
     let label = |action, what| chord_label(keymap, action).map(|chord| format!("{chord} {what}"));
     [
         label(Action::FocusNext, "focus"),
@@ -322,9 +325,11 @@ fn hint(keymap: &Keymap) -> String {
     ]
     .into_iter()
     .flatten()
-    .collect::<Vec<_>>()
-    .join("  ·  ")
+    .collect()
 }
+
+/// Between the hint's parts.
+const HINT_GAP: &str = "  ·  ";
 
 /// The chord to show for `action`, spelled the way a key cap is: `F6`,
 /// `Ctrl+S`. Of several, the one with fewest modifiers, then the shortest:
@@ -455,28 +460,31 @@ impl App {
 
     /// Left half of the status bar: whatever needs saying, else the hint.
     pub fn status_left(&self) -> String {
+        self.status_message()
+            .unwrap_or_else(|| hint_parts(&self.keymap).join(HINT_GAP))
+    }
+
+    /// Whatever needs saying on the left of the bar, if anything does.
+    fn status_message(&self) -> Option<String> {
         // The prompt outranks any message: while it is open it is the only
         // thing the user is looking at.
         // A message beside it is about the prompt (a rejected answer) and
         // is shown after the input rather than written somewhere nothing
         // draws. Gap 126.
         if let Some(prompt) = &self.prompt {
-            return match &self.status {
+            return Some(match &self.status {
                 Some(message) => format!("{} {}  {message}", prompt.label(), prompt.input()),
                 None => format!("{} {}", prompt.label(), prompt.input()),
-            };
+            });
         }
         // The mode owns the arrows, so it says so for as long as it is on.
         if self.resizing {
-            return RESIZE_HINT.to_string();
+            return Some(RESIZE_HINT.to_string());
         }
         if let Some(message) = &self.status {
-            return message.clone();
+            return Some(message.clone());
         }
-        match &self.teaching {
-            Some((line, _)) => line.clone(),
-            None => hint(&self.keymap),
-        }
+        self.teaching.as_ref().map(|(line, _)| line.clone())
     }
 
     /// Right half: what is open, what state it is in, and where the cursor is.

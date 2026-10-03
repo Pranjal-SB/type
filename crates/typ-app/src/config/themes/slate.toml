@@ -82,7 +82,7 @@ bracket_match_bg = "amber_deep"
 chrome_bg = "base02"
 
 border = "base03"
-border_focused = "accent"
+border_focused = "accent_bright"  # accent is 6.29 on base02, under the 6.5 for the focused label
 float_border = "accent"
 scrim = "scrim"
 

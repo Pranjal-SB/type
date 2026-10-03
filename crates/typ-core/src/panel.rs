@@ -210,7 +210,7 @@ impl Default for ThemeColors {
             chrome_bg: p::BASE_02,
 
             border: p::BASE_03,
-            border_focused: p::ACCENT,
+            border_focused: p::ACCENT_BRIGHT,
             float_border: p::ACCENT,
             scrim: p::SCRIM,
 
