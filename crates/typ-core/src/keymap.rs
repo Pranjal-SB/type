@@ -330,6 +330,8 @@ const DEFAULTS: &[(&str, Action)] = &[
     // Zoom, `ctrl+k z` beside the other layout rows: VS Code's maximise is
     // a chord no terminal is sure to deliver.
     ("ctrl+k z", Action::Zoom),
+    // Layout, `ctrl+k l` (interface §7).
+    ("ctrl+k l", Action::CycleLayout),
     ("ctrl+k 1", Action::FocusPane(1)),
     ("ctrl+k 2", Action::FocusPane(2)),
     ("ctrl+k 3", Action::FocusPane(3)),

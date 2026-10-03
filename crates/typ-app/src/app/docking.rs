@@ -106,6 +106,30 @@ impl App {
 }
 
 impl App {
+    /// The layout preset in force.
+    pub fn preset(&self) -> crate::dock::Preset {
+        self.preset
+    }
+
+    /// Put the layout in `preset`: Focus folds the dock, Standard opens it
+    /// without taking focus, so starting in it leaves the keys where they are.
+    pub fn set_preset(&mut self, preset: crate::dock::Preset) {
+        self.preset = preset;
+        match preset {
+            crate::dock::Preset::Standard => self.dock.open = true,
+            crate::dock::Preset::Focus if self.dock.open => self.fold_dock(),
+            crate::dock::Preset::Focus => {}
+        }
+        self.mark_dirty();
+    }
+
+    /// `ctrl+k l`, `>layout` and the `▣` segment: the next preset.
+    pub(super) fn cycle_layout(&mut self) {
+        self.set_preset(self.preset.next());
+    }
+}
+
+impl App {
     /// A key in resize mode with the dock focused: left and right move its
     /// rule, `=` puts it back at its size, `enter` and `esc` leave. Returns
     /// whether the mode took the key, as `handle_resize_chord` does.

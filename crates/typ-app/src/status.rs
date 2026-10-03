@@ -35,6 +35,8 @@ pub enum SegmentId {
     Percentage,
     /// A region is zoomed to the whole body.
     Zoom,
+    /// The layout preset, `▣ focus`.
+    Layout,
 }
 
 /// How loudly a segment is drawn.
@@ -72,6 +74,7 @@ impl SegmentId {
             SegmentId::Position => Some(Action::GotoLine),
             SegmentId::Diagnostics => Some(Action::NextProblem),
             SegmentId::Zoom => Some(Action::Zoom),
+            SegmentId::Layout => Some(Action::CycleLayout),
             SegmentId::FileName
             | SegmentId::FileType
             | SegmentId::LineEnding
@@ -117,6 +120,8 @@ pub struct StatusFacts<'a> {
     pub progress: &'a [&'a str],
     /// A region has the whole body, and the others are hidden.
     pub zoomed: bool,
+    /// The layout preset's name.
+    pub layout: &'a str,
 }
 
 /// The right-hand segments, in order.
@@ -241,6 +246,14 @@ pub fn segments(facts: &StatusFacts) -> Vec<Segment> {
     out.push(Segment {
         id: SegmentId::Percentage,
         text: format!("{}%", percentage(facts.line, facts.total_lines)),
+        emphasis: Emphasis::Quiet,
+    });
+
+    // Last, at the bar's far end, where a layout control sits in the editors
+    // that have one. Quiet: it is a setting, not news.
+    out.push(Segment {
+        id: SegmentId::Layout,
+        text: format!("\u{25a3} {}", facts.layout),
         emphasis: Emphasis::Quiet,
     });
 

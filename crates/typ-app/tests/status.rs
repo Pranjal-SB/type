@@ -115,7 +115,10 @@ fn the_status_bar_reports_the_cursor_position_one_based() {
     // in, and where the cursor sits. Asserted whole rather than by substring —
     // the order is a design decision and a substring check would not notice it
     // changing.
-    assert_eq!(app.status_right(), "hello.rs  rs  LF  Spaces: 4  1:2  50%");
+    assert_eq!(
+        app.status_right(),
+        "hello.rs  rs  LF  Spaces: 4  1:2  50%  ▣ standard"
+    );
 }
 
 #[test]
@@ -197,8 +200,12 @@ fn a_narrow_bar_drops_whole_parts_of_the_hint() {
         terminal.draw(|frame| app.render(frame)).unwrap();
         let buffer = terminal.backend().buffer();
         let row: String = (0..width).map(|x| buffer[(x, 5)].symbol()).collect();
-        let right = app.status_right();
-        let left: String = row.chars().take(width as usize - right.len()).collect();
+        // Cells, not bytes: the preset's `▣` is three bytes and one cell.
+        let right = app.status_right().chars().count();
+        let left: String = row
+            .chars()
+            .take((width as usize).saturating_sub(right))
+            .collect();
         let left = left.trim_end();
         assert!(!left.ends_with('\u{b7}'), "{width} columns: {row:?}");
         assert!(

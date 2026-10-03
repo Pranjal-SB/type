@@ -16,6 +16,43 @@ const NARROW_THRESHOLD: u16 = 60;
 /// The narrowest an open dock may be dragged or nudged to, its rule included.
 pub const MIN_DOCK: u16 = 12;
 
+/// A layout preset (interface §7). Presets govern the dock and never panes: a
+/// preset that closed or opened panes would discard the user's split.
+///
+/// Wide waits for a right dock and Review for the review lane, so two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Preset {
+    /// The editor only, the dock folded to its rule.
+    Focus,
+    /// The left dock open beside the panes.
+    #[default]
+    Standard,
+}
+
+impl Preset {
+    /// The name `config.toml` and the status bar use.
+    pub fn name(self) -> &'static str {
+        match self {
+            Preset::Focus => "focus",
+            Preset::Standard => "standard",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        [Preset::Focus, Preset::Standard]
+            .into_iter()
+            .find(|preset| preset.name() == name)
+    }
+
+    /// The one after this, wrapping.
+    pub fn next(self) -> Self {
+        match self {
+            Preset::Focus => Preset::Standard,
+            Preset::Standard => Preset::Focus,
+        }
+    }
+}
+
 /// One dock's state.
 ///
 /// `edge` is data for the docks to come (decision 2 of the M4 plan): only a

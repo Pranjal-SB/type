@@ -21,6 +21,7 @@ fn facts(errors: usize, warnings: usize) -> StatusFacts<'static> {
         errors,
         warnings,
         zoomed: false,
+        layout: "standard",
     }
 }
 

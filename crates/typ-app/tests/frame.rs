@@ -74,7 +74,7 @@ fn the_opening_frame_draws_both_panels_and_the_status_bar() {
         // is the fixed cost, so a message can never shove the position off the
         // end of the bar. Sixty columns is a tight terminal and this is what
         // tight looks like.
-        "F6 focus  ·  Enter open   untitled  LF  Spaces: 4  1:1  100%",
+        "F6 focus      untitled  LF  Spaces: 4  1:1  100%  ▣ standard",
     ];
     assert_eq!(rows, expected);
 
@@ -240,7 +240,7 @@ fn a_long_message_is_truncated_rather_than_shoving_the_position_off_screen() {
     // so this could not see gap 105 by construction. Gap 130.
     assert_eq!(typ_buffer::display_width(status), 60);
     assert!(
-        status.ends_with("main.rs  rs  LF  Spaces: 4  1:1  33%"),
+        status.ends_with("main.rs  rs  LF  Spaces: 4  1:1  33%  ▣ standard"),
         "status was: {status}"
     );
 }
@@ -359,11 +359,12 @@ fn an_open_prompt_takes_over_the_left_of_the_status_bar() {
             .unwrap();
     }
 
-    let terminal = draw(&mut app, 60, 8);
+    // Seventy columns: the `▣` segment took ten, and sixty clipped the query.
+    let terminal = draw(&mut app, 70, 8);
     let rows = rows(&terminal);
     assert!(rows[7].starts_with("Search: main"), "status: {}", rows[7]);
     assert!(
-        rows[7].ends_with("main.rs  rs  LF  Spaces: 4  1:1  33%"),
+        rows[7].ends_with("main.rs  rs  LF  Spaces: 4  1:1  33%  ▣ standard"),
         "status: {}",
         rows[7]
     );

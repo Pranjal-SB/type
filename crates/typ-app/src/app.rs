@@ -44,6 +44,8 @@ pub struct App {
     tree: TreePanel,
     /// Where the tree is, and in what posture.
     dock: crate::dock::Dock,
+    /// The layout preset in force, as the `▣` segment names it.
+    preset: crate::dock::Preset,
     /// The pane `ctrl+k z` zoomed, if one is. In force only while that pane
     /// has the keys; see `docking::zoomed`.
     zoomed_pane: Option<crate::pane::PaneId>,
@@ -367,6 +369,7 @@ impl App {
         Ok(Self {
             tree: TreePanel::new(root)?,
             dock: crate::dock::Dock::left(),
+            preset: crate::dock::Preset::default(),
             zoomed_pane: None,
             segment: crate::status::SegmentId::Position,
             heading_pressed: None,
@@ -521,6 +524,7 @@ impl App {
             warnings: self.count_diagnostics(typ_core::Severity::Warning),
             progress: &self.lsp.progress(),
             zoomed: self.zoomed().is_some(),
+            layout: self.preset.name(),
         })
     }
 

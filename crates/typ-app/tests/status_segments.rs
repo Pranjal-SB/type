@@ -17,6 +17,7 @@ fn facts() -> StatusFacts<'static> {
         col: 0,
         total_lines: 100,
         zoomed: false,
+        layout: "standard",
     }
 }
 

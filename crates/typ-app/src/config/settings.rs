@@ -38,6 +38,8 @@ pub struct Settings {
     /// Never empty: TYPE knows about rust-analyzer and taplo without being
     /// told, and a config file that mentions neither leaves both.
     pub language_servers: Vec<crate::lsp::ServerConfig>,
+    /// The layout preset to start in.
+    pub layout: crate::dock::Preset,
 }
 
 impl Default for Settings {
@@ -48,6 +50,7 @@ impl Default for Settings {
             indent_width: None,
             whitespace: Whitespace::default(),
             language_servers: crate::lsp::config::defaults(),
+            layout: crate::dock::Preset::default(),
         }
     }
 }
@@ -122,6 +125,10 @@ pub fn load_settings(path: Option<&Path>) -> (Settings, Option<String>) {
                 None => complaints.push(format!(
                     "whitespace {value} is not \"none\", \"trailing\", \"selection\" or \"all\""
                 )),
+            },
+            "layout" => match value.as_str().and_then(crate::dock::Preset::from_name) {
+                Some(preset) => settings.layout = preset,
+                None => complaints.push(format!("layout {value} is not \"focus\" or \"standard\"")),
             },
             // Handled below, as a whole: an array of tables is not one value
             // with one answer, and each entry stands or falls on its own.
