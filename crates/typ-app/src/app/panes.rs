@@ -159,11 +159,18 @@ impl App {
             return;
         };
         self.panes.remove(self.pane);
-        self.make_current(self.index_of(next).unwrap_or(0));
+        // Moved before `make_current`, which would otherwise remember the
+        // pane that just closed by an index that now names another.
+        self.pane = self.index_of(next).unwrap_or(0);
+        self.make_current(self.pane);
+        self.forget(crate::app::focus::Place::Pane(id));
     }
 
     /// Make the pane at `index` in `panes` the one with the keys.
     pub(super) fn make_current(&mut self, index: usize) {
+        if self.focus == Focus::Editor && index != self.pane {
+            self.remember();
+        }
         self.pane = index;
         if self.zoomed_pane != Some(self.panes[index].id) {
             self.zoomed_pane = None;
@@ -240,6 +247,9 @@ impl App {
             return false;
         };
         if area.index != self.pane {
+            if self.focus == Focus::Editor {
+                self.remember();
+            }
             self.pane = area.index;
             self.warn_if_changed_on_disk();
             self.mark_dirty();

@@ -4,7 +4,7 @@ mod background;
 mod dispatch;
 mod docking;
 mod door;
-mod focus;
+pub(crate) mod focus;
 pub(crate) mod panes;
 mod picker;
 mod render;
@@ -88,7 +88,7 @@ pub struct App {
     focus: Focus,
     /// Where focus was before it came here, for `esc` to go back to. A stack
     /// one deep, because two panels is as deep as it gets until docks land.
-    came_from: Option<Focus>,
+    came_from: Vec<focus::Place>,
     quit: bool,
     /// Message shown in the status bar until the next keypress.
     status: Option<String>,
@@ -379,7 +379,7 @@ impl App {
             keymap: Keymap::default_bindings(),
             theme: ThemeColors::default(),
             focus: Focus::Tree,
-            came_from: None,
+            came_from: Vec::new(),
             quit: false,
             status: None,
             quit_pending: false,

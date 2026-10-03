@@ -41,12 +41,10 @@ impl App {
     /// the editor when it came from nowhere: a folded dock cannot hold it.
     fn fold_dock(&mut self) {
         self.dock.open = false;
-        if self.focus == Focus::Tree {
-            let back = self
-                .came_from
-                .filter(|f| *f != Focus::Tree)
-                .unwrap_or(Focus::Editor);
-            self.set_focus(back);
+        self.forget(crate::app::focus::Place::Dock);
+        if self.focus == Focus::Tree && !self.go_back() {
+            self.set_focus(Focus::Editor);
+            self.forget(crate::app::focus::Place::Dock);
         }
     }
 

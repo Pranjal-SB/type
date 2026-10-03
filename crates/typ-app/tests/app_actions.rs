@@ -195,6 +195,12 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             run(app, a);
             assert!(app.status().is_some(), "{} said nothing", a.name());
         },
+        // Nothing selected in the editor: `esc` goes back the way focus came.
+        Action::CollapseSelections => |app, a| {
+            app.set_focus(Focus::Tree);
+            run(app, a);
+            assert_eq!(app.focus(), Focus::Editor);
+        },
         Action::Zoom => |app, a| {
             run(app, a);
             assert!(

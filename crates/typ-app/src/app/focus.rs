@@ -8,6 +8,18 @@
 use crate::app::{App, Focus};
 use crate::dock::Dock;
 
+/// A region focus can go back to. A pane by its id: an index stops naming
+/// the same pane once one before it closes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Place {
+    Dock,
+    Pane(crate::pane::PaneId),
+    Status,
+}
+
+/// How far back `esc` remembers.
+const STACK_DEPTH: usize = 8;
+
 /// One stop on the `f6` walk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Region {
@@ -69,33 +81,103 @@ impl App {
             .collect()
     }
 
+    /// Where focus is now, as the way back names it.
+    fn place(&self) -> Place {
+        match self.focus {
+            Focus::Tree => Place::Dock,
+            Focus::Editor => Place::Pane(self.panes[self.pane].id),
+            Focus::Status => Place::Status,
+        }
+    }
+
+    /// Put where focus is now on the way back, unless it is already on top.
+    pub(super) fn remember(&mut self) {
+        let here = self.place();
+        if self.came_from.last() != Some(&here) {
+            self.came_from.push(here);
+        }
+        if self.came_from.len() > STACK_DEPTH {
+            self.came_from.remove(0);
+        }
+    }
+
+    /// Take `place` off the way back: a pane that closed, a dock that folded.
+    pub(super) fn forget(&mut self, place: Place) {
+        self.came_from.retain(|p| *p != place);
+    }
+
     /// Move focus, remembering where it came from.
     pub fn set_focus(&mut self, focus: Focus) {
+        if focus != self.focus {
+            self.remember();
+            self.take_focus(focus);
+        }
+    }
+
+    /// Move focus without remembering: the way back itself.
+    fn take_focus(&mut self, focus: Focus) {
         if focus != self.focus {
             // A zoom belongs to the region it was asked from, and ends
             // when the keys leave it.
             self.dock.zoomed = false;
             self.zoomed_pane = None;
-            self.came_from = Some(self.focus);
             self.focus = focus;
         }
     }
 
-    /// `esc` with nothing of the panel's own to cancel: back to where focus
-    /// came from. The editor is home, so `esc` there never moves focus: it is
-    /// the pane every other one returns to (interface §5, "back to the
-    /// editor"). Returns whether focus moved.
+    /// Go to `place` without remembering where focus was. False when it is
+    /// not there to go to.
+    fn arrive(&mut self, place: Place) -> bool {
+        match place {
+            Place::Dock if !self.dock.open => return false,
+            Place::Dock => self.take_focus(Focus::Tree),
+            Place::Pane(id) => {
+                let Some(index) = self.index_of(id) else {
+                    return false;
+                };
+                if self.zoomed_pane != Some(id) {
+                    self.zoomed_pane = None;
+                }
+                self.pane = index;
+                self.take_focus(Focus::Editor);
+                self.warn_if_changed_on_disk();
+            }
+            Place::Status => {
+                self.take_focus(Focus::Status);
+                self.segment = crate::status::SegmentId::Position;
+            }
+        }
+        self.mark_dirty();
+        true
+    }
+
+    /// Back to the most recent place on the way back that still exists and
+    /// is not here. False when there is none.
+    pub(super) fn go_back(&mut self) -> bool {
+        let here = self.place();
+        while let Some(place) = self.came_from.pop() {
+            if place != here && self.arrive(place) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `esc` with nothing of the region's own to cancel: back the way focus
+    /// came (interface §4, a focus stack), or to the current pane when there
+    /// is no way back. The editor is home, so `esc` in a pane never moves
+    /// focus (§5, "back to the editor"): it is pressed there to clear things,
+    /// and a habit that throws focus into the tree is a habit that types into
+    /// it. Returns whether focus moved.
     pub(super) fn focus_back(&mut self) -> bool {
         if self.focus == Focus::Editor
             || (self.focus != Focus::Status && self.focused().captures_escape())
         {
             return false;
         }
-        let back = self
-            .came_from
-            .filter(|f| *f != self.focus)
-            .unwrap_or(Focus::Editor);
-        self.set_focus(back);
-        true
+        if self.go_back() {
+            return true;
+        }
+        self.arrive(Place::Pane(self.panes[self.pane].id))
     }
 }
