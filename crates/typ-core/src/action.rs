@@ -645,7 +645,7 @@ impl Action {
             Action::FocusNeighbour(Edge::Bottom) => "focus the pane below",
             Action::ResizePanes => "resize panes",
             Action::ToggleLeftDock => "open, focus or fold the left dock",
-            Action::Zoom => "zoom the focused region, or restore it",
+            Action::Zoom => "zoom the focused region",
             Action::FocusPane(n) => FOCUS_PANE_DESCRIPTIONS
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -660,10 +660,21 @@ impl Action {
             Action::Indent => "indent the selected lines",
             Action::Outdent => "outdent the selected lines",
             Action::GotoDefinition => "go to the definition",
-            Action::Hover => "describe what is under the cursor",
+            Action::Hover => "describe the symbol here",
             Action::NextProblem => "go to the next problem",
-            Action::RestartLanguageServers => "restart the language servers",
+            Action::RestartLanguageServers => "restart language servers",
             Action::OpenMenu => "show the ctrl+k menu",
+        }
+    }
+
+    /// For an action that is one of nine numbered siblings, its number and
+    /// what the whole family does. The `ctrl+k` menu shows a run of them as
+    /// one row: `1…9  focus pane n`.
+    pub fn numbered(&self) -> Option<(u8, &'static str)> {
+        match self {
+            Action::FocusPane(n) => Some((*n, "focus pane n")),
+            Action::GoToTab(n) => Some((*n, "switch to tab n")),
+            _ => None,
         }
     }
 

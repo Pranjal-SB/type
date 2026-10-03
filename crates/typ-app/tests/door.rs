@@ -306,9 +306,11 @@ fn a_tall_menu_is_capped_at_a_third_and_the_arrows_reach_the_rest() {
         press(&mut app, KeyCode::Down, KeyModifiers::NONE);
         seen.push_str(&screen(&draw(&mut app, AREA)));
     }
+    // A run of digits is one row, which says what the whole family does.
     for (_, action) in app.keymap().under("ctrl+k") {
+        let family = action.numbered().map(|(_, family)| family);
         assert!(
-            seen.contains(action.description()),
+            seen.contains(action.description()) || family.is_some_and(|f| seen.contains(f)),
             "{action:?} never shown"
         );
     }
@@ -392,4 +394,91 @@ fn the_teaching_line_does_not_wake_an_idle_editor() {
     key(&mut app, 'f');
     assert_eq!(app.status_left(), TEACHING);
     assert_eq!(app.wake_deadline(), None);
+}
+
+// --- a run of digits is one row (M4.2) ---------------------------------------
+
+/// Three panes side by side, the first current.
+fn three_panes(name: &str) -> App {
+    let mut app = app(name);
+    app.apply_named_action(Action::SplitRight).unwrap();
+    app.close_picker();
+    app.apply_named_action(Action::SplitRight).unwrap();
+    app.close_picker();
+    app.apply_named_action(Action::FocusPane(1)).unwrap();
+    app
+}
+
+#[test]
+fn the_default_menu_fits_80_by_24() {
+    let mut app = app("menu-fits");
+    ctrl_k(&mut app);
+
+    let buf = draw(&mut app, AREA);
+    let text = screen(&buf);
+
+    assert!(!text.contains("more"), "{text}");
+    assert!(text.contains("1\u{2026}9  focus pane n"), "{text}");
+    assert!(!text.contains("focus pane 3"), "{text}");
+}
+
+#[test]
+fn a_digit_under_the_collapsed_row_still_runs_its_own() {
+    let mut app = three_panes("menu-digit");
+    ctrl_k(&mut app);
+    key(&mut app, '3');
+    assert_eq!(app.current_pane(), 2);
+    assert_eq!(app.pending_prefix(), None);
+}
+
+#[test]
+fn rebinding_a_digit_in_the_middle_splits_the_run() {
+    let mut app = app("menu-split-run");
+    with_keys(&mut app, "\"ctrl+k 5\" = \"save\"");
+    ctrl_k(&mut app);
+
+    let text = screen(&draw(&mut app, AREA));
+
+    assert!(text.contains("1\u{2026}4  focus pane n"), "{text}");
+    assert!(text.contains("6\u{2026}9  focus pane n"), "{text}");
+    assert!(text.contains("5  save"), "{text}");
+}
+
+#[test]
+fn a_click_on_the_collapsed_row_asks_for_the_digit() {
+    let mut app = three_panes("menu-click-run");
+    ctrl_k(&mut app);
+    let buf = draw(&mut app, AREA);
+
+    click(&mut app, find(&buf, "focus pane n").unwrap());
+
+    assert_eq!(app.pending_prefix(), Some("ctrl+k"), "the menu went");
+    assert!(
+        app.status_left().contains("1\u{2026}9"),
+        "{}",
+        app.status_left()
+    );
+    key(&mut app, '2');
+    assert_eq!(app.current_pane(), 1);
+}
+
+#[test]
+fn enter_on_the_collapsed_row_asks_for_the_digit_too() {
+    let mut app = three_panes("menu-enter-run");
+    ctrl_k(&mut app);
+    let rows = app.keymap().under("ctrl+k").len();
+    for _ in 0..rows {
+        let buf = draw(&mut app, AREA);
+        let at = find(&buf, "focus pane n").unwrap_or_else(|| panic!("{}", screen(&buf)));
+        if buf[at].bg == ThemeColors::default().selection_primary_bg {
+            break;
+        }
+        press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+    }
+
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+
+    assert_eq!(app.pending_prefix(), Some("ctrl+k"));
+    key(&mut app, '3');
+    assert_eq!(app.current_pane(), 2);
 }

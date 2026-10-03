@@ -24,9 +24,26 @@ pub const FOOTER: &str = "esc cancels";
 pub struct Menu {
     prefix: String,
     /// In display order: by group, and by key within one, which is table order.
-    rows: Vec<(String, Action)>,
+    rows: Vec<Row>,
     selected: usize,
 }
+
+/// One line of the menu: a binding, or a run of them collapsed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Row {
+    /// The step after the prefix: `f`, or `1…9` for a run.
+    pub key: String,
+    /// What it runs. For a run, the first of it.
+    pub action: Action,
+    pub description: &'static str,
+    /// A run of digits bound to numbered siblings: which one is the next
+    /// key's to say, so a click or `enter` asks for it.
+    pub run: bool,
+}
+
+/// The fewest consecutive digits that collapse into one row. Two rows read as
+/// well as one, and say which two.
+const MIN_RUN: usize = 3;
 
 #[derive(Clone, Copy)]
 enum Item {
@@ -48,7 +65,7 @@ impl Menu {
         rows.sort_by_key(|(_, action)| action.group());
         Menu {
             prefix,
-            rows,
+            rows: collapse(rows),
             selected: 0,
         }
     }
@@ -57,13 +74,18 @@ impl Menu {
         &self.prefix
     }
 
-    /// The highlighted row, as (its key, its action).
-    pub fn selected(&self) -> Option<&(String, Action)> {
+    /// The highlighted row.
+    pub fn selected(&self) -> Option<&Row> {
         self.rows.get(self.selected)
     }
 
-    pub fn row(&self, index: usize) -> Option<&(String, Action)> {
+    pub fn row(&self, index: usize) -> Option<&Row> {
         self.rows.get(index)
+    }
+
+    /// Highlight a row, as a click on it does.
+    pub fn select(&mut self, index: usize) {
+        self.selected = index.min(self.rows.len().saturating_sub(1));
     }
 
     /// Move the highlight, stopping at either end.
@@ -78,15 +100,15 @@ impl Menu {
     /// frame. Past that it scrolls: on 80x24 a taller menu would leave the
     /// file behind it a sliver.
     pub fn height(&self, width: u16, frame_height: u16) -> u16 {
-        let (_, lines) = layout(&self.rows, width);
         let cap = (frame_height / 3).max(2);
+        let (_, lines) = layout(&self.rows, width, cap - 1);
         lines.saturating_add(1).min(cap)
     }
 
     /// The row under a cell of `area`, if one is.
     pub fn hit(&self, area: Rect, column: u16, row: u16) -> Option<usize> {
         let visible = area.height.saturating_sub(1);
-        let (placed, _) = layout(&self.rows, area.width);
+        let (placed, _) = layout(&self.rows, area.width, visible);
         let first = self.first_line(&placed, visible);
         placed.iter().find_map(|p| {
             let Item::Row(index) = p.item else {
@@ -107,7 +129,7 @@ impl Menu {
         }
 
         let visible = area.height - 1;
-        let (placed, _) = layout(&self.rows, area.width);
+        let (placed, _) = layout(&self.rows, area.width, visible);
         let first = self.first_line(&placed, visible);
         let mut hidden = 0;
         for p in &placed {
@@ -130,12 +152,12 @@ impl Menu {
                     } else {
                         ground
                     };
-                    let (key, action) = &self.rows[index];
+                    let item = &self.rows[index];
                     let key_style = row.fg(theme.status_bar_accent);
-                    let (after, _) = buf.set_stringn(x, y, key, room.into(), key_style);
+                    let (after, _) = buf.set_stringn(x, y, &item.key, room.into(), key_style);
                     let at = after + KEY_GAP;
                     let room = area.right().saturating_sub(at);
-                    buf.set_stringn(at, y, action.description(), room.into(), row);
+                    buf.set_stringn(at, y, item.description, room.into(), row);
                 }
             }
         }
@@ -165,19 +187,133 @@ impl Menu {
 /// A column per group, as wide as its widest row. Columns fill a band left to
 /// right, and the one that does not fit starts a band underneath: at 80
 /// columns the menu wraps rather than running off the edge.
-fn layout(rows: &[(String, Action)], width: u16) -> (Vec<Placed>, u16) {
+///
+/// Packed first: groups stacked into as few lines as fit `width`, no more
+/// than `limit`. Only when nothing packs does the menu fall back to bands of
+/// one group per column, which may run past `limit` and scroll.
+fn layout(rows: &[Row], width: u16, limit: u16) -> (Vec<Placed>, u16) {
+    let blocks = blocks(rows);
+    let tallest = blocks.iter().map(|b| b.height).max().unwrap_or(0);
+    (tallest..=limit)
+        .find_map(|lines| pack(&blocks, width, lines))
+        .unwrap_or_else(|| bands(rows, width))
+}
+
+/// One group's heading and rows, measured.
+struct Block {
+    group: Group,
+    rows: std::ops::Range<usize>,
+    width: u16,
+    height: u16,
+}
+
+/// The groups of `rows`, which are already in group order.
+fn blocks(rows: &[Row]) -> Vec<Block> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    while start < rows.len() {
+        let group = rows[start].action.group();
+        let end = rows[start..]
+            .iter()
+            .position(|row| row.action.group() != group)
+            .map_or(rows.len(), |n| start + n);
+        let width = rows[start..end]
+            .iter()
+            .map(|row| cells(&row.key) + KEY_GAP + cells(row.description))
+            .fold(cells(group.label()), u16::max);
+        let tall = u16::try_from(end - start).unwrap_or(u16::MAX);
+        out.push(Block {
+            group,
+            rows: start..end,
+            width,
+            height: tall.saturating_add(1),
+        });
+        start = end;
+    }
+    out
+}
+
+/// The groups stacked into columns `lines` tall, tallest placed first in the
+/// first column with room (first fit decreasing), then each column read in
+/// group order and the columns ordered by their first group. `None` when the
+/// columns are wider than `width`.
+///
+/// Why packing: the panes group alone is six lines, and at 80x24 the menu
+/// has seven, so a band of one group per column left most groups scrolled
+/// out of sight.
+fn pack(blocks: &[Block], width: u16, lines: u16) -> Option<(Vec<Placed>, u16)> {
+    let mut order: Vec<usize> = (0..blocks.len()).collect();
+    // Stable, so groups of one height keep their order.
+    order.sort_by_key(|&i| std::cmp::Reverse(blocks[i].height));
+    let mut columns: Vec<(u16, Vec<usize>)> = Vec::new();
+    for i in order {
+        let height = blocks[i].height;
+        match columns.iter_mut().find(|(used, _)| used + height <= lines) {
+            Some((used, column)) => {
+                *used += height;
+                column.push(i);
+            }
+            None => columns.push((height, vec![i])),
+        }
+    }
+    for (_, column) in &mut columns {
+        column.sort_unstable();
+    }
+    columns.sort_by_key(|(_, column)| column[0]);
+
+    let wide = |column: &[usize]| column.iter().map(|&i| blocks[i].width).max().unwrap_or(0);
+    let total = columns
+        .iter()
+        .map(|(_, column)| wide(column))
+        .fold(MARGIN, |sum, w| sum.saturating_add(w).saturating_add(GAP))
+        .saturating_sub(GAP);
+    if total > width {
+        return None;
+    }
+
+    let mut placed = Vec::new();
+    let mut x = MARGIN;
+    for (_, column) in &columns {
+        let column_width = wide(column);
+        let mut line = 0;
+        for &i in column {
+            let block = &blocks[i];
+            placed.push(Placed {
+                x,
+                line,
+                width: column_width,
+                item: Item::Heading(block.group),
+            });
+            for (at, index) in (line + 1..).zip(block.rows.clone()) {
+                placed.push(Placed {
+                    x,
+                    line: at,
+                    width: column_width,
+                    item: Item::Row(index),
+                });
+            }
+            line += block.height;
+        }
+        x = x.saturating_add(column_width + GAP);
+    }
+    Some((placed, lines))
+}
+
+/// One group per column, a band of them left to right and the next band
+/// underneath when the width runs out.
+fn bands(rows: &[Row], width: u16) -> (Vec<Placed>, u16) {
     let mut placed = Vec::new();
     let (mut x, mut top, mut band) = (MARGIN, 0u16, 0u16);
     let mut start = 0;
     while start < rows.len() {
-        let group = rows[start].1.group();
+        let group = rows[start].action.group();
         let end = rows[start..]
             .iter()
-            .position(|(_, action)| action.group() != group)
+            .position(|row| row.action.group() != group)
             .map_or(rows.len(), |n| start + n);
         let column = rows[start..end]
             .iter()
-            .map(|(key, action)| cells(key) + KEY_GAP + cells(action.description()))
+            .map(|row| cells(&row.key) + KEY_GAP + cells(row.description))
             .fold(cells(group.label()), u16::max);
 
         if x > MARGIN && x.saturating_add(column) > width {
@@ -205,6 +341,53 @@ fn layout(rows: &[(String, Action)], width: u16) -> (Vec<Placed>, u16) {
         start = end;
     }
     (placed, top + band)
+}
+
+/// The rows as the menu shows them: each run of [`MIN_RUN`] or more digits
+/// bound to consecutive numbered siblings becomes one row, `1…9  focus
+/// pane n`. Generated, so a rebind that breaks the run splits the row.
+fn collapse(rows: Vec<(String, Action)>) -> Vec<Row> {
+    let single = |(key, action): &(String, Action)| Row {
+        key: key.clone(),
+        action: *action,
+        description: action.description(),
+        run: false,
+    };
+    let mut out = Vec::with_capacity(rows.len());
+    let mut start = 0;
+    while start < rows.len() {
+        let mut end = start + 1;
+        while end < rows.len() && continues(&rows[end - 1], &rows[end]) {
+            end += 1;
+        }
+        match rows[start].1.numbered() {
+            Some((_, family)) if end - start >= MIN_RUN => out.push(Row {
+                key: format!("{}\u{2026}{}", rows[start].0, rows[end - 1].0),
+                action: rows[start].1,
+                description: family,
+                run: true,
+            }),
+            _ => out.extend(rows[start..end].iter().map(single)),
+        }
+        start = end;
+    }
+    out
+}
+
+/// Whether `b` is the next of `a`'s run: the next digit, bound to the next
+/// sibling of the same family.
+fn continues(a: &(String, Action), b: &(String, Action)) -> bool {
+    let digit = |key: &str| match key.as_bytes() {
+        [d @ b'0'..=b'9'] => Some(d - b'0'),
+        _ => None,
+    };
+    let (Some(x), Some(y)) = (digit(&a.0), digit(&b.0)) else {
+        return false;
+    };
+    match (a.1.numbered(), b.1.numbered()) {
+        (Some((m, one)), Some((n, other))) => y == x + 1 && n == m + 1 && one == other,
+        _ => false,
+    }
 }
 
 /// Columns `text` occupies.
