@@ -18,6 +18,8 @@ mod sessions;
 /// The status bar as a region: its layout, its focus and its clicks.
 mod status_bar;
 mod tabs;
+/// Every mouse target on screen, for warp labels and the context menu.
+pub mod targets;
 
 use anyhow::Result;
 use typ_buffer::SearchQuery;

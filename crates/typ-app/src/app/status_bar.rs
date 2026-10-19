@@ -21,7 +21,7 @@ use crate::status::{SEGMENT_GAP, Segment, SegmentId};
 pub(super) struct StatusLayout {
     left: String,
     gap: usize,
-    segments: Vec<(Segment, Rect)>,
+    pub(super) segments: Vec<(Segment, Rect)>,
 }
 
 impl App {

@@ -107,18 +107,31 @@ impl Menu {
 
     /// The row under a cell of `area`, if one is.
     pub fn hit(&self, area: Rect, column: u16, row: u16) -> Option<usize> {
+        self.row_rects(area)
+            .into_iter()
+            .find(|(_, rect)| rect.contains((column, row).into()))
+            .map(|(index, _)| index)
+    }
+
+    /// Every row on screen in `area` and the cells it takes: what a click
+    /// can land on, and so what a warp label can.
+    pub fn row_rects(&self, area: Rect) -> Vec<(usize, Rect)> {
         let visible = area.height.saturating_sub(1);
         let (placed, _) = layout(&self.rows, area.width, visible);
         let first = self.first_line(&placed, visible);
-        placed.iter().find_map(|p| {
-            let Item::Row(index) = p.item else {
-                return None;
-            };
-            let y = area.y + p.line.checked_sub(first)?;
-            let x = area.x + p.x;
-            let shown = p.line >= first && p.line < first + visible;
-            (shown && row == y && column >= x && column < x + p.width).then_some(index)
-        })
+        placed
+            .iter()
+            .filter_map(|p| {
+                let Item::Row(index) = p.item else {
+                    return None;
+                };
+                let shown = p.line >= first && p.line < first + visible;
+                let x = area.x + p.x;
+                let width = p.width.min(area.right().saturating_sub(x));
+                (shown && width > 0)
+                    .then(|| (index, Rect::new(x, area.y + p.line - first, width, 1)))
+            })
+            .collect()
     }
 
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &ThemeColors) {

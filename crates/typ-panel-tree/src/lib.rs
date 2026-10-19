@@ -61,6 +61,14 @@ impl TreePanel {
         &self.root
     }
 
+    /// The entries on screen in `area`, by index: the rows the render draws
+    /// and a click can land on. One answer for both, and for the app's list of
+    /// mouse targets.
+    pub fn visible(&self, area: Rect) -> std::ops::Range<usize> {
+        let start = self.top_line.min(self.entries.len());
+        start..(start + area.height as usize).min(self.entries.len())
+    }
+
     /// Rebuild the visible rows, keeping the selection on the same path where
     /// that path is still visible.
     ///
@@ -216,8 +224,8 @@ impl Panel for TreePanel {
         buf.set_style(area, Style::default().bg(ctx.theme.chrome_bg));
 
         self.height = area.height as usize;
-        let end = (self.top_line + self.height).min(self.entries.len());
-        let lines: Vec<Line> = (self.top_line..end)
+        let lines: Vec<Line> = self
+            .visible(area)
             .map(|i| {
                 let entry = &self.entries[i];
                 let name = entry
@@ -308,7 +316,7 @@ impl Panel for TreePanel {
         }
         let row = (event.row - area.y) as usize;
         let idx = self.top_line + row;
-        if idx >= self.entries.len() {
+        if !self.visible(area).contains(&idx) {
             return Vec::new();
         }
         // Click selects; clicking the already-selected entry activates it,
