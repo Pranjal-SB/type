@@ -21,6 +21,7 @@ impl App {
     /// `ctrl+b` (interface §5): closed opens and focuses the dock, open
     /// without focus focuses it, focused folds it.
     pub(super) fn toggle_left_dock(&mut self) {
+        self.layout_chosen = true;
         if !self.dock.open {
             self.open_dock();
         } else if self.focus != Focus::Tree {
@@ -54,6 +55,7 @@ impl App {
         if self.dock.open || !self.regions(frame).rule.contains((column, row).into()) {
             return false;
         }
+        self.layout_chosen = true;
         self.open_dock();
         true
     }
@@ -123,8 +125,32 @@ impl App {
         self.mark_dirty();
     }
 
+    /// `adapt` from `config.toml`.
+    pub fn set_adapt(&mut self, adapt: bool) {
+        self.adapt = adapt;
+    }
+
+    /// Fold or reopen a Standard layout for a screen `width` columns wide.
+    /// Called with every event's frame, so it follows the terminal both ways.
+    pub(super) fn adapt_to(&mut self, width: u16) {
+        if !self.adapt || self.layout_chosen || self.preset != crate::dock::Preset::Standard {
+            return;
+        }
+        let wide = width >= crate::dock::ADAPT_WIDTH;
+        if wide == self.dock.open {
+            return;
+        }
+        if wide {
+            self.dock.open = true;
+        } else {
+            self.fold_dock();
+        }
+        self.mark_dirty();
+    }
+
     /// `ctrl+k l`, `>layout` and the `▣` segment: the next preset.
     pub(super) fn cycle_layout(&mut self) {
+        self.layout_chosen = true;
         self.set_preset(self.preset.next());
     }
 }

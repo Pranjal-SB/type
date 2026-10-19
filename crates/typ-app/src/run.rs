@@ -206,6 +206,10 @@ pub fn wire(app: &mut App) -> AppReceiver {
 
 fn event_loop(terminal: &mut Terminal<TypBackend<Stdout>>, app: &mut App) -> Result<()> {
     let rx = wire(app);
+    // Before the first frame, so a narrow terminal never shows a Standard dock
+    // it is about to fold.
+    let size = terminal.size()?;
+    app.set_screen(Rect::new(0, 0, size.width, size.height));
 
     loop {
         // `Terminal::draw` diffs against the previous buffer and emits only the

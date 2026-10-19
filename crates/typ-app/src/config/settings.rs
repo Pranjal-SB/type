@@ -40,6 +40,9 @@ pub struct Settings {
     pub language_servers: Vec<crate::lsp::ServerConfig>,
     /// The layout preset to start in.
     pub layout: crate::dock::Preset,
+    /// Whether a Standard layout renders as Focus under
+    /// [`crate::dock::ADAPT_WIDTH`] columns.
+    pub adapt: bool,
 }
 
 impl Default for Settings {
@@ -51,6 +54,7 @@ impl Default for Settings {
             whitespace: Whitespace::default(),
             language_servers: crate::lsp::config::defaults(),
             layout: crate::dock::Preset::default(),
+            adapt: true,
         }
     }
 }
@@ -129,6 +133,10 @@ pub fn load_settings(path: Option<&Path>) -> (Settings, Option<String>) {
             "layout" => match value.as_str().and_then(crate::dock::Preset::from_name) {
                 Some(preset) => settings.layout = preset,
                 None => complaints.push(format!("layout {value} is not \"focus\" or \"standard\"")),
+            },
+            "adapt" => match value.as_bool() {
+                Some(adapt) => settings.adapt = adapt,
+                None => complaints.push(format!("adapt {value} is not true or false")),
             },
             // Handled below, as a whole: an array of tables is not one value
             // with one answer, and each entry stands or falls on its own.

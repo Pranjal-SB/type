@@ -15,6 +15,9 @@ pub const DOCK_SIZE: u16 = 30;
 const NARROW_THRESHOLD: u16 = 60;
 /// The narrowest an open dock may be dragged or nudged to, its rule included.
 pub const MIN_DOCK: u16 = 12;
+/// Under this many terminal columns a Standard layout renders as Focus, unless
+/// the user chose the layout by hand (interface §7).
+pub const ADAPT_WIDTH: u16 = 100;
 
 /// A layout preset (interface §7). Presets govern the dock and never panes: a
 /// preset that closed or opened panes would discard the user's split.

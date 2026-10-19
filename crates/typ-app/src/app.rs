@@ -46,6 +46,12 @@ pub struct App {
     dock: crate::dock::Dock,
     /// The layout preset in force, as the `▣` segment names it.
     preset: crate::dock::Preset,
+    /// `adapt` from `config.toml`: a Standard layout folds on a narrow screen.
+    adapt: bool,
+    /// The user picked the layout this session (`ctrl+k l`, `ctrl+b`, a click
+    /// on the folded dock). Adapting never overrides that; config does not
+    /// count as picking.
+    layout_chosen: bool,
     /// The pane `ctrl+k z` zoomed, if one is. In force only while that pane
     /// has the keys; see `docking::zoomed`.
     zoomed_pane: Option<crate::pane::PaneId>,
@@ -370,6 +376,8 @@ impl App {
             tree: TreePanel::new(root)?,
             dock: crate::dock::Dock::left(),
             preset: crate::dock::Preset::default(),
+            adapt: true,
+            layout_chosen: false,
             zoomed_pane: None,
             segment: crate::status::SegmentId::Position,
             heading_pressed: None,

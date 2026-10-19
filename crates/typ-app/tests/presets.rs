@@ -145,3 +145,65 @@ fn enter_on_the_segment_cycles() {
 
     assert_eq!(app.preset(), Preset::Focus);
 }
+
+// Adapt to width (interface §7): under 100 columns Standard renders as Focus.
+
+fn resize_to(app: &mut App, width: u16) {
+    let area = Rect::new(0, 0, width, 30);
+    typ_app::run::step(app, AppEvent::Input(Event::Resize(width, 30)), area).unwrap();
+}
+
+#[test]
+fn a_narrow_terminal_folds_standard_and_a_wide_one_reopens_it() {
+    let mut app = app("adapt");
+    app.set_focus(Focus::Editor);
+
+    resize_to(&mut app, 90);
+    assert!(!app.dock_open(), "90 columns kept the dock open");
+    assert_eq!(app.preset(), Preset::Standard, "adapting is not a choice");
+
+    resize_to(&mut app, 120);
+    assert!(app.dock_open(), "120 columns left the dock folded");
+    assert_eq!(app.focus(), Focus::Editor, "reopening took the keys");
+}
+
+#[test]
+fn a_preset_picked_by_hand_wins_over_the_width() {
+    let mut app = app("adapt-picked");
+    app.set_focus(Focus::Editor);
+    ctrl_k_l(&mut app);
+    ctrl_k_l(&mut app);
+    assert!(app.dock_open());
+
+    resize_to(&mut app, 90);
+    assert!(app.dock_open(), "the resize overrode ctrl+k l");
+}
+
+#[test]
+fn ctrl_b_on_a_narrow_terminal_is_a_choice_too() {
+    let mut app = app("adapt-ctrl-b");
+    app.set_focus(Focus::Editor);
+    resize_to(&mut app, 90);
+    assert!(!app.dock_open());
+
+    press(&mut app, KeyCode::Char('b'), KeyModifiers::CONTROL);
+    assert!(app.dock_open());
+    resize_to(&mut app, 91);
+    assert!(app.dock_open(), "the next resize folded what ctrl+b opened");
+}
+
+#[test]
+fn adapt_false_in_config_leaves_the_layout_alone() {
+    let (settings, warning) = settings_from("adapt-off", "adapt = false\n");
+    assert_eq!(warning, None);
+    assert!(!settings.adapt);
+    assert!(
+        typ_app::config::Settings::default().adapt,
+        "adapt is on by default"
+    );
+
+    let mut app = app("adapt-off");
+    app.set_adapt(settings.adapt);
+    resize_to(&mut app, 90);
+    assert!(app.dock_open());
+}

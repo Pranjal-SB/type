@@ -179,6 +179,7 @@ fn real_main() -> Result<()> {
     app.set_indent_width(settings.indent_width);
     app.set_whitespace(settings.whitespace);
     app.set_preset(settings.layout);
+    app.set_adapt(settings.adapt);
     // Registered, not started. Nothing spawns until a file needs it, because
     // the cold-start budget cannot wait for rust-analyzer.
     app.set_language_servers(settings.language_servers);

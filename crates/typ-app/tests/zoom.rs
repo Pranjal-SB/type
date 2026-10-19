@@ -40,6 +40,8 @@ fn app(name: &str) -> (App, PathBuf) {
         std::fs::write(dir.join(file), &text).unwrap();
     }
     let mut app = App::new(&dir).unwrap();
+    // About the open dock at 80 columns, which adapting to width would fold.
+    app.set_adapt(false);
     app.open_path(&dir.join("a.rs")).unwrap();
     (app, dir)
 }
