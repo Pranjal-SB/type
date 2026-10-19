@@ -222,6 +222,16 @@ impl EditorPanel {
         self.top_line
     }
 
+    /// Put the caret at `cursor` and the view's first line at `top`, each
+    /// clamped to the buffer: where a session left them, in a file that may
+    /// have changed since.
+    pub fn restore_view(&mut self, cursor: Position, top: usize) {
+        let line = cursor.line.min(self.last_line());
+        let col = cursor.col.min(self.buffer.line_grapheme_count(line));
+        self.set_caret(Position { line, col });
+        self.top_line = top.min(self.last_line());
+    }
+
     pub fn left_col(&self) -> usize {
         self.left_col
     }

@@ -43,6 +43,8 @@ pub struct Settings {
     /// Whether a Standard layout renders as Focus under
     /// [`crate::dock::ADAPT_WIDTH`] columns.
     pub adapt: bool,
+    /// Whether quitting on a project remembers its layout for next time.
+    pub session: bool,
 }
 
 impl Default for Settings {
@@ -55,6 +57,7 @@ impl Default for Settings {
             language_servers: crate::lsp::config::defaults(),
             layout: crate::dock::Preset::default(),
             adapt: true,
+            session: true,
         }
     }
 }
@@ -137,6 +140,10 @@ pub fn load_settings(path: Option<&Path>) -> (Settings, Option<String>) {
             "adapt" => match value.as_bool() {
                 Some(adapt) => settings.adapt = adapt,
                 None => complaints.push(format!("adapt {value} is not true or false")),
+            },
+            "session" => match value.as_bool() {
+                Some(session) => settings.session = session,
+                None => complaints.push(format!("session {value} is not true or false")),
             },
             // Handled below, as a whole: an array of tables is not one value
             // with one answer, and each entry stands or falls on its own.

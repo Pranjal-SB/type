@@ -13,6 +13,8 @@ mod render;
 /// the extraction is meant to shorten this file, not to open it up.
 mod search;
 mod servers;
+/// The app as a session, and back.
+mod sessions;
 /// The status bar as a region: its layout, its focus and its clicks.
 mod status_bar;
 mod tabs;
@@ -52,6 +54,8 @@ pub struct App {
     /// on the folded dock). Adapting never overrides that; config does not
     /// count as picking.
     layout_chosen: bool,
+    /// Where quitting writes the session, when this run has one.
+    session_file: Option<std::path::PathBuf>,
     /// The pane `ctrl+k z` zoomed, if one is. In force only while that pane
     /// has the keys; see `docking::zoomed`.
     zoomed_pane: Option<crate::pane::PaneId>,
@@ -373,6 +377,7 @@ impl App {
             preset: crate::dock::Preset::default(),
             adapt: true,
             layout_chosen: false,
+            session_file: None,
             zoomed_pane: None,
             segment: crate::status::SegmentId::Position,
             heading_pressed: None,

@@ -71,6 +71,9 @@ pub fn run(mut app: App) -> Result<()> {
     });
 
     let result = event_loop(&mut terminal, &mut app);
+    // Before the servers shut down, which can take a while: the layout is
+    // what the user is leaving, and it is already final.
+    app.save_session();
 
     // `shutdown` then `exit`, before the tree kill that `Drop` would do anyway.
     // rust-analyzer writes state on shutdown, and killing it every time is how

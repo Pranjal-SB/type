@@ -224,7 +224,7 @@ impl App {
     /// A path with no file is one to create, not an error: `typ notes.md` and
     /// opening a not-yet-existing file from the tree are the same operation, so
     /// they take the same branch.
-    fn panel_for(&self, path: &Path) -> Result<EditorPanel> {
+    pub(super) fn panel_for(&self, path: &Path) -> Result<EditorPanel> {
         // The registry decides the handler. There is one content panel today,
         // so any other answer is a viewer that has registered and not been
         // built: say so rather than open its file as text. This answer used
