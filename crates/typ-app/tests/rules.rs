@@ -28,6 +28,8 @@ fn app(name: &str) -> App {
     std::fs::write(dir.join("a.rs"), "alpha\n").unwrap();
     std::fs::write(dir.join("b.rs"), "first\nsecond\nthird\n").unwrap();
     let mut app = App::new(&dir).unwrap();
+    // About the open dock at 80 columns, which adapting to width would fold.
+    app.set_adapt(false);
     app.open_path(&dir.join("b.rs")).unwrap();
     app
 }

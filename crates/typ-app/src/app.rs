@@ -13,6 +13,8 @@ mod render;
 /// the extraction is meant to shorten this file, not to open it up.
 mod search;
 mod servers;
+/// The app as a session, and back.
+mod sessions;
 /// The status bar as a region: its layout, its focus and its clicks.
 mod status_bar;
 mod tabs;
@@ -29,7 +31,7 @@ use typ_registry::Registry;
 use typ_syntax::ParseWorker;
 
 use crate::prompt::Prompt;
-use crate::status::{Segment, StatusFacts, segments};
+use crate::status::{SEGMENT_GAP, Segment, StatusFacts, segments};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -44,6 +46,16 @@ pub struct App {
     tree: TreePanel,
     /// Where the tree is, and in what posture.
     dock: crate::dock::Dock,
+    /// The layout preset in force, as the `▣` segment names it.
+    preset: crate::dock::Preset,
+    /// `adapt` from `config.toml`: a Standard layout folds on a narrow screen.
+    adapt: bool,
+    /// The user picked the layout this session (`ctrl+k l`, `ctrl+b`, a click
+    /// on the folded dock). Adapting never overrides that; config does not
+    /// count as picking.
+    layout_chosen: bool,
+    /// Where quitting writes the session, when this run has one.
+    session_file: Option<std::path::PathBuf>,
     /// The pane `ctrl+k z` zoomed, if one is. In force only while that pane
     /// has the keys; see `docking::zoomed`.
     zoomed_pane: Option<crate::pane::PaneId>,
@@ -298,11 +310,6 @@ impl Tab {
     }
 }
 
-/// Between status segments. Two spaces rather than a glyph separator: a
-/// separator needs a colour decision of its own and a Nerd Font question at
-/// M6, and whitespace has neither.
-const SEGMENT_GAP: &str = "  ";
-
 /// What the status bar says while resize mode is on.
 const RESIZE_HINT: &str = "Resize: arrows move the rule  ·  = evens it  ·  Enter or Esc done";
 
@@ -312,7 +319,10 @@ const RESIZE_HINT: &str = "Resize: arrows move the rule  ·  = evens it  ·  Ent
 /// Each chord is read from the keymap, so a rebind moves the hint with it. It
 /// said `Tab focus` from M1 until long after Tab became indent, because it was
 /// written down. `Enter open` stays written: it is the tree's raw key.
-fn hint(keymap: &Keymap) -> String {
+///
+/// In parts, because a narrow bar drops whole ones: clipped by cells it ended
+/// on a separator leading nowhere, or on a chord cut from what it does.
+fn hint_parts(keymap: &Keymap) -> Vec<String> {
     let label = |action, what| chord_label(keymap, action).map(|chord| format!("{chord} {what}"));
     [
         label(Action::FocusNext, "focus"),
@@ -322,9 +332,11 @@ fn hint(keymap: &Keymap) -> String {
     ]
     .into_iter()
     .flatten()
-    .collect::<Vec<_>>()
-    .join("  ·  ")
+    .collect()
 }
+
+/// Between the hint's parts.
+const HINT_GAP: &str = "  ·  ";
 
 /// The chord to show for `action`, spelled the way a key cap is: `F6`,
 /// `Ctrl+S`. Of several, the one with fewest modifiers, then the shortest:
@@ -362,6 +374,12 @@ impl App {
         Ok(Self {
             tree: TreePanel::new(root)?,
             dock: crate::dock::Dock::left(),
+            // Not `Preset::default()`: the dock starts open, and the preset
+            // has to say so until `main` applies the configured one.
+            preset: crate::dock::Preset::Standard,
+            adapt: true,
+            layout_chosen: false,
+            session_file: None,
             zoomed_pane: None,
             segment: crate::status::SegmentId::Position,
             heading_pressed: None,
@@ -455,33 +473,37 @@ impl App {
 
     /// Left half of the status bar: whatever needs saying, else the hint.
     pub fn status_left(&self) -> String {
+        self.status_message()
+            .unwrap_or_else(|| hint_parts(&self.keymap).join(HINT_GAP))
+    }
+
+    /// Whatever needs saying on the left of the bar, if anything does.
+    fn status_message(&self) -> Option<String> {
         // The prompt outranks any message: while it is open it is the only
         // thing the user is looking at.
         // A message beside it is about the prompt (a rejected answer) and
         // is shown after the input rather than written somewhere nothing
         // draws. Gap 126.
         if let Some(prompt) = &self.prompt {
-            return match &self.status {
+            return Some(match &self.status {
                 Some(message) => format!("{} {}  {message}", prompt.label(), prompt.input()),
                 None => format!("{} {}", prompt.label(), prompt.input()),
-            };
+            });
         }
         // The mode owns the arrows, so it says so for as long as it is on.
         if self.resizing {
-            return RESIZE_HINT.to_string();
+            return Some(RESIZE_HINT.to_string());
         }
         if let Some(message) = &self.status {
-            return message.clone();
+            return Some(message.clone());
         }
-        match &self.teaching {
-            Some((line, _)) => line.clone(),
-            None => hint(&self.keymap),
-        }
+        self.teaching.as_ref().map(|(line, _)| line.clone())
     }
 
-    /// Right half: what is open, what state it is in, and where the cursor is.
+    /// Right half: what is open, what state it is in, and where the cursor is,
+    /// as the last frame showed it.
     pub fn status_right(&self) -> String {
-        self.status_segments()
+        self.shown_segments(self.screen.width)
             .into_iter()
             .map(|s| s.text)
             .collect::<Vec<_>>()
@@ -513,6 +535,7 @@ impl App {
             warnings: self.count_diagnostics(typ_core::Severity::Warning),
             progress: &self.lsp.progress(),
             zoomed: self.zoomed().is_some(),
+            layout: self.preset.name(),
         })
     }
 

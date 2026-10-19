@@ -23,6 +23,8 @@ fn app(name: &str) -> App {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("main.rs"), "fn main() {}\n").unwrap();
     let mut app = App::new(&dir).unwrap();
+    // About the open dock at 80 columns, which adapting to width would fold.
+    app.set_adapt(false);
     app.open_path(&dir.join("main.rs")).unwrap();
     app
 }
@@ -115,6 +117,8 @@ fn three_panes(name: &str) -> App {
         std::fs::write(dir.join(file), "fn main() {}\n").unwrap();
     }
     let mut app = App::new(&dir).unwrap();
+    // About the open dock at 80 columns, which adapting to width would fold.
+    app.set_adapt(false);
     app.open_path(&dir.join("a.rs")).unwrap();
     for file in ["b.rs", "c.rs"] {
         app.apply_named_action(typ_core::Action::SplitRight)

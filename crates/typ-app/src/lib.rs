@@ -10,6 +10,7 @@ pub mod menu;
 pub mod pane;
 pub mod prompt;
 pub mod run;
+pub mod session;
 pub mod status;
 pub mod tabbar;
 

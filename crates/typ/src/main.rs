@@ -92,6 +92,12 @@ fn resolve(target: &Path) -> Result<Target> {
     })
 }
 
+/// Whether this start reads and writes the project's session: on a directory
+/// or with no argument, and with `session` on in config.
+fn restores_session(file: Option<&Path>, extras: &[PathBuf], enabled: bool) -> bool {
+    enabled && file.is_none() && extras.is_empty()
+}
+
 /// Exit codes are load-bearing: TYPE is usable as `$EDITOR`, and a caller such
 /// as `git commit` must abort when the editor fails rather than proceeding with
 /// an empty message.
@@ -178,6 +184,8 @@ fn real_main() -> Result<()> {
     // Before any file is opened, so the first one is affected too.
     app.set_indent_width(settings.indent_width);
     app.set_whitespace(settings.whitespace);
+    app.set_preset(settings.layout);
+    app.set_adapt(settings.adapt);
     // Registered, not started. Nothing spawns until a file needs it, because
     // the cold-start budget cannot wait for rust-analyzer.
     app.set_language_servers(settings.language_servers);
@@ -209,6 +217,16 @@ fn real_main() -> Result<()> {
     app.set_theme(colors);
     app.set_syntax_theme(syntax);
     complaints.extend(warning);
+
+    // Invariant 10: `typ <file>` opens that file and nothing else, or `git
+    // commit` would open into yesterday's layout. Only a start on a directory
+    // reads a session, and only such a run writes one back.
+    if restores_session(file.as_deref(), &extras, settings.session)
+        && let Some(path) = typ_app::session::file_for(&root)
+    {
+        complaints.extend(app.restore_session(&path));
+        app.set_session_file(Some(path));
+    }
 
     if !complaints.is_empty() {
         for complaint in &complaints {
@@ -243,6 +261,21 @@ mod tests {
         let dir = std::env::temp_dir().join("typ-resolve").join(name);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn only_a_start_on_a_directory_has_a_session() {
+        let dir = temp("session");
+        let target = resolve(&dir).unwrap();
+        assert!(restores_session(target.file.as_deref(), &[], true));
+        assert!(!restores_session(target.file.as_deref(), &[], false));
+
+        let file = dir.join("notes.md");
+        let target = resolve(&file).unwrap();
+        assert!(
+            !restores_session(target.file.as_deref(), &[], true),
+            "typ <file> must open that file and nothing else"
+        );
     }
 
     #[test]

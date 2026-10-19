@@ -35,6 +35,9 @@ fn app_with_file(name: &str) -> App {
     let dir = fixture(name);
     let mut app = App::new(&dir).unwrap();
     app.open_path(&dir.join("hello.rs")).unwrap();
+    // The loop measures the terminal before its first frame, which folds the
+    // dock at 80 columns; do that here too.
+    app.set_screen(AREA);
     // Opening marks dirty, as it should. Clear it so each test starts from a
     // painted screen.
     app.take_dirty();

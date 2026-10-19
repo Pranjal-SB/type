@@ -375,6 +375,7 @@ impl App {
     /// `render` on every frame.
     pub fn set_screen(&mut self, frame: Rect) {
         self.screen = frame;
+        self.adapt_to(frame.width);
     }
 
     /// Where `id` is in `panes`.

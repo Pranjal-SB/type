@@ -92,3 +92,83 @@ fn opening_a_file_does_not_wait_for_its_parse() {
         "opening a file took {elapsed:?} — it is waiting for the parse"
     );
 }
+
+#[test]
+#[ignore = "wall-clock budget; run alone with --release --ignored --nocapture --exact"]
+fn cold_start_with_a_session_to_restore_stays_under_a_tenth_of_a_second() {
+    // Run it on its own (`--exact` and its name): sharing a process with the
+    // cold start above would hand it that test's warm page cache.
+    use typ_app::pane::{Axis, Layout, PaneId};
+    use typ_app::session::{SavedPane, SavedTab, Session};
+
+    let root = repo_root();
+    let tab = |path: &str, line| SavedTab {
+        path: root.join(path),
+        line,
+        col: 0,
+        top: line.saturating_sub(10),
+    };
+    // Written by hand rather than by an app that opened the files, which
+    // would warm the very cache this is meant to find cold.
+    let session = Session {
+        layout: Layout::split(
+            Axis::Columns,
+            Layout::Leaf(PaneId(0)),
+            Layout::Leaf(PaneId(1)),
+        ),
+        panes: vec![
+            SavedPane {
+                id: PaneId(0),
+                tabs: vec![
+                    tab("crates/typ-app/src/app.rs", 400),
+                    tab("crates/typ-app/src/run.rs", 200),
+                    tab("crates/typ-panel-editor/src/lib.rs", 900),
+                ],
+                active: 0,
+            },
+            SavedPane {
+                id: PaneId(1),
+                tabs: vec![
+                    tab("crates/typ-app/src/app/panes.rs", 100),
+                    tab("crates/typ-buffer/src/lib.rs", 50),
+                    tab("docs/design/interface.md", 150),
+                ],
+                active: 2,
+            },
+        ],
+        current: PaneId(0),
+        preset: typ_app::dock::Preset::Standard,
+        picked: false,
+        dock_open: true,
+        dock_size: 30,
+    };
+    let file = std::env::temp_dir()
+        .join("typ-perf-startup-session")
+        .join("session.toml");
+    typ_app::session::save(&file, &session).expect("the session saves");
+
+    let start = Instant::now();
+
+    let mut app = App::new(&root).expect("the app builds");
+    let (settings, _) = typ_app::config::load_settings(None);
+    app.set_indent_width(settings.indent_width);
+    app.set_whitespace(settings.whitespace);
+    app.set_preset(settings.layout);
+    let (keymap, _) = typ_app::config::load_keymap(None);
+    app.set_keymap(keymap);
+    let (colors, syntax, _) =
+        typ_app::config::load_theme(None, &settings.theme, typ_core::Depth::TrueColor);
+    app.set_theme(colors);
+    app.set_syntax_theme(syntax);
+    let warning = app.restore_session(&file);
+
+    let elapsed = start.elapsed();
+
+    assert_eq!(warning, None);
+    assert_eq!(app.pane_count(), 2);
+    println!("cold start restoring 2 panes, 6 tabs: {elapsed:?}");
+    assert!(
+        elapsed.as_millis() < 100,
+        "cold start with a session took {elapsed:?}, over the 100 ms budget"
+    );
+}

@@ -53,10 +53,10 @@ impl App {
             KeyCode::Up => menu.move_selection(-1),
             KeyCode::Down => menu.move_selection(1),
             KeyCode::Enter => {
-                let Some((key, action)) = menu.selected() else {
+                let Some(row) = menu.selected().cloned() else {
                     return Ok(());
                 };
-                return self.run_from_menu(menu.prefix(), key, *action);
+                return self.run_row(menu, &row);
             }
             _ => {
                 self.clear_transient();
@@ -78,18 +78,36 @@ impl App {
             return Ok(());
         }
         let area = self.split_body(frame).1;
-        let Some(menu) = self.menu.take() else {
+        let Some(mut menu) = self.menu.take() else {
             return Ok(());
         };
-        let hit = area
-            .and_then(|area| menu.hit(area, event.column, event.row))
-            .and_then(|index| menu.row(index));
+        let hit = area.and_then(|area| menu.hit(area, event.column, event.row));
         match (event.kind, hit) {
-            (MouseEventKind::Down(MouseButton::Left), Some((key, action))) => {
-                self.run_from_menu(menu.prefix(), key, *action)
+            (MouseEventKind::Down(MouseButton::Left), Some(index)) => {
+                menu.select(index);
+                let Some(row) = menu.row(index).cloned() else {
+                    return Ok(());
+                };
+                self.run_row(menu, &row)
             }
             _ => Ok(()),
         }
+    }
+
+    /// Run a row, or for a run of digits ask which: the menu stays up and
+    /// the next key, a digit, runs its own row.
+    fn run_row(&mut self, menu: Menu, row: &crate::menu::Row) -> Result<()> {
+        if row.run {
+            self.status = Some(format!(
+                "{} {} \u{b7} {}: press the digit",
+                menu.prefix(),
+                row.key,
+                row.description
+            ));
+            self.menu = Some(menu);
+            return Ok(());
+        }
+        self.run_from_menu(menu.prefix(), &row.key, row.action)
     }
 
     /// Run a row, then teach its chord.

@@ -239,6 +239,7 @@ impl App {
             Action::ResizePanes => self.resizing = true,
             Action::ToggleLeftDock => self.toggle_left_dock(),
             Action::Zoom => self.toggle_zoom(),
+            Action::CycleLayout => self.cycle_layout(),
             Action::RestartLanguageServers => {
                 let started = self.lsp.restart_all();
                 self.status = Some(match started {

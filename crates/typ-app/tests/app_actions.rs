@@ -211,6 +211,13 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             run(app, a);
             assert!(!app.status_right().contains("zoomed"));
         },
+        Action::CycleLayout => |app, a| {
+            assert!(app.dock_open());
+            run(app, a);
+            assert!(!app.dock_open(), "focus did not fold the dock");
+            run(app, a);
+            assert!(app.dock_open(), "standard did not open it");
+        },
         Action::OpenMenu => |app, a| {
             run(app, a);
             assert_eq!(app.pending_prefix(), Some("ctrl+k"));

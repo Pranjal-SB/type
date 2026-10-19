@@ -403,6 +403,9 @@ pub fn audit(theme: &ThemeColors, kind: Kind) -> Vec<String> {
     for (name, colour) in [
         ("status_bar_accent on chrome_bg", theme.status_bar_accent),
         ("fg on chrome_bg", theme.fg),
+        // The focused label: the dock's heading and the focused pane's number
+        // and tab, all on the raised surface.
+        ("border_focused on chrome_bg", theme.border_focused),
     ] {
         at_least(
             &mut bad,

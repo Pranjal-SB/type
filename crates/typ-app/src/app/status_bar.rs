@@ -13,8 +13,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 use typ_core::KeyChord;
 
-use crate::app::{App, Focus, SEGMENT_GAP};
-use crate::status::{Segment, SegmentId};
+use crate::app::{App, Focus, HINT_GAP};
+use crate::status::{SEGMENT_GAP, Segment, SegmentId};
 
 /// The bar laid out: the left half as it fits, the gap, and each right-hand
 /// segment with the cells it takes.
@@ -27,8 +27,7 @@ pub(super) struct StatusLayout {
 impl App {
     /// Where everything on the status bar in `area` goes.
     pub(super) fn status_layout(&self, area: Rect) -> StatusLayout {
-        let left = self.status_left();
-        let right_segments = self.status_segments();
+        let right_segments = self.shown_segments(area.width);
         // Measured in cells, not chars. A CJK file name is one char and two
         // cells per character, and counting chars pushed the right half's
         // tail off the end of the bar. Gap 105.
@@ -36,14 +35,16 @@ impl App {
             .iter()
             .map(|s| typ_buffer::display_width(&s.text))
             .collect();
-        let right_width: usize = widths.iter().sum::<usize>()
-            + SEGMENT_GAP.len() * right_segments.len().saturating_sub(1);
+        let right_width = crate::status::width(&right_segments);
 
         // The right half is the fixed cost; the left is truncated to whatever
         // is left over, so a long message never pushes the position off-screen.
         let width = area.width as usize;
         let room = width.saturating_sub(right_width + 2);
-        let left = clip_to_cells(&left, room);
+        let left = match self.status_message() {
+            Some(message) => clip_to_cells(&message, room),
+            None => fit_parts(&super::hint_parts(&self.keymap), room),
+        };
         let gap = width.saturating_sub(typ_buffer::display_width(&left) + right_width);
 
         let mut x = area.x as usize + typ_buffer::display_width(&left) + gap;
@@ -100,9 +101,17 @@ impl App {
             .render(area, buf);
     }
 
-    /// The segments that do something, in the order they are drawn.
+    /// The segments a bar `width` cells wide shows: the one answer the
+    /// paint, the click and the `f6` walk all ask. The right half gets at most
+    /// half the bar, so a message or the prompt on the left keeps the rest.
+    pub(crate) fn shown_segments(&self, width: u16) -> Vec<Segment> {
+        crate::status::fit(self.status_segments(), width as usize / 2)
+    }
+
+    /// The segments that do something, in the order they are drawn on the
+    /// last frame.
     fn actionable_segments(&self) -> Vec<SegmentId> {
-        self.status_segments()
+        self.shown_segments(self.screen.width)
             .into_iter()
             .map(|s| s.id)
             .filter(|id| id.action().is_some())
@@ -229,4 +238,22 @@ fn clip_to_cells(text: &str, room: usize) -> String {
             used <= room
         })
         .collect()
+}
+
+/// As many whole parts of the hint as fit in `room` cells, joined.
+fn fit_parts(parts: &[String], room: usize) -> String {
+    let mut out = String::new();
+    for part in parts {
+        let gap = if out.is_empty() { "" } else { HINT_GAP };
+        if typ_buffer::display_width(&out)
+            + typ_buffer::display_width(gap)
+            + typ_buffer::display_width(part)
+            > room
+        {
+            break;
+        }
+        out.push_str(gap);
+        out.push_str(part);
+    }
+    out
 }

@@ -111,11 +111,16 @@ fn the_status_bar_reports_the_cursor_position_one_based() {
         KeyModifiers::NONE,
     )))
     .unwrap();
+    // Wide enough that no segment drops for width.
+    app.set_screen(Rect::new(0, 0, 120, 30));
     // The whole right-hand strip, in order: what the file is, what state it is
     // in, and where the cursor sits. Asserted whole rather than by substring —
     // the order is a design decision and a substring check would not notice it
     // changing.
-    assert_eq!(app.status_right(), "hello.rs  rs  LF  Spaces: 4  1:2  50%");
+    assert_eq!(
+        app.status_right(),
+        "hello.rs  rs  LF  Spaces: 4  1:2  50%  ▣ standard"
+    );
 }
 
 #[test]
@@ -136,6 +141,8 @@ fn the_status_bar_states_the_width_the_file_uses() {
     .unwrap();
     let mut app = App::new(&dir).unwrap();
     app.open_path(&dir.join("two.rs")).unwrap();
+    // Wide enough that the indent does not drop for width.
+    app.set_screen(Rect::new(0, 0, 120, 30));
 
     assert!(
         app.status_right().contains("Spaces: 2"),
@@ -155,6 +162,7 @@ fn a_configured_indent_width_wins_over_the_measurement() {
     let mut app = App::new(&dir).unwrap();
     app.set_indent_width(Some(8));
     app.open_path(&dir.join("two.rs")).unwrap();
+    app.set_screen(Rect::new(0, 0, 120, 30));
 
     assert!(
         app.status_right().contains("Spaces: 8"),
@@ -179,4 +187,38 @@ fn the_idle_hint_names_the_chord_bound_to_focus_next() {
     app.set_keymap(keymap);
     let hint = app.status_left();
     assert!(hint.starts_with("F8 focus"), "hint: {hint}");
+}
+
+/// The idle hint gives up whole parts when the bar is narrow. Clipping by cells
+/// left `Ctrl+S save  ·  ` at 80 columns: a separator leading to nothing, or a
+/// chord cut from what it does.
+#[test]
+fn a_narrow_bar_drops_whole_parts_of_the_hint() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    let dir = fixture("hint-parts");
+    let mut app = App::new(&dir).unwrap();
+    app.open_path(&dir.join("hello.rs")).unwrap();
+    let full = app.status_left();
+    for width in 45..=120u16 {
+        let mut terminal = Terminal::new(TestBackend::new(width, 6)).unwrap();
+        terminal.draw(|frame| app.render(frame)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let row: String = (0..width).map(|x| buffer[(x, 5)].symbol()).collect();
+        // Cells, not bytes: the preset's `▣` is three bytes and one cell.
+        let right = app.status_right().chars().count();
+        let left: String = row
+            .chars()
+            .take((width as usize).saturating_sub(right))
+            .collect();
+        let left = left.trim_end();
+        assert!(!left.ends_with('\u{b7}'), "{width} columns: {row:?}");
+        assert!(
+            full.starts_with(left)
+                && (left.is_empty()
+                    || full.len() == left.len()
+                    || full[left.len()..].starts_with("  \u{b7}  ")),
+            "{width} columns cut a part: {row:?}"
+        );
+    }
 }
