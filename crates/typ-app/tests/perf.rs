@@ -58,11 +58,9 @@ fn draw(app: &mut App, terminal: &mut Terminal<TestBackend>) {
 
 /// An app with `n` files open, each a real buffer, and the workers wired up.
 ///
-/// **The sender is not optional here.** Without it `rewatch` returns on its
-/// first line and `request_parse_if_stale` on its third, so a tab switch
-/// measures an index assignment and reports 27 ns — which is what the first
-/// draft of this benchmark did. Both are the expensive halves of a switch, and
-/// `rewatch` is the one that talks to the OS.
+/// **The sender is not optional here.** Without it `request_parse_if_stale`
+/// returns early, and the workspace watch is never started, so the fixture
+/// would not be the app a user runs.
 ///
 /// The receiver comes back so the caller can hold it: dropping it makes every
 /// worker send fail, which is a different early return in the same place.
@@ -92,9 +90,9 @@ fn app_with_tabs(name: &str, n: usize) -> (App, typ_app::run::AppReceiver) {
 #[ignore = "wall-clock budget; run with --release --ignored --nocapture"]
 fn switching_tabs_stays_inside_a_keystroke() {
     // Twenty open files, and the switch does more than move an index: it
-    // restamps the MRU, reapplies the config, rewatches the file and asks
-    // whether the buffer needs parsing. Invariant 7 says none of that may block
-    // the render thread, and `rewatch` is the one that talks to the OS.
+    // restamps the MRU, reapplies the config and asks whether the buffer needs
+    // parsing. Invariant 7 says none of that may block the render thread. Since
+    // M4 it starts no file watch at all; `workspace_watch.rs` counts that.
     let _guard = exclusive();
     let (mut app, _rx) = app_with_tabs("switch", 20);
 
@@ -112,17 +110,13 @@ fn switching_tabs_stays_inside_a_keystroke() {
     );
 }
 
-// **What that number is, measured rather than guessed.** 640 µs a switch, and a
-// throwaway probe put `watch_file` plus its drop at 909 µs on its own — so the
-// whole cost is the OS file watcher being torn down and rebuilt, synchronously,
-// on the render thread.
-//
-// It passes at four percent of the keystroke budget, and it is left alone: the
-// milestone that watches a workspace rather than a file replaces this path
-// entirely, so tuning the single-file version now is work thrown away. Recorded
-// because "switching tabs does filesystem I/O on the render thread" is exactly
-// the sentence invariant 7 is written against, and nobody should have to
-// rediscover it with a profiler.
+// **What that number is, measured rather than guessed.** First measured at 640 µs,
+// the OS file watcher torn down and rebuilt on every switch. By v0.3.3 it was
+// already about 30 ns, because the per-tab watch had become a no-op for a tab
+// already watched (gap 85), and the benchmark's tabs were all watched when they
+// opened; the 640 µs in the architecture document had gone stale. M4 removed
+// the watch from the switch path entirely, measured at 14 ns before and 18 ns
+// after, best of five: the switch is an index and a few comparisons.
 
 #[test]
 #[ignore = "wall-clock budget; run with --release --ignored --nocapture"]
@@ -251,6 +245,69 @@ fn an_idle_wakeup_costs_nothing_against_a_frame() {
     assert!(
         per_wakeup.as_micros() < BUDGET_US,
         "idle wakeup {per_wakeup:?} exceeds the {BUDGET_US} µs frame budget"
+    );
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored --nocapture"]
+fn a_four_pane_frame_stays_inside_a_frame() {
+    // Four panes in a 2x2, each a different 50k-line file deep in, so every
+    // pane pays for the lines above its viewport the way one editor does. One
+    // file per pane because the same file cannot be open twice (M4 decision 1).
+    let _guard = exclusive();
+    let dir = std::env::temp_dir().join("typ-app-perf").join("four-panes");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let line = "    let editor = Editor::new(); // a representative line of code
+";
+    let text: String = std::iter::repeat_n(line, 50_000).collect();
+    let files: Vec<PathBuf> = (0..4)
+        .map(|i| {
+            let file = dir.join(format!("big{i}.rs"));
+            std::fs::write(&file, &text).unwrap();
+            file
+        })
+        .collect();
+
+    let mut app = App::new(&dir).unwrap();
+    let open = |app: &mut App, file: &PathBuf| {
+        app.open_path(file).unwrap();
+        app.editor_mut().goto_line(25_000);
+    };
+    open(&mut app, &files[0]);
+    for (split, file) in [
+        (typ_core::Action::SplitRight, &files[1]),
+        (typ_core::Action::SplitDown, &files[3]),
+    ] {
+        app.apply_named_action(split).unwrap();
+        app.close_picker();
+        open(&mut app, file);
+    }
+    app.apply_named_action(typ_core::Action::FocusPane(1))
+        .unwrap();
+    app.apply_named_action(typ_core::Action::SplitDown).unwrap();
+    app.close_picker();
+    open(&mut app, &files[2]);
+    assert_eq!(app.pane_count(), 4);
+
+    let mut terminal = Terminal::new(TestBackend::new(AREA.width, AREA.height)).unwrap();
+    draw(&mut app, &mut terminal); // warm
+
+    let frames = 20;
+    let mut best = std::time::Duration::MAX;
+    for _ in 0..5 {
+        let start = Instant::now();
+        for _ in 0..frames {
+            app.mark_dirty();
+            draw(&mut app, &mut terminal);
+        }
+        best = best.min(start.elapsed() / frames);
+    }
+
+    println!("four-pane frame: {best:?}");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "a four-pane frame costs {best:?}, over the {BUDGET_US} µs frame budget"
     );
 }
 

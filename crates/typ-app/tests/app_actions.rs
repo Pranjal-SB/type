@@ -140,6 +140,47 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             run(app, a);
             assert_eq!(app.active_tab(), n as usize - 1);
         },
+        Action::SplitRight | Action::SplitDown => |app, a| {
+            run(app, a);
+            assert_eq!(app.pane_count(), 2);
+            assert_eq!(
+                picker_mode(app),
+                Some(Mode::Files),
+                "the new pane is not being filled"
+            );
+        },
+        // The last pane does not close, and says so.
+        Action::ClosePane => |app, a| {
+            run(app, a);
+            assert_eq!(app.pane_count(), 1);
+            assert!(app.status().is_some(), "{} said nothing", a.name());
+        },
+        // One pane: the first is the only one there is, and taking it brings
+        // the keys back to the editor. Any other number names no pane.
+        Action::FocusPane(_) => |app, a| {
+            app.set_focus(Focus::Tree);
+            run(app, a);
+            let Action::FocusPane(n) = a else {
+                unreachable!()
+            };
+            let expected = if n == 1 { Focus::Editor } else { Focus::Tree };
+            assert_eq!(app.focus(), expected, "{}", a.name());
+            assert_eq!(app.current_pane(), 0);
+        },
+        // Nothing beside a lone pane: nothing moves.
+        Action::FocusNeighbour(_) => |app, a| {
+            run(app, a);
+            assert_eq!(app.pane_count(), 1);
+            assert_eq!(app.active_tab(), TABS - 1, "{}", a.name());
+        },
+        Action::ResizePanes => |app, a| {
+            run(app, a);
+            assert!(
+                app.status_left().contains("arrows move the rule"),
+                "{}",
+                app.status_left()
+            );
+        },
         Action::OpenMenu => |app, a| {
             run(app, a);
             assert_eq!(app.pending_prefix(), Some("ctrl+k"));

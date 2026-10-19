@@ -6,7 +6,7 @@ use anyhow::Result;
 use crossterm::ExecutableCommand;
 use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-    Event, KeyEventKind, MouseEvent, MouseEventKind,
+    Event, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
 };
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, enable_raw_mode};
 use ratatui::Terminal;
@@ -341,6 +341,8 @@ fn route_scroll(app: &mut App, m: MouseEvent, delta: i32, area: Rect) -> Vec<Pan
     let (tree_area, editor_area) = app.areas(area);
     if m.column < tree_area.width {
         app.tree_mut().handle_scroll(delta, tree_area)
+    } else if let Some(events) = app.scroll_pane_at(m, delta, area) {
+        events
     } else {
         app.editor_mut().handle_scroll(delta, editor_area)
     }
@@ -384,6 +386,8 @@ pub fn step(app: &mut App, event: AppEvent, area: Rect) -> Result<Flow> {
 /// `now` before the event is handled, so a test can be two seconds later
 /// without sleeping for them.
 pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Result<Flow> {
+    // The size a key that moves between or resizes panes measures against.
+    app.set_screen(area);
     // Marked here as well as by `finish`: a worker event that changes nothing
     // on its own still has to repaint the line it just retired.
     if app.expire(now) {
@@ -443,6 +447,33 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                 if app.pending_prefix().is_some() {
                     app.route_menu_mouse(m, area)?;
                     return finish(app, events, changed);
+                }
+
+                // A rule between panes is dragged, not clicked through: the
+                // press picks it up, motion with the button held moves it.
+                let rule_drag = match m.kind {
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        app.press_rule_at(m.column, m.row, area)
+                    }
+                    MouseEventKind::Drag(MouseButton::Left) => {
+                        app.drag_rule_to(m.column, m.row, area)
+                    }
+                    MouseEventKind::Up(MouseButton::Left) => app.release_rule(),
+                    _ => false,
+                };
+                if rule_drag {
+                    return finish(app, events, true);
+                }
+
+                // A press in a pane makes it the current one first, so the tab
+                // row and the text below route to the pane under the pointer.
+                // A press on the pane's number is that and nothing more.
+                if matches!(m.kind, MouseEventKind::Down(_))
+                    && app.press_pane_at(m.column, m.row, area)
+                {
+                    app.clear_transient();
+                    app.set_focus(Focus::Editor);
+                    return finish(app, events, true);
                 }
 
                 // The tab bar sits inside the editor's columns but above its

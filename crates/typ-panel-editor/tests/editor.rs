@@ -79,8 +79,8 @@ fn the_editor_has_no_raw_key_behaviour_of_its_own() {
 #[test]
 fn clicking_places_the_cursor_at_that_position() {
     let mut p = EditorPanel::from_str("hello\nworld\n");
-    let area = Rect::new(0, 0, 40, 10);
-    // One row and column of border, then three cells of gutter — a diagnostic
+    let area = Rect::new(1, 1, 38, 8);
+    // One row and column of margin, then three cells of gutter: a diagnostic
     // sign, a digit and a spacer — so column 7 is the fourth grapheme of
     // "world".
     let ev = MouseEvent {
@@ -96,10 +96,10 @@ fn clicking_places_the_cursor_at_that_position() {
 #[test]
 fn clicking_inside_a_wide_char_selects_that_char() {
     let mut p = EditorPanel::from_str("日本語\n");
-    let area = Rect::new(0, 0, 40, 10);
+    let area = Rect::new(1, 1, 38, 8);
     let ev = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
-        column: 2, // right half of the first CJK grapheme, past the border
+        column: 2, // right half of the first CJK grapheme, past the margin
         row: 1,
         modifiers: KeyModifiers::NONE,
     };
@@ -111,7 +111,7 @@ fn clicking_inside_a_wide_char_selects_that_char() {
 fn scrolling_moves_the_viewport_not_the_cursor() {
     let text = (0..100).map(|i| format!("line {i}\n")).collect::<String>();
     let mut p = EditorPanel::from_str(&text);
-    p.handle_scroll(5, Rect::new(0, 0, 40, 10));
+    p.handle_scroll(5, Rect::new(1, 1, 38, 8));
     assert_eq!(p.top_line(), 5);
     assert_eq!(p.cursor(), Position { line: 0, col: 0 });
 }

@@ -96,6 +96,70 @@ pub fn watch_file(
     Ok(FileWatch { _watcher: watcher })
 }
 
+/// What one notification means for a watched tree: each changed path `keep`
+/// accepts, or a failure, or the whole tree when the OS lost events.
+fn interpret_tree(
+    event: notify::Result<notify::Event>,
+    root: &Path,
+    real: &Path,
+    keep: &dyn Fn(&Path) -> bool,
+) -> Vec<(PathBuf, WatchEvent)> {
+    let event = match event {
+        Ok(event) => event,
+        Err(error) => return vec![(root.to_path_buf(), WatchEvent::Failed(error.to_string()))],
+    };
+    // Anything under the root may have changed with nothing naming it, so the
+    // root is named and the receiver checks what it has open.
+    if event.need_rescan() {
+        return vec![(root.to_path_buf(), WatchEvent::Changed)];
+    }
+    if !(event.kind.is_create() || event.kind.is_modify() || event.kind.is_remove()) {
+        return Vec::new();
+    }
+    event
+        .paths
+        .into_iter()
+        // Spelled under the root as given before anything looks at it: the
+        // OS reports the resolved path, and both the ignore rules and the tabs
+        // know the project by the spelling it was opened with.
+        .map(|path| match path.strip_prefix(real) {
+            Ok(rest) if real != root => root.join(rest),
+            _ => path,
+        })
+        .filter(|path| keep(path))
+        .map(|path| (path, WatchEvent::Changed))
+        .collect()
+}
+
+/// Report changes anywhere under `root` that `keep` accepts, by calling
+/// `on_event` from the watcher's thread.
+///
+/// One watch for a whole workspace rather than one per open file: a file
+/// opened or switched to costs nothing. `keep` runs on the watcher's thread,
+/// which is where a build writing ten thousand files into an ignored directory
+/// gets dropped, rather than on the thread that paints.
+///
+/// The paths handed on are under `root` as given here, even where the OS
+/// reports the resolved path (a symlinked root, or macOS's `/private/var`).
+pub fn watch_tree(
+    root: &Path,
+    keep: impl Fn(&Path) -> bool + Send + 'static,
+    on_event: impl Fn(PathBuf, WatchEvent) + Send + 'static,
+) -> Result<FileWatch> {
+    let base = root.to_path_buf();
+    let real = std::fs::canonicalize(root).unwrap_or_else(|_| base.clone());
+    let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        for (path, what) in interpret_tree(event, &base, &real, &keep) {
+            on_event(path, what);
+        }
+    })
+    .context("creating a workspace watcher")?;
+    watcher
+        .watch(root, RecursiveMode::Recursive)
+        .with_context(|| format!("watching {}", root.display()))?;
+    Ok(FileWatch { _watcher: watcher })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,6 +185,45 @@ mod tests {
         assert_eq!(
             interpret(Ok(event), "f.rs".as_ref()),
             Some(WatchEvent::Changed)
+        );
+    }
+
+    #[test]
+    fn a_tree_watch_drops_what_keep_refuses_and_names_the_rest() {
+        let event = notify::Event::new(EventKind::Modify(notify::event::ModifyKind::Any))
+            .add_path(PathBuf::from("/w/target/x.o"))
+            .add_path(PathBuf::from("/w/src/a.rs"));
+        let keep = |path: &Path| !path.starts_with("/w/target");
+        assert_eq!(
+            interpret_tree(Ok(event), Path::new("/w"), Path::new("/w"), &keep),
+            vec![(PathBuf::from("/w/src/a.rs"), WatchEvent::Changed)]
+        );
+    }
+
+    #[test]
+    fn a_tree_watch_spells_paths_under_the_root_it_was_given() {
+        // macOS reports `/private/var/...` for a root opened as `/var/...`, and
+        // any symlinked project does the same. Spelled the OS's way, a path
+        // matches no tab and slips past the ignore rules, so an outside write
+        // to an open file goes unseen.
+        let event = notify::Event::new(EventKind::Modify(notify::event::ModifyKind::Any))
+            .add_path(PathBuf::from("/private/w/target/x.o"))
+            .add_path(PathBuf::from("/private/w/src/a.rs"));
+        let keep = |path: &Path| !path.starts_with("/w/target");
+        assert_eq!(
+            interpret_tree(Ok(event), Path::new("/w"), Path::new("/private/w"), &keep),
+            vec![(PathBuf::from("/w/src/a.rs"), WatchEvent::Changed)]
+        );
+    }
+
+    #[test]
+    fn a_tree_rescan_names_the_root() {
+        let event = notify::Event::new(EventKind::Other).set_flag(Flag::Rescan);
+        assert_eq!(
+            interpret_tree(Ok(event), Path::new("/w"), Path::new("/w"), &|_: &Path| {
+                true
+            }),
+            vec![(PathBuf::from("/w"), WatchEvent::Changed)]
         );
     }
 

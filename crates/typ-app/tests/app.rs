@@ -63,28 +63,36 @@ fn opening_a_file_moves_focus_to_the_editor() {
 
 #[test]
 fn layout_gives_the_tree_a_fixed_width_sidebar() {
-    let (tree, editor) = split(Rect::new(0, 0, 100, 30));
-    assert_eq!(tree.width, 30);
-    // The editor begins on the tree's *last* column, not the one after it. That
-    // shared cell is the divider: both panels draw a border into it, so the
-    // screen gets one vertical rather than two touching in different colours.
-    // Overlapping here is what lets each panel keep drawing its own full box
-    // without ever knowing what sits beside it.
-    assert_eq!(editor.x, 29);
-    assert_eq!(editor.width, 71);
-    assert_eq!(
-        tree.right(),
-        editor.x + 1,
-        "the panels must overlap by exactly one column"
-    );
+    let body = split(Rect::new(0, 0, 100, 30));
+    // The sidebar and its rule take 30 columns between them: 29 of list, one
+    // of line. The editor starts on the column after the rule, so no cell is
+    // drawn twice and neither panel has to know what sits beside it.
+    assert_eq!(body.tree.width, 29);
+    assert_eq!(body.rule, Rect::new(29, 0, 1, 30));
+    assert_eq!(body.editor.x, 30);
+    assert_eq!(body.editor.width, 70);
+    assert_eq!(body.heading, Rect::new(0, 0, 29, 1));
+    assert_eq!(body.tree.y, 1, "the list starts under its heading");
 }
 
 #[test]
 fn layout_shrinks_the_sidebar_on_narrow_terminals() {
     // Exact, not `< 30` and `> 0`, which a one-column sidebar satisfied.
     // Gap 137. Under 60 columns the sidebar is a third of the width.
-    let (tree, editor) = split(Rect::new(0, 0, 40, 30));
-    assert_eq!(tree.width, 13);
-    assert_eq!(editor.x, 12, "the editor starts on the tree's last column");
-    assert_eq!(editor.width, 28);
+    let body = split(Rect::new(0, 0, 40, 30));
+    assert_eq!(body.tree.width, 12);
+    assert_eq!(body.rule.x, 12);
+    assert_eq!(body.editor.x, 13);
+    assert_eq!(body.editor.width, 27);
+}
+
+#[test]
+fn layout_survives_a_frame_too_small_to_split() {
+    for width in 0..4 {
+        for height in 0..3 {
+            let body = split(Rect::new(0, 0, width, height));
+            assert!(body.editor.right() <= width.max(body.editor.x));
+            assert!(body.tree.height <= height);
+        }
+    }
 }

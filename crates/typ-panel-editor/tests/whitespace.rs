@@ -13,10 +13,10 @@ use typ_panel_editor::EditorPanel;
 use typ_panel_editor::render::Whitespace;
 
 const AREA: Rect = Rect {
-    x: 0,
-    y: 0,
-    width: 24,
-    height: 6,
+    x: 1,
+    y: 1,
+    width: 22,
+    height: 4,
 };
 
 fn pos(line: usize, col: usize) -> Position {
@@ -34,7 +34,7 @@ fn render(panel: &mut EditorPanel) -> Buffer {
         terminal_width: AREA.width,
         terminal_height: AREA.height,
     };
-    let mut buf = Buffer::empty(AREA);
+    let mut buf = Buffer::empty(Rect::new(0, 0, AREA.right() + 1, AREA.bottom() + 1));
     panel.render(AREA, &mut buf, &ctx);
     buf
 }

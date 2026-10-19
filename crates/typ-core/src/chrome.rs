@@ -1,23 +1,15 @@
-//! The frame a panel draws around itself.
+//! What the app draws between and around regions, and the float.
 //!
-//! A box, with the title set into the top edge, and a rule about what happens
-//! in the one cell where two boxes meet.
+//! **Lines mean docked, boxes mean floating** (interface §0.3). A docked panel
+//! draws its content and nothing around it; the app separates regions with a
+//! [`rule`] and heads a dock with a [`labelled_rule`]. Only something drawn
+//! over other content gets a box, and that box is a [`float`].
 //!
-//! **The problem this solves is adjacency, not borders.** Two panels laid edge
-//! to edge each drew a full box, so a `┐` landed in the last column of one and
-//! a `┌` in the first column of the next: two rules, touching, in two different
-//! colours whenever one panel held focus. That reads as a seam.
-//!
-//! Deleting the verticals fixed the seam and cost the boundary — the sidebar
-//! and the editor stopped reading as two things. So the boxes stay and the
-//! *overlap* is what changes: `layout::split` hands the two panels rects that
-//! share a column, and the frame **merges** the glyph it finds there instead of
-//! overwriting it. `┐` meeting `┌` is `┬`. One vertical on screen, drawn twice,
-//! and neither panel has to know what sits beside it.
-//!
-//! The merge survives the second panel's background fill because
-//! `Buffer::set_style` patches style without touching symbols, so the first
-//! panel's corner is still in the cell when the second one looks.
+//! Until M4 every panel drew its own box and the layout overlapped two rects by
+//! a column so their corners merged into tees. That made the panel responsible
+//! for something it could not see, the panel beside it, and charged every panel
+//! a column and two rows. The app knows where the regions meet; the app draws
+//! the line.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -46,14 +38,13 @@ pub fn printable(text: &str) -> impl Iterator<Item = &str> {
         .filter(|g| !g.contains(char::is_control))
 }
 
-use crate::RenderContext;
+use crate::{RenderContext, ThemeColors};
 
-/// The content area inside a framed panel.
+/// The content area inside a float's border.
 ///
-/// Exactly what `Block::bordered().inner(area)` reserved before this module
-/// existed, and it has to stay that way: `text_area`, `gutter_area`, mouse
-/// hit-testing and the horizontal-scroll arithmetic all subtract it, and a
-/// one-cell drift lands every click a column from the pointer.
+/// `text_area`-style arithmetic and mouse hit-testing both subtract it, and a
+/// one-cell drift lands every click a column from the pointer, so render and
+/// hit-test ask this one function.
 pub fn inner(area: Rect) -> Rect {
     Rect {
         x: area.x.saturating_add(1).min(area.right()),
@@ -63,91 +54,82 @@ pub fn inner(area: Rect) -> Rect {
     }
 }
 
-/// Merge two box-drawing glyphs meeting in one cell.
+/// A vertical rule down every row of `area`'s first column (interface §2).
 ///
-/// Only the pairs two side-by-side panels can actually produce are listed;
-/// anything else keeps the incoming glyph, so a frame drawn over ordinary
-/// content still just draws itself.
-fn merge(existing: &str, incoming: char) -> char {
-    match (existing, incoming) {
-        ("┐", '┌') | ("┌", '┐') => '┬',
-        ("┘", '└') | ("└", '┘') => '┴',
-        ("┬", _) => '┬',
-        ("┴", _) => '┴',
-        _ => incoming,
+/// The line between two docked regions: in `border`, the 3:1 slot, whichever
+/// side has focus. Focus is said by the label, not by the line.
+pub fn rule(area: Rect, buf: &mut Buffer, theme: &ThemeColors, background: Color) {
+    let area = area.intersection(buf.area);
+    if area.width == 0 {
+        return;
+    }
+    let style = Style::default().fg(theme.border).bg(background);
+    for y in area.top()..area.bottom() {
+        buf[(area.x, y)].set_symbol("│").set_style(style);
     }
 }
 
-/// Write one glyph, merging with whatever is already in the cell.
-fn put(buf: &mut Buffer, x: u16, y: u16, glyph: char, style: Style) {
-    if !buf.area.contains((x, y).into()) {
+/// A horizontal rule along `area`'s first row (interface §2).
+///
+/// Between two regions stacked one above the other, and the plain half of a
+/// [`labelled_rule`].
+pub fn horizontal_rule(area: Rect, buf: &mut Buffer, theme: &ThemeColors, background: Color) {
+    let area = area.intersection(buf.area);
+    if area.height == 0 {
         return;
     }
-    let merged = merge(buf[(x, y)].symbol(), glyph);
-    buf[(x, y)].set_char(merged).set_style(style);
+    let style = Style::default().fg(theme.border).bg(background);
+    for x in area.left()..area.right() {
+        buf[(x, area.y)].set_symbol("─").set_style(style);
+    }
 }
 
-/// Paint a panel's background and the box around it.
+/// A docked region's heading: `── label ───…` along `area`'s first row.
 ///
-/// `background` is an argument rather than read from the theme because the
-/// sidebar and the editor no longer share a surface: chrome sits on
-/// `chrome_bg`, content on `bg`.
+/// Interface §2 option A. The rule is `border`; the label recedes while the
+/// region is unfocused, and when it has focus the label turns accent and bold
+/// and the two cells of rule before it turn accent too. The rest of the rule
+/// stays the rule.
 ///
-/// Call before the panel draws its content — this fills the whole rect, and
-/// anything drawn first would be painted over.
-pub fn frame(area: Rect, buf: &mut Buffer, title: &str, ctx: &RenderContext, background: Color) {
-    // Every cell, including the ones the box does not reach. A blank cell left
-    // at `Color::Reset` shows the user's terminal background rather than the
-    // theme's, which draws stripes of the wrong colour down the screen wherever
-    // the frame reserved a cell and drew nothing into it.
-    buf.set_style(area, Style::default().bg(background));
-
-    // Two columns for the sides and one between them; two rows for the top and
-    // bottom. Below that there is no box to draw — and the sidebar really does
-    // get this narrow, degrading to a third of the width under 60 columns.
-    if area.width < 3 || area.height < 2 {
+/// The label is clipped, never wrapped, and written through `set_stringn`, which
+/// drops control characters: it is a directory name, and those are chosen by
+/// whoever made the repository.
+pub fn labelled_rule(
+    area: Rect,
+    buf: &mut Buffer,
+    label: &str,
+    focused: bool,
+    theme: &ThemeColors,
+    background: Color,
+) {
+    let area = area.intersection(buf.area);
+    if area.height == 0 || area.width == 0 {
         return;
     }
+    horizontal_rule(area, buf, theme, background);
 
-    let colour = if ctx.is_focused {
-        ctx.theme.border_focused
+    let style = Style::default().fg(theme.border).bg(background);
+    let (lead, text) = if focused {
+        let accent = style.fg(theme.border_focused);
+        (accent, accent.add_modifier(Modifier::BOLD))
     } else {
-        ctx.theme.border
+        (style, style.fg(theme.receded_fg))
     };
-    let style = Style::default().fg(colour).bg(background);
-    let (left, right) = (area.x, area.right() - 1);
-    let (top, bottom) = (area.y, area.bottom() - 1);
-
-    // The horizontals, title set into the top one. Written before the corners
-    // so a clipped title cannot eat them.
-    let span = (area.width - 2) as usize;
-    let head = format!("─ {title} ");
-    let fill = span.saturating_sub(head.chars().count());
-    let rule = format!("{head}{}", "─".repeat(fill));
-    buf.set_stringn(left + 1, top, &rule, span, style);
-    buf.set_stringn(left + 1, bottom, "─".repeat(span), span, style);
-
-    // The title is the panel's label (interface §4): accent and bold when it
-    // has focus, receded with the rest of the panel when it does not. Written
-    // over the name the rule already carries, clipped at the same column.
-    let label = if ctx.is_focused {
-        style.add_modifier(Modifier::BOLD)
-    } else {
-        style.fg(ctx.theme.receded_fg)
-    };
-    buf.set_stringn(left + 3, top, title, span.saturating_sub(2), label);
-
-    // The verticals.
-    for y in (top + 1)..bottom {
-        put(buf, left, y, '│', style);
-        put(buf, right, y, '│', style);
+    for x in area.x..area.right().min(area.x + 2) {
+        buf[(x, area.y)].set_style(lead);
     }
 
-    // The corners, merged with whatever a neighbouring panel already left here.
-    put(buf, left, top, '┌', style);
-    put(buf, right, top, '┐', style);
-    put(buf, left, bottom, '└', style);
-    put(buf, right, bottom, '┘', style);
+    // `── ` then the label then a space, and at least one cell of rule after.
+    let start = area.x + 3;
+    if label.is_empty() || start + 3 > area.right() {
+        return;
+    }
+    buf[(start - 1, area.y)].set_symbol(" ");
+    let room = (area.right() - start - 2) as usize;
+    let (end, _) = buf.set_stringn(start, area.y, label, room, text);
+    if end < area.right() {
+        buf[(end, area.y)].set_symbol(" ");
+    }
 }
 
 /// A float: anything drawn over other content (interface §3).
@@ -163,8 +145,8 @@ pub fn frame(area: Rect, buf: &mut Buffer, title: &str, ctx: &RenderContext, bac
 /// edge simply loses that side of it.
 ///
 /// Every cell inside is cleared, symbol and style, before anything is drawn:
-/// `frame` only restyles, which is right for a docked panel that paints every
-/// cell anyway and wrong for a box over text it does not own.
+/// a docked panel only restyles its rect, which is right for something that
+/// paints every cell anyway and wrong for a box over text it does not own.
 ///
 /// No shadow and no animation: a float appears whole in one frame.
 pub fn float(area: Rect, buf: &mut Buffer, name: &str, exit: &str, ctx: &RenderContext) {

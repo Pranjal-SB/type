@@ -34,7 +34,7 @@ fn render(panel: &mut EditorPanel, area: Rect) {
         terminal_width: area.width,
         terminal_height: area.height,
     };
-    let mut buf = Buffer::empty(area);
+    let mut buf = Buffer::empty(Rect::new(0, 0, area.right() + 1, area.bottom() + 1));
     panel.render(area, &mut buf, &ctx);
 }
 
@@ -149,7 +149,7 @@ fn a_horizontal_motion_forgets_the_goal_column() {
 fn page_motions_move_by_the_visible_height() {
     let text = (0..100).map(|i| format!("line {i}\n")).collect::<String>();
     let mut p = EditorPanel::from_str(&text);
-    render(&mut p, Rect::new(0, 0, 40, 12)); // 12 rows minus the border = 10
+    render(&mut p, Rect::new(1, 1, 38, 10)); // 10 text rows
     p.apply_action(mv(Motion::PageDown));
     assert_eq!(p.cursor().line, 10);
     p.apply_action(mv(Motion::PageUp));

@@ -22,7 +22,7 @@ fn paint(is_focused: bool) -> (Buffer, ThemeColors) {
     let rope = ropey::Rope::from_str(text);
     panel.set_syntax(1, Arc::new(Syntax::parse(Language::Rust, &rope).unwrap()));
 
-    let area = Rect::new(0, 0, 30, 5);
+    let area = Rect::new(1, 1, 28, 3);
     let ctx = RenderContext {
         theme: &theme,
         syntax: &syntax,
@@ -32,7 +32,7 @@ fn paint(is_focused: bool) -> (Buffer, ThemeColors) {
         terminal_width: 30,
         terminal_height: 5,
     };
-    let mut buf = Buffer::empty(area);
+    let mut buf = Buffer::empty(Rect::new(0, 0, area.right() + 1, area.bottom() + 1));
     panel.render(area, &mut buf, &ctx);
     (buf, theme)
 }

@@ -638,8 +638,12 @@ Tabs and the command palette came forward to **M2.9**, and the fuzzy finder and 
 M2.8, because M2.8 made moving between files the primary interaction while `App` still held one
 buffer — every `Ctrl+P` discarded the file you were on. What is left for M4 is the part that
 needs a layout tree and a second answer to "which panel is active", plus a watcher that follows a
-workspace rather than a file: a tab switch currently rebuilds an OS file watch on the render
-thread, measured at 640 µs of a 16 ms budget.
+workspace rather than a file: a tab switch rebuilt an OS file watch on the render thread,
+measured at 640 µs of a 16 ms budget. (By v0.3.3 that had already fallen to about 30 ns, since
+the per-tab watch had become a no-op for a tab already watched; the figure here was stale.)
+**M4 Panes (v0.4.0)** shipped the tree, splits and the workspace watcher, after which a switch
+starts no watch at all; docks are M4.1 (v0.4.1) and
+layout presets with sessions M4.2 (v0.4.2).
 
 **M5 — Terminal and git.** PTY panel, git gutter/status/diff/blame.
 
@@ -657,9 +661,13 @@ using it daily, and the project stays alive because it is useful before it is fi
 
 ## 10. Open questions
 
-- **Layout model.** TermIDE uses an accordion with smart stacking; VS Code uses fixed
-  sidebar plus editor group splits; Zed uses tiled panes. Decide at M4, ideally against
-  mockups rather than in prose.
+- ~~**Layout model.**~~ **Closed at M4 (v0.4.0): a fixed sidebar beside a binary tree of
+  tiled panes.** Decided against the mockups in `interface.md` §2 and §7. The editor area is a
+  `Layout` of `Leaf(PaneId)` and `Split { axis, ratio, a, b }`; each pane holds its own tabs; one
+  geometry function serves render and hit-testing. Regions are divided by single 3:1 rules,
+  never boxes, and a dock's heading is a labelled rule. One file is in one pane at a time, until
+  a shared document with per-view selections is planned as its own milestone. Docks (M4.1)
+  and presets with sessions (M4.2) build on this tree rather than replacing it.
 - ~~**Config format.**~~ **Closed at M2: TOML.** Decided by shipping rather than by argument —
   `keys.toml` landed in Task 14 and the `toml` crate was already in the tree. JSONC's
   advantage was easing migration from VS Code, which matters for a keybinding file someone

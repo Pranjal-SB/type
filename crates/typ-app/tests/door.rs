@@ -299,7 +299,10 @@ fn a_tall_menu_is_capped_at_a_third_and_the_arrows_reach_the_rest() {
 
     // Every row comes on screen as the highlight walks down to it.
     let mut seen = text;
-    for _ in 0..30 {
+    // As many presses as there are rows, so the walk cannot run short when
+    // the default table grows (it did, by twelve pane rows, at M4).
+    let rows = app.keymap().under("ctrl+k").len();
+    for _ in 0..rows {
         press(&mut app, KeyCode::Down, KeyModifiers::NONE);
         seen.push_str(&screen(&draw(&mut app, AREA)));
     }

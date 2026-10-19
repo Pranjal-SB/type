@@ -417,12 +417,7 @@ impl EditorPanel {
         }
     }
 
-    /// The area inside the frame, before the gutter is taken out of it.
-    fn inner_area(area: Rect) -> Rect {
-        typ_core::chrome::inner(area)
-    }
-
-    /// The text area: inside the border, and to the right of the gutter.
+    /// The text area: the panel's rect, to the right of the gutter.
     ///
     /// This is an instance method rather than a free function precisely because
     /// the gutter's width depends on the buffer. Three callers convert between
@@ -432,21 +427,19 @@ impl EditorPanel {
     /// `gutter_width` graphemes to the left of the pointer, which is a failure
     /// no test of the gutter's own output would catch.
     fn text_area(&self, area: Rect) -> Rect {
-        let inner = Self::inner_area(area);
-        let gutter = (self.gutter_width() as u16).min(inner.width);
+        let gutter = (self.gutter_width() as u16).min(area.width);
         Rect {
-            x: inner.x + gutter,
-            width: inner.width - gutter,
-            ..inner
+            x: area.x + gutter,
+            width: area.width - gutter,
+            ..area
         }
     }
 
     /// The gutter's own area, to the left of the text.
     fn gutter_area(&self, area: Rect) -> Rect {
-        let inner = Self::inner_area(area);
         Rect {
-            width: (self.gutter_width() as u16).min(inner.width),
-            ..inner
+            width: (self.gutter_width() as u16).min(area.width),
+            ..area
         }
     }
 
@@ -477,7 +470,7 @@ impl EditorPanel {
             } else if col >= self.left_col + self.width {
                 // Keep the cursor one column inside the right edge so the
                 // character being typed is visible rather than flush against
-                // the border.
+                // the pane's edge.
                 self.left_col = col + 1 - self.width;
             }
         }
@@ -631,7 +624,10 @@ impl Panel for EditorPanel {
     }
 
     fn render(&mut self, area: Rect, buf: &mut Buffer, ctx: &RenderContext) {
-        typ_core::chrome::frame(area, buf, &self.title(), ctx, ctx.theme.bg);
+        // Content only: the app draws the rules between regions, and the
+        // file's name is its tab. Every cell takes the page's ground, so none
+        // shows the terminal's own background through.
+        buf.set_style(area, Style::default().bg(ctx.theme.bg));
 
         let text_area = self.text_area(area);
         let gutter_area = self.gutter_area(area);

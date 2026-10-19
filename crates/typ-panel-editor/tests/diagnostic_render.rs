@@ -14,10 +14,10 @@ use typ_panel_editor::EditorPanel;
 use typ_panel_editor::gutter::{Gutter, GutterComponent};
 
 const AREA: Rect = Rect {
-    x: 0,
-    y: 0,
-    width: 30,
-    height: 6,
+    x: 1,
+    y: 1,
+    width: 28,
+    height: 4,
 };
 
 fn at(line: usize, col: usize) -> Position {
@@ -44,7 +44,7 @@ fn render(panel: &mut EditorPanel, diagnostics: &[Diagnostic]) -> Buffer {
         terminal_width: AREA.width,
         terminal_height: AREA.height,
     };
-    let mut buf = Buffer::empty(AREA);
+    let mut buf = Buffer::empty(Rect::new(0, 0, AREA.right() + 1, AREA.bottom() + 1));
     panel.render(AREA, &mut buf, &ctx);
     buf
 }
@@ -60,12 +60,13 @@ fn panel(text: &str) -> EditorPanel {
     panel
 }
 
-/// `chrome::frame` draws a border, so the panel's first content cell is
-/// (1, 1). The fixture's gutter is then a sign and a spacer.
+/// The panel's rect starts at (1, 1), one cell in from the buffer's edge, so a
+/// coordinate that forgot the rect's origin is caught. The fixture's gutter is
+/// then a sign and a spacer.
 const GUTTER_X: u16 = 1;
 const TEXT_X: u16 = 3;
 
-/// Buffer line `line` is drawn on row `line + 1`, inside the border.
+/// Buffer line `line` is drawn on row `line + 1`, the rect's first row plus `line`.
 fn y_of(line: u16) -> u16 {
     line + 1
 }

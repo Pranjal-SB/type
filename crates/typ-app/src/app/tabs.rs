@@ -27,7 +27,8 @@ impl App {
     /// remembered the answer are both gone. The guard moves to *closing* a tab,
     /// where the work is actually at risk.
     pub fn open_path(&mut self, path: &Path) -> Result<()> {
-        if let Some(index) = self.tab_for(path) {
+        if let Some((pane, index)) = self.tab_for(path) {
+            self.pane = pane;
             self.activate_tab(index);
             // `activate_tab` returns early when the tab is already active, so
             // this is not redundant: opening the file already on screen, from
@@ -40,11 +41,12 @@ impl App {
         // beside it would leave every session with a first tab that can never
         // become useful. Only when nobody has typed in it — an untitled buffer
         // with work in it is exactly what the old open guard protected.
-        let scratch = self.tabs.len() == 1
-            && self.tabs[0].panel.path().is_none()
-            && !self.tabs[0].panel.is_dirty();
+        let tabs = &self.panes[self.pane].tabs;
+        let scratch =
+            tabs.len() == 1 && tabs[0].panel.path().is_none() && !tabs[0].panel.is_dirty();
         if scratch {
-            self.tabs[0] = Tab::new(self.panel_for(path)?);
+            self.panes[self.pane].tabs[0] = Tab::new(self.panel_for(path)?);
+            self.watch_tab(self.pane, 0);
             self.settle_active_tab();
             return Ok(());
         }
@@ -76,21 +78,19 @@ impl App {
         Ok(())
     }
 
-    /// The tab already holding `path`, if there is one.
+    /// The tab already holding `path`, in any pane, as `(pane, tab)` indices.
     ///
     /// Compared canonically: a picker produces `src/main.rs`, a tree produces an
     /// absolute path and a command line can produce `./src/main.rs`, and all
     /// three are the same file. `canonicalize` fails on a path with no file
     /// behind it, which is a normal case here — opening a name that does not
     /// exist yet — so it falls back to comparing what it was given.
-    pub(crate) fn tab_for(&self, path: &Path) -> Option<usize> {
+    pub(crate) fn tab_for(&self, path: &Path) -> Option<(usize, usize)> {
         fn resolve(path: &Path) -> std::path::PathBuf {
             std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
         }
         let wanted = resolve(path);
-        self.tabs
-            .iter()
-            .position(|tab| tab.panel.path().is_some_and(|open| resolve(open) == wanted))
+        self.find_tab(|tab| tab.panel.path().is_some_and(|open| resolve(open) == wanted))
     }
 
     /// Open `path` alongside whatever is already open, and switch to it.
@@ -99,34 +99,39 @@ impl App {
     /// make and it is why `open_path`'s confirmation goes away with them.
     pub fn open_in_new_tab(&mut self, path: &Path) -> Result<()> {
         let tab = Tab::new(self.panel_for(path)?);
-        self.tabs.push(tab);
+        let pane = &mut self.panes[self.pane];
+        pane.tabs.push(tab);
         // Before `settle_active_tab`, which writes the configured indent width
         // and whitespace into `tabs[active]` — run it while `active` still
         // points at the tab being left and the settings land on the wrong file.
-        self.active = self.tabs.len() - 1;
+        pane.active = pane.tabs.len() - 1;
+        self.watch_tab(self.pane, self.panes[self.pane].active);
         self.settle_active_tab();
         Ok(())
     }
 
     /// Make the tab at `index` the visible one.
     pub fn activate_tab(&mut self, index: usize) {
-        if index >= self.tabs.len() || index == self.active {
+        let pane = &mut self.panes[self.pane];
+        if index >= pane.tabs.len() || index == pane.active {
             return;
         }
-        self.active = index;
+        pane.active = index;
         self.settle_active_tab();
         self.mark_dirty();
     }
 
     /// The next open file, wrapping at the end.
     pub fn next_tab(&mut self) {
-        let next = (self.active + 1) % self.tabs.len();
+        let pane = &self.panes[self.pane];
+        let next = (pane.active + 1) % pane.tabs.len();
         self.activate_tab(next);
     }
 
     /// The previous open file, wrapping at the start.
     pub fn prev_tab(&mut self) {
-        let previous = (self.active + self.tabs.len() - 1) % self.tabs.len();
+        let pane = &self.panes[self.pane];
+        let previous = (pane.active + pane.tabs.len() - 1) % pane.tabs.len();
         self.activate_tab(previous);
     }
 
@@ -137,7 +142,7 @@ impl App {
     /// Callers that reach this directly, like a click on a close box, have
     /// already asked or have decided not to.
     pub fn close_tab(&mut self, index: usize) {
-        if index >= self.tabs.len() {
+        if index >= self.panes[self.pane].tabs.len() {
             return;
         }
 
@@ -151,33 +156,35 @@ impl App {
         // Never zero tabs: `editor()` would have to return an `Option` and
         // every one of its callers would handle a state with no meaning. The
         // last one closing leaves the empty buffer the editor starts in.
-        if self.tabs.len() == 1 {
-            self.tabs[0] = Tab::new(EditorPanel::from_str(""));
+        if self.panes[self.pane].tabs.len() == 1 {
+            self.panes[self.pane].tabs[0] = Tab::new(EditorPanel::from_str(""));
             self.settle_active_tab();
             self.mark_dirty();
             return;
         }
 
-        self.tabs.remove(index);
+        let pane = &mut self.panes[self.pane];
+        pane.tabs.remove(index);
         // Closing a tab that is not on screen must not change what is. Its
         // index moves when an earlier one goes, which is the whole reason an
         // index is not a handle.
-        if index != self.active {
-            if index < self.active {
-                self.active -= 1;
+        if index != pane.active {
+            if index < pane.active {
+                pane.active -= 1;
             }
             self.mark_dirty();
             return;
         }
 
-        self.active = self.most_recently_used();
+        self.panes[self.pane].active = self.most_recently_used();
         self.settle_active_tab();
         self.mark_dirty();
     }
 
     /// The tab with the highest `last_used` stamp.
     fn most_recently_used(&self) -> usize {
-        self.tabs
+        self.panes[self.pane]
+            .tabs
             .iter()
             .enumerate()
             .max_by_key(|(_, tab)| tab.last_used)
@@ -195,15 +202,16 @@ impl App {
     /// close box that skipped the question would be the one path in the editor
     /// that loses work in a single click without saying anything.
     pub(crate) fn request_close_tab(&mut self, index: usize) {
-        if index >= self.tabs.len() {
+        if index >= self.panes[self.pane].tabs.len() {
             return;
         }
+        let panel = &self.panes[self.pane].tabs[index].panel;
         if self.close_pending != Some(index)
-            && let Some(message) = self.tabs[index].panel.needs_close_confirmation()
+            && let Some(message) = panel.needs_close_confirmation()
         {
             self.status = Some(format!(
                 "{message}  Close {} again to discard, Ctrl+S to save.",
-                self.tabs[index].panel.file_name()
+                panel.file_name()
             ));
             self.close_pending = Some(index);
             return;
@@ -238,18 +246,21 @@ impl App {
     /// in the same place: config the new panel has never seen, a file that may
     /// not be watched yet or may have changed while hidden, and a buffer that
     /// may want parsing.
-    fn settle_active_tab(&mut self) {
+    pub(super) fn settle_active_tab(&mut self) {
         // Every path that makes a tab active lands here, which is what keeps
         // the stamp honest — a switch that forgot it would make the tab look
         // older than one nobody has touched.
         self.next_use += 1;
-        self.tabs[self.active].last_used = self.next_use;
+        self.panes[self.pane].shown_mut().last_used = self.next_use;
 
         self.apply_indent_width();
-        self.tabs[self.active].panel.set_whitespace(self.whitespace);
+        self.panes[self.pane]
+            .shown_mut()
+            .panel
+            .set_whitespace(self.whitespace);
         self.set_focus(Focus::Editor);
-        // A no-op for a tab already watched, so a switch costs nothing here.
-        self.watch_tab(self.active);
+        // No watch here: a file is watched when it opens, by the workspace or
+        // by its own, so a switch costs the OS nothing.
         self.warn_if_changed_on_disk();
         self.request_parse_if_stale();
     }
@@ -261,9 +272,9 @@ impl App {
 
     /// Where the tab bar is, or a zero-height rect when there is not one.
     pub fn tab_bar_area(&self, area: Rect) -> Rect {
-        let (body, _) = crate::layout::split_frame(area);
-        let (_, pane) = crate::layout::split(body);
-        crate::layout::split_tabs(pane, self.tabs.len()).0
+        let (body, _) = self.split_body(area);
+        self.current_pane_area(crate::layout::split(body).editor)
+            .bar
     }
 
     /// Give a mouse event to the tab bar. Returns whether the bar took it.
@@ -288,9 +299,13 @@ impl App {
             return false;
         }
 
-        let labels: Vec<String> = self.tabs.iter().map(|tab| tab.panel.title()).collect();
+        let labels: Vec<String> = self.panes[self.pane]
+            .tabs
+            .iter()
+            .map(|tab| tab.panel.title())
+            .collect();
         let x = event.column - bar.x;
-        let Some(cell) = crate::tabbar::cells(&labels, self.active, bar.width)
+        let Some(cell) = crate::tabbar::cells(&labels, self.panes[self.pane].active, bar.width)
             .into_iter()
             .find(|cell| x >= cell.x && x < cell.x + cell.width)
         else {
@@ -322,11 +337,11 @@ impl App {
     /// outside this file go through here and none of them need to know a list
     /// exists.
     pub fn editor(&self) -> &EditorPanel {
-        &self.tabs[self.active].panel
+        &self.panes[self.pane].shown().panel
     }
 
     pub fn editor_mut(&mut self) -> &mut EditorPanel {
-        &mut self.tabs[self.active].panel
+        &mut self.panes[self.pane].shown_mut().panel
     }
 
     /// One open file by position, active or not.
@@ -335,16 +350,16 @@ impl App {
     /// the whole point: a parse landing on a backgrounded tab is invisible
     /// through the active-tab accessor.
     pub fn tab(&self, index: usize) -> &EditorPanel {
-        &self.tabs[index].panel
+        &self.panes[self.pane].tabs[index].panel
     }
 
     /// How many files are open. Never zero.
     pub fn tab_count(&self) -> usize {
-        self.tabs.len()
+        self.panes[self.pane].tabs.len()
     }
 
     /// Index of the active tab.
     pub fn active_tab(&self) -> usize {
-        self.active
+        self.panes[self.pane].active
     }
 }

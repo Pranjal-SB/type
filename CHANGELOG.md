@@ -3,6 +3,38 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.4.0] - 2026-10-03 (M4 Panes, shell slice 3 begun)
+
+The first part of the layout model in `docs/design/interface.md` §2, §5 and §7: lines between
+regions instead of boxes around panels, and the editor area split into panes. Docks and layout
+presets follow in v0.4.1 and v0.4.2.
+
+### Added
+- **Panes.** `ctrl+k \` splits the current pane to the right and `ctrl+k -` splits it downward.
+  The new pane opens empty with the file picker up. `ctrl+k x` closes the current pane, asking
+  first if a tab in it has unsaved work, as closing those tabs would; the last pane never closes.
+  A file is open in one pane at a time: opening it again focuses the pane that has it.
+- **Moving between panes.** `ctrl+k 1` to `9` focuses a pane by its number, which leads its tab
+  row and counts in reading order. `alt+arrow` focuses the pane beside the current one,
+  preferring the one level with the cursor. A click anywhere in a pane focuses it, and the wheel
+  scrolls the pane under the pointer without moving focus.
+- **Resizing.** Drag the rule between two panes, or press `ctrl+k =` and use the arrows; `=`
+  evens the split and `enter` or `esc` leaves. No pane goes under 10 columns or 3 rows.
+- **One watch for the workspace.** Outside writes anywhere under the project are noticed by a
+  single recursive watch, built and filtered off the render thread by the same ignore rules the
+  file picker walks with. A file outside the project, or one it ignores, still gets a watch of its
+  own.
+
+### Changed
+- **Lines, not boxes.** No panel draws a frame any more. A single rule divides the tree from
+  the editor, the tree's heading is a labelled rule (`── project ──`, accent and bold while it
+  has focus), and every pane is divided from its neighbours by one rule. The editor gains the
+  column and two rows its box used.
+- **The tab row is always shown**, one tab included: with the box gone, the tab is the
+  editor's label and where focus shows.
+- **A tab switch does no file watching.** It used to rebuild the file's OS watch on the render
+  thread.
+
 ## [0.3.3] - 2026-09-30 (M3.3, shell slice 2)
 
 The second slice of `docs/design/interface.md`: `ctrl+k` as a door to everything a terminal
@@ -575,7 +607,8 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.0
 [0.3.3]: https://github.com/Pranjal-SB/type/releases/tag/v0.3.3
 [0.3.2]: https://github.com/Pranjal-SB/type/releases/tag/v0.3.2
 [0.3.1]: https://github.com/Pranjal-SB/type/releases/tag/v0.3.1

@@ -243,12 +243,18 @@ fn a_click_below_the_bar_is_not_the_bars() {
 }
 
 #[test]
-fn there_is_no_bar_to_click_with_one_tab_open() {
+fn one_tab_still_has_a_bar_and_it_answers_clicks() {
+    // The tab is the editor's label since the panels lost their boxes, so a
+    // lone file has a bar too, and a click on it is the bar's and not the
+    // editor's first line.
     let (mut app, _dir) = open("one-tab", &["a.rs"]);
 
-    let handled = app.route_tab_bar_mouse(press(MouseButton::Left, 40, 0), FRAME);
+    let bar = app.tab_bar_area(FRAME);
+    assert_eq!(bar.height, 1);
+    let handled = app.route_tab_bar_mouse(press(MouseButton::Left, bar.right() - 1, bar.y), FRAME);
 
-    assert!(!handled, "a bar that is not drawn answered a click");
+    assert!(handled, "the bar let a click fall through to the editor");
+    assert_eq!(app.tab_count(), 1);
 }
 
 #[test]

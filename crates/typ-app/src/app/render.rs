@@ -15,19 +15,17 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 use typ_core::{Panel, RenderContext};
 
+use crate::app::panes::PaneArea;
 use crate::app::{App, Focus, SEGMENT_GAP};
+use crate::pane::Axis;
 
 impl App {
     pub fn render(&mut self, frame: &mut ratatui::Frame) {
         let (_, status_area) = crate::layout::split_frame(frame.area());
         let (body, menu_area) = self.split_body(frame.area());
-        let (tree_area, pane) = crate::layout::split(body);
-        let (bar_area, editor_area) = crate::layout::split_tabs(pane, self.tabs.len());
+        let regions = crate::layout::split(body);
+        let tree_area = regions.tree;
         let (w, h) = (frame.area().width, frame.area().height);
-
-        // Resolved before the panels are borrowed mutably: the result borrows
-        // `self.lsp` alone, so the tab's borrow ends with the call.
-        let diagnostics = crate::app::diagnostics_for(&self.lsp, &self.tabs[self.active]);
 
         let tree_ctx = RenderContext {
             theme: &self.theme,
@@ -39,49 +37,37 @@ impl App {
             terminal_width: w,
             terminal_height: h,
         };
-        let editor_ctx = RenderContext {
-            theme: &self.theme,
-            syntax: &self.syntax_theme,
-            diagnostics,
-            is_focused: self.focus == Focus::Editor,
-            panel_index: 1,
-            terminal_width: w,
-            terminal_height: h,
-        };
 
-        // The focused panel draws last.
-        //
-        // The two rects share a column — see `layout::split` — so one cell
-        // carries both panels' border, and a shared border cannot be two
-        // colours. Drawing the focused panel second gives that cell its colour,
-        // which is the right answer: the focused panel's box is the complete
-        // one, and the unfocused panel is the one that gives ground.
-        match self.focus {
-            Focus::Editor => {
-                self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
-                self.tabs[self.active]
-                    .panel
-                    .render(editor_area, frame.buffer_mut(), &editor_ctx);
-            }
-            Focus::Tree => {
-                self.tabs[self.active]
-                    .panel
-                    .render(editor_area, frame.buffer_mut(), &editor_ctx);
-                self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
+        // The app draws the lines; each panel draws its content inside them.
+        typ_core::chrome::labelled_rule(
+            regions.heading,
+            frame.buffer_mut(),
+            &self.tree.title(),
+            self.focus == Focus::Tree,
+            &self.theme,
+            self.theme.chrome_bg,
+        );
+        self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
+        typ_core::chrome::rule(regions.rule, frame.buffer_mut(), &self.theme, self.theme.bg);
+
+        self.screen = frame.area();
+        let panes = self.pane_areas(regions.editor);
+        for (number, area) in panes.iter().enumerate() {
+            self.render_pane(number + 1, area, frame.buffer_mut(), (w, h));
+        }
+        for (axis, rule) in self.layout.rules(regions.editor) {
+            let buf = frame.buffer_mut();
+            match axis {
+                Axis::Columns => typ_core::chrome::rule(rule, buf, &self.theme, self.theme.bg),
+                Axis::Rows => {
+                    typ_core::chrome::horizontal_rule(rule, buf, &self.theme, self.theme.bg)
+                }
             }
         }
-
-        if bar_area.height > 0 {
-            let labels: Vec<String> = self.tabs.iter().map(|tab| tab.panel.title()).collect();
-            crate::tabbar::draw(
-                frame.buffer_mut(),
-                bar_area,
-                &labels,
-                self.active,
-                &self.theme,
-                self.focus == Focus::Editor,
-            );
-        }
+        let editor_area = panes
+            .iter()
+            .find(|area| area.index == self.pane)
+            .map_or(Rect::default(), |area| area.content);
 
         self.render_status(status_area, frame.buffer_mut());
         if let (Some(menu), Some(area)) = (&self.menu, menu_area) {
@@ -95,7 +81,7 @@ impl App {
 
         // The overlay draws last, over the body — after the status bar too, so a
         // tall picker on a short terminal covers the bar rather than being
-        // clipped by it. `chrome::frame` fills every cell of its rect, which is
+        // clipped by it. `chrome::float` clears every cell of its rect, which is
         // what stops the editor showing through.
         if self.picker.is_some() {
             // Modal, so everything behind it steps back: the frame minus the
@@ -187,7 +173,7 @@ impl App {
     pub(super) fn focused(&self) -> &dyn Panel {
         match self.focus {
             Focus::Tree => &self.tree,
-            Focus::Editor => &self.tabs[self.active].panel,
+            Focus::Editor => &self.panes[self.pane].shown().panel,
         }
     }
 
@@ -200,11 +186,72 @@ impl App {
     /// `split_tabs` rather than from `split`, because the bar moves every
     /// coordinate inside the editor down a row and a hit-test that missed that
     /// would land every click one line above the pointer.
+    ///
+    /// With panes, "the editor" is the current pane's text.
     pub fn areas(&self, area: Rect) -> (Rect, Rect) {
         let (body, _) = self.split_body(area);
-        let (tree, pane) = crate::layout::split(body);
-        let (_, editor) = crate::layout::split_tabs(pane, self.tabs.len());
-        (tree, editor)
+        let regions = crate::layout::split(body);
+        (regions.tree, self.current_pane_area(regions.editor).content)
+    }
+
+    /// One pane: the visible tab's text, then its tab row over the top, led by
+    /// the pane's number when there is more than one.
+    fn render_pane(
+        &mut self,
+        number: usize,
+        area: &PaneArea,
+        buf: &mut ratatui::buffer::Buffer,
+        (w, h): (u16, u16),
+    ) {
+        let PaneArea {
+            index,
+            number: number_area,
+            bar,
+            content,
+            ..
+        } = *area;
+        let focused = self.focus == Focus::Editor && index == self.pane;
+        // Resolved before the pane is borrowed mutably: the result borrows
+        // `self.lsp` alone, so the tab's borrow ends with the call.
+        let diagnostics =
+            crate::app::servers::diagnostics_for(&self.lsp, self.panes[index].shown());
+        let ctx = RenderContext {
+            theme: &self.theme,
+            syntax: &self.syntax_theme,
+            diagnostics,
+            is_focused: focused,
+            panel_index: 1,
+            terminal_width: w,
+            terminal_height: h,
+        };
+        let pane = &mut self.panes[index];
+        pane.shown_mut().panel.render(content, buf, &ctx);
+
+        if bar.height > 0 {
+            let labels: Vec<String> = pane.tabs.iter().map(|tab| tab.panel.title()).collect();
+            crate::tabbar::draw(buf, bar, &labels, pane.active, &self.theme, focused);
+        }
+        if number_area.width > 0 {
+            // The pane's label (interface §4): accent and bold on the pane
+            // with the keys, the tab row's own quiet colour on the rest.
+            let style = if focused {
+                Style::default()
+                    .fg(self.theme.border_focused)
+                    .bg(self.theme.chrome_bg)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(self.theme.status_bar_inactive_fg)
+                    .bg(self.theme.chrome_bg)
+            };
+            buf.set_stringn(
+                number_area.x,
+                number_area.y,
+                format!(" {number} "),
+                number_area.width as usize,
+                style,
+            );
+        }
     }
 }
 
@@ -230,7 +277,11 @@ impl App {
         let Some(text) = self.hover.clone() else {
             return;
         };
-        let Some(cursor) = self.tabs[self.active].panel.cursor_position(editor_area) else {
+        let Some(cursor) = self.panes[self.pane]
+            .shown()
+            .panel
+            .cursor_position(editor_area)
+        else {
             return;
         };
 

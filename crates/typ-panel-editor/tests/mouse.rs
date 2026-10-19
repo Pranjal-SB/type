@@ -9,17 +9,17 @@ fn pos(line: usize, col: usize) -> Position {
 }
 
 const AREA: Rect = Rect {
-    x: 0,
-    y: 0,
-    width: 40,
-    height: 10,
+    x: 1,
+    y: 1,
+    width: 38,
+    height: 8,
 };
 
 /// A mouse event at a screen cell, with the gutter's width already added.
 ///
-/// Every test below states coordinates the way it always has — column 1 is the
-/// first cell inside the border — and this shifts them past the gutter that now
-/// sits between the border and the text. Every fixture here is two or three
+/// Every test below states coordinates the way it always has: column 1 is the
+/// panel's first column, its rect starting at (1, 1), and this shifts them past
+/// the gutter between that edge and the text. Every fixture here is two or three
 /// lines, so the gutter is a diagnostic sign, one digit and a spacer.
 fn at(kind: MouseEventKind, column: u16, row: u16, modifiers: KeyModifiers) -> MouseEvent {
     // Asked rather than hardcoded: the default gutter grew a diagnostic sign

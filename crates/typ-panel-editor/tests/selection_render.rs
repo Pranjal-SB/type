@@ -10,7 +10,7 @@ fn pos(line: usize, col: usize) -> Position {
 
 /// Screen x for a display column of the text.
 ///
-/// One cell of border, then the gutter — one digit and a spacer for the
+/// One cell of margin, then the gutter: one digit and a spacer for the
 /// two-line fixtures here. Stated once because these assertions are about
 /// *which text* is highlighted, and a raw column literal makes every one of
 /// them wrong together the next time the furniture to their left changes.
@@ -31,7 +31,7 @@ fn render(panel: &mut EditorPanel, area: Rect) -> Buffer {
         terminal_width: area.width,
         terminal_height: area.height,
     };
-    let mut buf = Buffer::empty(area);
+    let mut buf = Buffer::empty(Rect::new(0, 0, area.right() + 1, area.bottom() + 1));
     panel.render(area, &mut buf, &ctx);
     buf
 }
@@ -62,7 +62,7 @@ fn selected_text_is_drawn_in_the_selection_colors() {
         anchor: pos(0, 1),
         head: pos(0, 4),
     }]);
-    let buf = render(&mut panel, Rect::new(0, 0, 20, 5));
+    let buf = render(&mut panel, Rect::new(1, 1, 18, 3));
 
     assert_eq!(
         buf[(tx(0), 1)].bg,
@@ -91,7 +91,7 @@ fn a_selection_spanning_lines_covers_both_ends() {
         anchor: pos(0, 2),
         head: pos(1, 2),
     }]);
-    let buf = render(&mut panel, Rect::new(0, 0, 20, 6));
+    let buf = render(&mut panel, Rect::new(1, 1, 18, 4));
 
     assert_eq!(
         buf[(tx(2), 1)].bg,
@@ -124,7 +124,7 @@ fn every_selection_is_drawn_not_only_the_primary() {
             head: pos(0, 5),
         },
     ]);
-    let buf = render(&mut panel, Rect::new(0, 0, 20, 5));
+    let buf = render(&mut panel, Rect::new(1, 1, 18, 3));
     assert_eq!(buf[(tx(0), 1)].bg, theme.selection_bg);
     assert_eq!(
         buf[(tx(4), 1)].bg,
@@ -142,7 +142,7 @@ fn every_selection_is_drawn_not_only_the_primary() {
 fn an_empty_selection_paints_nothing() {
     let theme = ThemeColors::default();
     let mut panel = EditorPanel::from_str("abcdef\n");
-    let buf = render(&mut panel, Rect::new(0, 0, 20, 5));
+    let buf = render(&mut panel, Rect::new(1, 1, 18, 3));
     for col in 0..6 {
         let bg = buf[(tx(col), 1)].bg;
         assert_ne!(bg, theme.selection_bg, "column {col} is not selected");
@@ -166,7 +166,7 @@ fn selection_highlighting_lands_on_the_right_columns_with_wide_characters() {
         anchor: pos(0, 1),
         head: pos(0, 2),
     }]);
-    let buf = render(&mut panel, Rect::new(0, 0, 20, 5));
+    let buf = render(&mut panel, Rect::new(1, 1, 18, 3));
 
     assert_eq!(
         buf[(tx(0), 1)].bg,

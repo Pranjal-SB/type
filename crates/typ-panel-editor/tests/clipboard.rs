@@ -201,10 +201,10 @@ fn copy_with_an_empty_selection_leaves_the_register_alone() {
 // middle-click to paste are the mouse half.
 
 const AREA: Rect = Rect {
-    x: 0,
-    y: 0,
-    width: 40,
-    height: 10,
+    x: 1,
+    y: 1,
+    width: 38,
+    height: 8,
 };
 
 fn click(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
@@ -218,20 +218,22 @@ fn click(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
 
 /// Screen cell for a position in the text.
 ///
-/// The text area sits inside the border *and* to the right of the gutter, so
-/// this is one cell for the border plus the gutter's width. Every fixture in
-/// this file is a two-line buffer, so the gutter is one digit and a spacer.
+/// The text area starts at the panel's origin, (1, 1) here, *and* to the right
+/// of the gutter, so this is one cell for the origin plus the gutter's width.
+/// Every fixture in this file is a two-line buffer, so the gutter is one digit
+/// and a spacer.
 ///
 /// It is a helper rather than a literal because the geometry has now moved
-/// twice — borders at M1.1, the gutter at M2.3 — and each time it moved, every
-/// test that hardcoded a column was wrong in the same way at once.
+/// three times (borders at M1.1, the gutter at M2.3, the borders gone at M4)
+/// and each time it moved, every test that hardcoded a column was wrong in the
+/// same way at once.
 fn text_cell(col: u16, line: u16) -> (u16, u16) {
-    const BORDER: u16 = 1;
+    const ORIGIN: u16 = 1;
     // Asked rather than hardcoded. The default gutter grew a diagnostics column
     // at M3, and a constant here made that land as a clipboard failure instead
     // of as the arithmetic change it was.
     let gutter = typ_panel_editor::gutter::Gutter::default().width(1) as u16;
-    (col + BORDER + gutter, line + BORDER)
+    (col + ORIGIN + gutter, line + ORIGIN)
 }
 
 #[test]

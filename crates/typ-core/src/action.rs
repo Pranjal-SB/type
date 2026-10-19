@@ -12,6 +12,16 @@ pub enum Direction {
     Forward,
 }
 
+/// A side of a rect: where a neighbouring pane is, and, from M4.1, which
+/// edge a dock is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Edge {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
 /// Where a motion lands.
 ///
 /// Motions carry no "extend" flag themselves — that is an argument of
@@ -103,6 +113,22 @@ pub enum Action {
     /// Jump to the nth open file, counting from one — every tabbed application
     /// counts these from one, including the terminals this runs inside.
     GoToTab(u8),
+    /// Split the current pane, the new one to its right, and open the file
+    /// picker in it: a pane starts empty (one file, one pane, for now).
+    SplitRight,
+    /// Split the current pane, the new one below it.
+    SplitDown,
+    /// Close the current pane and every tab in it, after asking if any of them
+    /// holds unsaved work. The last pane does not close.
+    ClosePane,
+    /// Focus the nth pane in reading order, counting from one, as the number
+    /// in its tab row says.
+    FocusPane(u8),
+    /// Focus the pane beside the current one on that side.
+    FocusNeighbour(Edge),
+    /// Resize mode: the arrows move the current pane's nearest rule a cell at
+    /// a time, `=` evens it, `enter` or `esc` leaves.
+    ResizePanes,
     Copy,
     Cut,
     Paste,
@@ -146,6 +172,32 @@ const GO_TO_TAB_NAMES: [&str; 9] = [
     "go_to_tab_9",
 ];
 
+/// The `focus_pane_N` names, indexed by `n - 1`, nine for the reason there
+/// are nine `go_to_tab_N`.
+const FOCUS_PANE_NAMES: [&str; 9] = [
+    "focus_pane_1",
+    "focus_pane_2",
+    "focus_pane_3",
+    "focus_pane_4",
+    "focus_pane_5",
+    "focus_pane_6",
+    "focus_pane_7",
+    "focus_pane_8",
+    "focus_pane_9",
+];
+
+const FOCUS_PANE_DESCRIPTIONS: [&str; 9] = [
+    "focus pane 1",
+    "focus pane 2",
+    "focus pane 3",
+    "focus pane 4",
+    "focus pane 5",
+    "focus pane 6",
+    "focus pane 7",
+    "focus pane 8",
+    "focus pane 9",
+];
+
 /// The `go_to_tab_N` descriptions, indexed like `GO_TO_TAB_NAMES`.
 const GO_TO_TAB_DESCRIPTIONS: [&str; 9] = [
     "switch to tab 1",
@@ -169,6 +221,7 @@ pub enum Group {
     Files,
     Tabs,
     Panels,
+    Panes,
     Code,
     App,
 }
@@ -182,6 +235,7 @@ impl Group {
         Group::Files,
         Group::Tabs,
         Group::Panels,
+        Group::Panes,
         Group::Code,
         Group::App,
     ];
@@ -195,6 +249,7 @@ impl Group {
             Group::Files => "files",
             Group::Tabs => "tabs",
             Group::Panels => "panels",
+            Group::Panes => "panes",
             Group::Code => "code",
             Group::App => "app",
         }
@@ -350,6 +405,23 @@ impl Action {
         Action::GoToTab(7),
         Action::GoToTab(8),
         Action::GoToTab(9),
+        Action::SplitRight,
+        Action::SplitDown,
+        Action::ClosePane,
+        Action::FocusPane(1),
+        Action::FocusPane(2),
+        Action::FocusPane(3),
+        Action::FocusPane(4),
+        Action::FocusPane(5),
+        Action::FocusPane(6),
+        Action::FocusPane(7),
+        Action::FocusPane(8),
+        Action::FocusPane(9),
+        Action::FocusNeighbour(Edge::Left),
+        Action::FocusNeighbour(Edge::Right),
+        Action::FocusNeighbour(Edge::Top),
+        Action::FocusNeighbour(Edge::Bottom),
+        Action::ResizePanes,
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -435,6 +507,18 @@ impl Action {
             Action::NextTab => "next_tab",
             Action::PrevTab => "prev_tab",
             Action::CloseTab => "close_tab",
+            Action::SplitRight => "split_right",
+            Action::SplitDown => "split_down",
+            Action::ClosePane => "close_pane",
+            Action::FocusNeighbour(Edge::Left) => "focus_pane_left",
+            Action::FocusNeighbour(Edge::Right) => "focus_pane_right",
+            Action::FocusNeighbour(Edge::Top) => "focus_pane_up",
+            Action::FocusNeighbour(Edge::Bottom) => "focus_pane_down",
+            Action::ResizePanes => "resize_panes",
+            Action::FocusPane(n) => FOCUS_PANE_NAMES
+                .get((*n as usize).saturating_sub(1))
+                .copied()
+                .unwrap_or("focus_pane"),
             Action::GotoDefinition => "goto_definition",
             Action::Hover => "hover",
             Action::RestartLanguageServers => "restart_language_servers",
@@ -537,6 +621,18 @@ impl Action {
             Action::NextTab => "switch to the next tab",
             Action::PrevTab => "switch to the previous tab",
             Action::CloseTab => "close the tab",
+            Action::SplitRight => "split right",
+            Action::SplitDown => "split down",
+            Action::ClosePane => "close the pane",
+            Action::FocusNeighbour(Edge::Left) => "focus the pane to the left",
+            Action::FocusNeighbour(Edge::Right) => "focus the pane to the right",
+            Action::FocusNeighbour(Edge::Top) => "focus the pane above",
+            Action::FocusNeighbour(Edge::Bottom) => "focus the pane below",
+            Action::ResizePanes => "resize panes",
+            Action::FocusPane(n) => FOCUS_PANE_DESCRIPTIONS
+                .get((*n as usize).saturating_sub(1))
+                .copied()
+                .unwrap_or("focus a pane"),
             Action::GoToTab(n) => GO_TO_TAB_DESCRIPTIONS
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -585,6 +681,12 @@ impl Action {
                 Group::Tabs
             }
             Action::FocusNext | Action::FocusPrevious => Group::Panels,
+            Action::SplitRight
+            | Action::SplitDown
+            | Action::ClosePane
+            | Action::FocusPane(_)
+            | Action::FocusNeighbour(_)
+            | Action::ResizePanes => Group::Panes,
             Action::GotoDefinition | Action::Hover | Action::RestartLanguageServers => Group::Code,
             Action::Quit | Action::OpenCommandPalette | Action::OpenMenu => Group::App,
         }
