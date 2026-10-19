@@ -111,6 +111,8 @@ fn the_status_bar_reports_the_cursor_position_one_based() {
         KeyModifiers::NONE,
     )))
     .unwrap();
+    // Wide enough that no segment drops for width.
+    app.set_screen(Rect::new(0, 0, 120, 30));
     // The whole right-hand strip, in order: what the file is, what state it is
     // in, and where the cursor sits. Asserted whole rather than by substring —
     // the order is a design decision and a substring check would not notice it
@@ -139,6 +141,8 @@ fn the_status_bar_states_the_width_the_file_uses() {
     .unwrap();
     let mut app = App::new(&dir).unwrap();
     app.open_path(&dir.join("two.rs")).unwrap();
+    // Wide enough that the indent does not drop for width.
+    app.set_screen(Rect::new(0, 0, 120, 30));
 
     assert!(
         app.status_right().contains("Spaces: 2"),
@@ -158,6 +162,7 @@ fn a_configured_indent_width_wins_over_the_measurement() {
     let mut app = App::new(&dir).unwrap();
     app.set_indent_width(Some(8));
     app.open_path(&dir.join("two.rs")).unwrap();
+    app.set_screen(Rect::new(0, 0, 120, 30));
 
     assert!(
         app.status_right().contains("Spaces: 8"),

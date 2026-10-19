@@ -29,7 +29,7 @@ use typ_registry::Registry;
 use typ_syntax::ParseWorker;
 
 use crate::prompt::Prompt;
-use crate::status::{Segment, StatusFacts, segments};
+use crate::status::{SEGMENT_GAP, Segment, StatusFacts, segments};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -306,11 +306,6 @@ impl Tab {
     }
 }
 
-/// Between status segments. Two spaces rather than a glyph separator: a
-/// separator needs a colour decision of its own and a Nerd Font question at
-/// M6, and whitespace has neither.
-const SEGMENT_GAP: &str = "  ";
-
 /// What the status bar says while resize mode is on.
 const RESIZE_HINT: &str = "Resize: arrows move the rule  ·  = evens it  ·  Enter or Esc done";
 
@@ -498,9 +493,10 @@ impl App {
         self.teaching.as_ref().map(|(line, _)| line.clone())
     }
 
-    /// Right half: what is open, what state it is in, and where the cursor is.
+    /// Right half: what is open, what state it is in, and where the cursor is,
+    /// as the last frame showed it.
     pub fn status_right(&self) -> String {
-        self.status_segments()
+        self.shown_segments(self.screen.width)
             .into_iter()
             .map(|s| s.text)
             .collect::<Vec<_>>()

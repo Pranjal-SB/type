@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use typ_app::status::{Emphasis, SegmentId, StatusFacts, file_type_of, segments};
+use typ_app::status::{Emphasis, SegmentId, StatusFacts, file_type_of, fit, segments};
 
 fn facts() -> StatusFacts<'static> {
     StatusFacts {
@@ -144,4 +144,60 @@ fn the_filetype_is_the_extension_not_an_invented_language_name() {
     );
     assert_eq!(file_type_of(Some(Path::new("Makefile"))), None);
     assert_eq!(file_type_of(None), None);
+}
+
+fn ids_within(cells: usize, facts: &StatusFacts) -> Vec<SegmentId> {
+    fit(segments(facts), cells)
+        .into_iter()
+        .map(|s| s.id)
+        .collect()
+}
+
+#[test]
+fn segments_drop_in_order_and_position_and_problems_never_do() {
+    let mut facts = facts();
+    facts.errors = 2;
+    let all = ids_within(usize::MAX, &facts);
+    assert_eq!(
+        all,
+        segments(&facts)
+            .into_iter()
+            .map(|s| s.id)
+            .collect::<Vec<_>>()
+    );
+
+    // Interface §7: line ending and indent first, then the language, then the
+    // percentage. The preset goes after, since `ctrl+k l` still reaches it.
+    let order = [
+        SegmentId::LineEnding,
+        SegmentId::Indent,
+        SegmentId::FileType,
+        SegmentId::Percentage,
+        SegmentId::Layout,
+    ];
+    let mut last = all.len();
+    for cells in (0..=60).rev() {
+        let shown = ids_within(cells, &facts);
+        assert!(
+            shown.len() <= last,
+            "{cells} cells showed more than a wider bar"
+        );
+        last = shown.len();
+        assert!(shown.contains(&SegmentId::Position), "{cells}: {shown:?}");
+        assert!(
+            shown.contains(&SegmentId::Diagnostics),
+            "{cells}: {shown:?}"
+        );
+        let gone: Vec<SegmentId> = order
+            .iter()
+            .copied()
+            .filter(|id| !shown.contains(id))
+            .collect();
+        assert_eq!(
+            gone,
+            order[..gone.len()],
+            "{cells} cells dropped out of order"
+        );
+    }
+    assert!(!ids_within(20, &facts).contains(&SegmentId::LineEnding));
 }

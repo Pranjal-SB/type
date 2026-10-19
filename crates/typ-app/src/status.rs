@@ -260,6 +260,46 @@ pub fn segments(facts: &StatusFacts) -> Vec<Segment> {
     out
 }
 
+/// Between status segments. Two spaces rather than a glyph separator: a
+/// separator needs a colour decision of its own and a Nerd Font question at
+/// M6, and whitespace has neither.
+pub const SEGMENT_GAP: &str = "  ";
+
+/// What goes first when the bar is too narrow (interface §7), first to last.
+/// Every other segment stays: position and the problem count by the spec, the
+/// rest because each one is a state a user has to notice (unsaved, zoomed,
+/// thirty cursors).
+const DROP_ORDER: [SegmentId; 6] = [
+    SegmentId::LineEnding,
+    SegmentId::Indent,
+    SegmentId::FileType,
+    SegmentId::Progress,
+    SegmentId::Percentage,
+    // Last: it is the `▣` a click cycles, and `ctrl+k l` still does with it gone.
+    SegmentId::Layout,
+];
+
+/// The cells `segments` take, gaps included.
+pub fn width(segments: &[Segment]) -> usize {
+    segments
+        .iter()
+        .map(|s| typ_buffer::display_width(&s.text))
+        .sum::<usize>()
+        + SEGMENT_GAP.len() * segments.len().saturating_sub(1)
+}
+
+/// `segments` with whatever has to drop, in [`DROP_ORDER`], to fit in
+/// `cells`. What stays may still not fit; it is never dropped for that.
+pub fn fit(mut segments: Vec<Segment>, cells: usize) -> Vec<Segment> {
+    for id in DROP_ORDER {
+        if width(&segments) <= cells {
+            break;
+        }
+        segments.retain(|s| s.id != id);
+    }
+    segments
+}
+
 /// How far through the file the cursor is, 0–100.
 fn percentage(line: usize, total_lines: usize) -> usize {
     if total_lines <= 1 {
