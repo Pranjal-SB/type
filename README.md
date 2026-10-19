@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.4.1, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.4.2, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -144,7 +144,7 @@ irm https://raw.githubusercontent.com/Pranjal-SB/type/main/install.ps1 | iex
 ```
 
 Both check the published SHA-256 before anything is written outside a temporary directory, and
-both install for the current user only — `~/.local/bin`, or `%LOCALAPPDATA%\Programs	yp` — so
+both install for the current user only (`~/.local/bin`, or `%LOCALAPPDATA%\Programs\typ`), so
 neither asks for `sudo` or Administrator. `--bin-dir` / `-BinDir` puts it somewhere else and
 `--version` / `-Version` fetches a tag other than the latest — or, since a script piped into
 `sh` or `iex` cannot be given arguments, `TYP_BIN_DIR` and `TYP_VERSION` in the environment.
@@ -233,6 +233,19 @@ A file is open in one pane at a time; opening it again goes to the pane that has
 | `Ctrl+K =` with the dock focused, then `←` `→`; `=` resets | drag its rule | Resize, from 12 columns to half the screen |
 | `Ctrl+K Z` with the dock focused | the `◰` in its heading, or double-click the heading | Zoom it to the whole body, and back |
 
+**Layouts**
+
+| Key | Mouse | Action |
+|---|---|---|
+| `Ctrl+K L` (or `>layout` in the palette) | click `▣` on the status bar | Switch preset: Focus (the dock folded) or Standard (the dock open) |
+
+Below 100 columns Standard folds its dock and opens it again when the terminal grows, unless you
+picked the layout or pressed `Ctrl+B` yourself. Quitting on a project (`typ` or `typ <dir>`)
+remembers its panes, ratios, tabs, cursors, dock and preset, and the next start on it puts them
+back; a file that has gone since is skipped and named. `typ <file>` reads and writes no session,
+so `git commit` never opens into yesterday's layout. Sessions live in the state directory
+(`%LOCALAPPDATA%\typ\sessions`, `$XDG_STATE_HOME/typ/sessions` or `~/.local/state/typ/sessions`).
+
 **Tree**
 
 | Key | Action |
@@ -302,6 +315,9 @@ theme = "slate"          # slate, mocha, latte, dracula, rose-pine, tokyo-night
 color_depth = "truecolor" # or "ansi256" — omit to ask the terminal
 indent_width = 4          # omit to measure it from the file
 whitespace = "selection"  # none | trailing | selection | all
+layout = "focus"          # or "standard": the dock open
+adapt = true              # false keeps Standard open on a narrow terminal
+session = true            # false forgets the layout on quit
 ```
 
 Six themes ship. Drop a `<config>/themes/<name>.toml` in to add your own, or copy a shipped one
@@ -325,8 +341,9 @@ Search is smart-case: a lowercase needle finds everything, one with a capital in
 `Value` stay two different things.
 
 **The status bar** carries the file name, its type, its line ending, the indent width, the
-cursor count when there is more than one, the position and how far through the file you are.
-Unsaved changes and a cursor count above one are accented, because both are states you can
+cursor count when there is more than one, the position, how far through the file you are and
+the layout preset. On a narrow bar the line ending and indent go first, then the language, the
+percentage and the preset; the position and the problem count never do. Unsaved changes and a cursor count above one are accented, because both are states you can
 forget you are in. `F6` reaches the bar: `←` `→` move between the segments that do
 something and `Enter` does it. The position opens goto-line and the problem count jumps to the
 next problem (`F8` from anywhere); a click on either does the same.
@@ -396,8 +413,8 @@ for now.
 | v0.3.2 | M3.2 | Shell, slice 1: rules at 3:1, focus by receding, the picker and hover as floats | shipped |
 | v0.3.3 | M3.3 | Shell, slice 2: the `Ctrl+K` menu, sequence bindings, a focus stack | shipped |
 | v0.4.0 | M4 | Panes: rules not boxes, the layout tree, splits, pane focus and resize, one workspace watcher | shipped |
-| v0.4.1 | M4.1 | Docks: the left dock, `Ctrl+B` and folding, dock resize, zoom, `F6` over every region and the status bar, a deeper focus stack | **current** |
-| v0.4.2 | M4.2 | Layouts: presets, adapt to width, sessions | next |
+| v0.4.1 | M4.1 | Docks: the left dock, `Ctrl+B` and folding, dock resize, zoom, `F6` over every region and the status bar, a deeper focus stack | shipped |
+| v0.4.2 | M4.2 | Layouts: Focus and Standard presets, adapt to width, sessions, status segments that drop by width | **current** |
 | v0.5.0 | M5 | Terminal panel and git integration | |
 | v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |
 

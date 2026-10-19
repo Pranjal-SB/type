@@ -3,6 +3,40 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.4.2] - 2026-10-20 (M4.2 Layouts, shell slice 3 shipped)
+
+Layout presets, a layout that follows the terminal's width, and sessions, from
+`docs/design/interface.md` §7. That finishes slice 3.
+
+### Added
+- **Presets.** Focus folds the dock to its rule, Standard opens it. `Ctrl+K L`, `>layout` in the
+  palette, or `Enter` or a click on the `▣` segment at the end of the status bar switch between
+  them, and `layout = "focus"` or `"standard"` in `config.toml` picks the one to start in.
+- **Adapt to width.** Below 100 columns Standard folds its dock and reopens it when the terminal
+  grows. A layout picked by hand, or a dock opened with `Ctrl+B`, is left alone. `adapt = false`
+  turns it off.
+- **Sessions.** Quitting on a project writes its panes, ratios, tabs, cursors and top lines, the
+  dock's width and state, and the preset to the state directory (`TYP_STATE_DIR` overrides it),
+  and the next start on that project puts them back. A file that has gone is skipped and named;
+  a session that does not parse starts clean with a warning. `typ <file>` reads and writes no
+  session. `session = false` turns it off.
+
+### Changed
+- **Focus is the shipped default.** A first start shows the file and the dock's folded rule;
+  `layout = "standard"` brings back the open tree.
+- **Status segments drop by width.** The right half of the bar takes at most half of it; past
+  that the line ending and indent go first, then the language, the progress label, the
+  percentage and the preset. The position and the problem count never drop, and `F6`, a click and
+  the paint all see the same segments.
+- **The idle hint drops whole parts** on a narrow bar instead of ending on a separator, and
+  `border_focused` is audited on `chrome_bg`: Slate's moved to its lifted blue, Dracula's to cyan.
+- **The `Ctrl+K` menu fits 80x24.** Its groups pack into columns, and a run of digits bound to
+  one action folds into one row (`1…9  focus pane n`); a rebind that breaks the run splits it.
+
+### Not in this release
+- The Wide preset waits for a right dock, Review for the review lane, and arrowing through
+  presets does not preview them, since with two the switch is the preview.
+
 ## [0.4.1] - 2026-10-03 (M4.1 Docks, shell slice 3 continued)
 
 The left dock from `docs/design/interface.md` §2 and §5, zoom, and focus that reaches every
@@ -638,7 +672,8 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.2
 [0.4.1]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.0
 [0.3.3]: https://github.com/Pranjal-SB/type/releases/tag/v0.3.3
