@@ -101,6 +101,7 @@ pub fn watch_file(
 fn interpret_tree(
     event: notify::Result<notify::Event>,
     root: &Path,
+    real: &Path,
     keep: &dyn Fn(&Path) -> bool,
 ) -> Vec<(PathBuf, WatchEvent)> {
     let event = match event {
@@ -118,6 +119,13 @@ fn interpret_tree(
     event
         .paths
         .into_iter()
+        // Spelled under the root as given before anything looks at it: the
+        // OS reports the resolved path, and both the ignore rules and the tabs
+        // know the project by the spelling it was opened with.
+        .map(|path| match path.strip_prefix(real) {
+            Ok(rest) if real != root => root.join(rest),
+            _ => path,
+        })
         .filter(|path| keep(path))
         .map(|path| (path, WatchEvent::Changed))
         .collect()
@@ -131,15 +139,17 @@ fn interpret_tree(
 /// which is where a build writing ten thousand files into an ignored directory
 /// gets dropped, rather than on the thread that paints.
 ///
-/// The paths handed on are the OS's, joined to `root` as given here.
+/// The paths handed on are under `root` as given here, even where the OS
+/// reports the resolved path (a symlinked root, or macOS's `/private/var`).
 pub fn watch_tree(
     root: &Path,
     keep: impl Fn(&Path) -> bool + Send + 'static,
     on_event: impl Fn(PathBuf, WatchEvent) + Send + 'static,
 ) -> Result<FileWatch> {
     let base = root.to_path_buf();
+    let real = std::fs::canonicalize(root).unwrap_or_else(|_| base.clone());
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
-        for (path, what) in interpret_tree(event, &base, &keep) {
+        for (path, what) in interpret_tree(event, &base, &real, &keep) {
             on_event(path, what);
         }
     })
@@ -185,7 +195,23 @@ mod tests {
             .add_path(PathBuf::from("/w/src/a.rs"));
         let keep = |path: &Path| !path.starts_with("/w/target");
         assert_eq!(
-            interpret_tree(Ok(event), Path::new("/w"), &keep),
+            interpret_tree(Ok(event), Path::new("/w"), Path::new("/w"), &keep),
+            vec![(PathBuf::from("/w/src/a.rs"), WatchEvent::Changed)]
+        );
+    }
+
+    #[test]
+    fn a_tree_watch_spells_paths_under_the_root_it_was_given() {
+        // macOS reports `/private/var/...` for a root opened as `/var/...`, and
+        // any symlinked project does the same. Spelled the OS's way, a path
+        // matches no tab and slips past the ignore rules, so an outside write
+        // to an open file goes unseen.
+        let event = notify::Event::new(EventKind::Modify(notify::event::ModifyKind::Any))
+            .add_path(PathBuf::from("/private/w/target/x.o"))
+            .add_path(PathBuf::from("/private/w/src/a.rs"));
+        let keep = |path: &Path| !path.starts_with("/w/target");
+        assert_eq!(
+            interpret_tree(Ok(event), Path::new("/w"), Path::new("/private/w"), &keep),
             vec![(PathBuf::from("/w/src/a.rs"), WatchEvent::Changed)]
         );
     }
@@ -194,7 +220,9 @@ mod tests {
     fn a_tree_rescan_names_the_root() {
         let event = notify::Event::new(EventKind::Other).set_flag(Flag::Rescan);
         assert_eq!(
-            interpret_tree(Ok(event), Path::new("/w"), &|_: &Path| true),
+            interpret_tree(Ok(event), Path::new("/w"), Path::new("/w"), &|_: &Path| {
+                true
+            }),
             vec![(PathBuf::from("/w"), WatchEvent::Changed)]
         );
     }
