@@ -374,7 +374,9 @@ impl App {
         Ok(Self {
             tree: TreePanel::new(root)?,
             dock: crate::dock::Dock::left(),
-            preset: crate::dock::Preset::default(),
+            // Not `Preset::default()`: the dock starts open, and the preset
+            // has to say so until `main` applies the configured one.
+            preset: crate::dock::Preset::Standard,
             adapt: true,
             layout_chosen: false,
             session_file: None,

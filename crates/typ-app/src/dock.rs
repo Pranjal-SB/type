@@ -25,10 +25,11 @@ pub const ADAPT_WIDTH: u16 = 100;
 /// Wide waits for a right dock and Review for the review lane, so two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Preset {
-    /// The editor only, the dock folded to its rule.
+    /// The editor only, the dock folded to its rule. The shipped default
+    /// (interface §7): a file gets the whole screen until the user asks.
+    #[default]
     Focus,
     /// The left dock open beside the panes.
-    #[default]
     Standard,
 }
 

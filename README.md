@@ -65,7 +65,12 @@ divided by lines rather than boxed, and the editor area splits into panes you ca
 resize by dragging the rule or from the keyboard, and close; one watch covers the whole
 project. The tree sits in a dock that `Ctrl+B` folds to a one-column rule and brings back, that
 resizes like a pane, and that zooms to the whole screen with any pane. `F6` walks every region,
-the status bar included, and `Esc` walks back the way you came.
+the status bar included, and `Esc` walks back the way you came. A first start is in the Focus
+layout, the file and nothing else, with the dock folded to its rule; `Ctrl+K L` or the `▣` on the
+status bar switches to Standard, where the tree stays open, and `layout = "standard"` makes that
+the start. Below 100 columns Standard folds its dock until the terminal grows again, unless you
+picked the layout yourself, and quitting on a project remembers its panes, tabs and cursors for
+the next start on it.
 
 Every shipped theme is checked against a contrast rubric at truecolor **and again after
 degradation**, which is the half nobody else checks: quantising moves every colour by a

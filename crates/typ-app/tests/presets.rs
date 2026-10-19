@@ -207,3 +207,22 @@ fn adapt_false_in_config_leaves_the_layout_alone() {
     resize_to(&mut app, 90);
     assert!(app.dock_open());
 }
+
+#[test]
+fn a_fresh_config_starts_in_focus() {
+    let config = std::env::temp_dir().join("typ-presets-fresh-config");
+    let _ = std::fs::remove_dir_all(&config);
+    std::fs::create_dir_all(&config).unwrap();
+    // SAFETY: the only test in this binary that reads the variable.
+    unsafe { std::env::set_var("TYP_CONFIG_DIR", &config) };
+    let (settings, warning) = load_settings(typ_app::config::settings_path().as_deref());
+    assert_eq!(warning, None);
+
+    let mut app = app("fresh");
+    app.set_preset(settings.layout);
+    assert_eq!(app.preset(), Preset::Focus);
+    assert!(
+        !app.dock_open(),
+        "the shipped default is Focus (interface §7)"
+    );
+}
