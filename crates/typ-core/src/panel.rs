@@ -217,7 +217,7 @@ impl Default for ThemeColors {
             status_bar_bg: p::BASE_02,
             status_bar_fg: p::BASE_07,
             status_bar_inactive_fg: p::BASE_05,
-            status_bar_accent: p::ACCENT,
+            status_bar_accent: p::ACCENT_BRIGHT,
 
             tree_directory_fg: p::ACCENT_BRIGHT,
             tree_file_fg: p::BASE_06,

@@ -129,6 +129,12 @@ pub enum Action {
     /// Resize mode: the arrows move the current pane's nearest rule a cell at
     /// a time, `=` evens it, `enter` or `esc` leaves.
     ResizePanes,
+    /// The left dock, in three steps (interface §5): closed opens and focuses
+    /// it, open without focus focuses it, focused folds it to its rule.
+    ToggleLeftDock,
+    /// Give the focused region, the dock or a pane, the whole body; again
+    /// puts the layout back as it was.
+    Zoom,
     Copy,
     Cut,
     Paste,
@@ -141,6 +147,9 @@ pub enum Action {
     GotoDefinition,
     /// Show what the server knows about the thing under the cursor.
     Hover,
+    /// Put the cursor on the next problem a server reported in this file,
+    /// wrapping to the first.
+    NextProblem,
     /// Start every stopped language server again.
     ///
     /// The other half of a crash-loop guard: something has to be able to say
@@ -422,6 +431,8 @@ impl Action {
         Action::FocusNeighbour(Edge::Top),
         Action::FocusNeighbour(Edge::Bottom),
         Action::ResizePanes,
+        Action::ToggleLeftDock,
+        Action::Zoom,
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -429,6 +440,7 @@ impl Action {
         Action::Outdent,
         Action::GotoDefinition,
         Action::Hover,
+        Action::NextProblem,
         Action::RestartLanguageServers,
         Action::OpenMenu,
     ];
@@ -515,12 +527,15 @@ impl Action {
             Action::FocusNeighbour(Edge::Top) => "focus_pane_up",
             Action::FocusNeighbour(Edge::Bottom) => "focus_pane_down",
             Action::ResizePanes => "resize_panes",
+            Action::ToggleLeftDock => "toggle_left_dock",
+            Action::Zoom => "zoom",
             Action::FocusPane(n) => FOCUS_PANE_NAMES
                 .get((*n as usize).saturating_sub(1))
                 .copied()
                 .unwrap_or("focus_pane"),
             Action::GotoDefinition => "goto_definition",
             Action::Hover => "hover",
+            Action::NextProblem => "next_problem",
             Action::RestartLanguageServers => "restart_language_servers",
             Action::OpenMenu => "open_menu",
             Action::GoToTab(n) => GO_TO_TAB_NAMES
@@ -629,6 +644,8 @@ impl Action {
             Action::FocusNeighbour(Edge::Top) => "focus the pane above",
             Action::FocusNeighbour(Edge::Bottom) => "focus the pane below",
             Action::ResizePanes => "resize panes",
+            Action::ToggleLeftDock => "open, focus or fold the left dock",
+            Action::Zoom => "zoom the focused region, or restore it",
             Action::FocusPane(n) => FOCUS_PANE_DESCRIPTIONS
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -644,6 +661,7 @@ impl Action {
             Action::Outdent => "outdent the selected lines",
             Action::GotoDefinition => "go to the definition",
             Action::Hover => "describe what is under the cursor",
+            Action::NextProblem => "go to the next problem",
             Action::RestartLanguageServers => "restart the language servers",
             Action::OpenMenu => "show the ctrl+k menu",
         }
@@ -680,14 +698,19 @@ impl Action {
             Action::NextTab | Action::PrevTab | Action::CloseTab | Action::GoToTab(_) => {
                 Group::Tabs
             }
-            Action::FocusNext | Action::FocusPrevious => Group::Panels,
+            Action::FocusNext | Action::FocusPrevious | Action::ToggleLeftDock | Action::Zoom => {
+                Group::Panels
+            }
             Action::SplitRight
             | Action::SplitDown
             | Action::ClosePane
             | Action::FocusPane(_)
             | Action::FocusNeighbour(_)
             | Action::ResizePanes => Group::Panes,
-            Action::GotoDefinition | Action::Hover | Action::RestartLanguageServers => Group::Code,
+            Action::GotoDefinition
+            | Action::Hover
+            | Action::NextProblem
+            | Action::RestartLanguageServers => Group::Code,
             Action::Quit | Action::OpenCommandPalette | Action::OpenMenu => Group::App,
         }
     }

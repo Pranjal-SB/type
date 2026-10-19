@@ -9,7 +9,7 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
 use typ_core::{Action, Direction, KeyChord, PanelEvent};
 
-use super::App;
+use super::{App, Focus};
 use crate::prompt::{Prompt, PromptKind};
 
 /// The two actions whose confirmation is the next press of the same thing.
@@ -37,7 +37,9 @@ impl App {
         if !answers_its_own_confirmation(action) {
             self.clear_transient();
         }
-        if let Some(events) = self.focused_mut().apply_action(action) {
+        if self.panel_has_keys()
+            && let Some(events) = self.focused_mut().apply_action(action)
+        {
             return self.apply(events);
         }
         self.perform_app_action(action);
@@ -98,6 +100,11 @@ impl App {
             return Ok(());
         }
 
+        // The status bar takes its arrows, `enter` and `esc` itself.
+        if self.focus == Focus::Status && self.handle_status_chord(&chord)? {
+            return Ok(());
+        }
+
         let bound = match self.keymap.resolve(None, &chord) {
             typ_core::Resolved::Matched(action) => Some(action),
             // Nothing runs yet, so nothing transient is cleared: a close
@@ -120,6 +127,15 @@ impl App {
         // rebinding quit silently broke its own confirmation.
         if !bound.is_some_and(answers_its_own_confirmation) {
             self.clear_transient();
+        }
+
+        // No panel has the keys while the status bar does: what reaches here
+        // is what the app owns, so typing on the bar edits nothing.
+        if !self.panel_has_keys() {
+            if let Some(action) = bound {
+                self.perform_app_action(action);
+            }
+            return Ok(());
         }
 
         if let Some(action) = bound {
@@ -178,6 +194,9 @@ impl App {
             return Ok(());
         }
 
+        if !self.panel_has_keys() {
+            return Ok(());
+        }
         typ_buffer::clipboard::set_register(&text);
         let events = self
             .focused_mut()
@@ -218,6 +237,8 @@ impl App {
             Action::FocusPane(n) => self.focus_pane((n as usize).saturating_sub(1)),
             Action::FocusNeighbour(edge) => self.focus_neighbour(edge),
             Action::ResizePanes => self.resizing = true,
+            Action::ToggleLeftDock => self.toggle_left_dock(),
+            Action::Zoom => self.toggle_zoom(),
             Action::RestartLanguageServers => {
                 let started = self.lsp.restart_all();
                 self.status = Some(match started {
@@ -228,6 +249,7 @@ impl App {
             }
             Action::GotoDefinition => self.ask_server(crate::lsp::Ask::Definition),
             Action::Hover => self.ask_server(crate::lsp::Ask::Hover),
+            Action::NextProblem => self.next_problem(),
             Action::Save => match self.panes[self.pane].shown_mut().panel.save() {
                 Ok(()) => {
                     self.status = Some("Saved.".to_string());
@@ -296,5 +318,13 @@ impl App {
             }
         }
         Ok(())
+    }
+}
+
+impl App {
+    /// Whether a panel gets keys at all. Not while the status bar has them:
+    /// it has no panel, and the one behind it must not take the typing.
+    fn panel_has_keys(&self) -> bool {
+        self.focus != Focus::Status
     }
 }

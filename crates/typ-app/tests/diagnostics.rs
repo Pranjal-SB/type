@@ -276,3 +276,33 @@ fn a_second_tab_does_not_show_the_first_tabs_diagnostics() {
     );
     assert_eq!(app.diagnostics().len(), 1);
 }
+
+#[test]
+fn enter_on_the_diagnostic_count_jumps_to_the_problem() {
+    let (mut app, _rx, _) = app_with_diagnostic("status-jump", &["--push"]);
+    assert_eq!(app.editor().cursor().line, 0);
+    let target = app.diagnostics()[0].range.0;
+
+    while app.focus() != typ_app::Focus::Status {
+        step_batch(&mut app, vec![key(KeyCode::F(6))], AREA).unwrap();
+    }
+    assert_eq!(
+        app.focused_segment(),
+        Some(typ_app::status::SegmentId::Diagnostics),
+        "the first segment that does something"
+    );
+    step_batch(&mut app, vec![key(KeyCode::Right)], AREA).unwrap();
+    assert_eq!(
+        app.focused_segment(),
+        Some(typ_app::status::SegmentId::Position)
+    );
+    step_batch(&mut app, vec![key(KeyCode::Left)], AREA).unwrap();
+    step_batch(&mut app, vec![key(KeyCode::Enter)], AREA).unwrap();
+
+    assert_eq!(app.editor().cursor().line, target.line);
+    assert_eq!(
+        app.focus(),
+        typ_app::Focus::Editor,
+        "the jump is the editor's"
+    );
+}

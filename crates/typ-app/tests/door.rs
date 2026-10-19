@@ -83,7 +83,7 @@ fn the_global_layer_answers_from_any_panel() {
     // No panel has rows of its own yet, so from the tree the global row is
     // what answers.
     let mut app = app("layer");
-    app.cycle_focus();
+    app.set_focus(Focus::Tree);
     assert_eq!(app.focus(), Focus::Tree);
 
     ctrl_k(&mut app);

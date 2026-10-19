@@ -33,6 +33,8 @@ pub enum SegmentId {
     Selections,
     Position,
     Percentage,
+    /// A region is zoomed to the whole body.
+    Zoom,
 }
 
 /// How loudly a segment is drawn.
@@ -57,6 +59,26 @@ impl Emphasis {
             Emphasis::Normal => theme.status_bar_fg,
             Emphasis::Quiet => theme.status_bar_inactive_fg,
             Emphasis::Accent => theme.status_bar_accent,
+        }
+    }
+}
+
+impl SegmentId {
+    /// What `enter` on the segment does, or a click on it. `None` for the
+    /// segments that only say something; the bar's keys skip those.
+    pub fn action(self) -> Option<typ_core::Action> {
+        use typ_core::Action;
+        match self {
+            SegmentId::Position => Some(Action::GotoLine),
+            SegmentId::Diagnostics => Some(Action::NextProblem),
+            SegmentId::Zoom => Some(Action::Zoom),
+            SegmentId::FileName
+            | SegmentId::FileType
+            | SegmentId::LineEnding
+            | SegmentId::Indent
+            | SegmentId::Progress
+            | SegmentId::Selections
+            | SegmentId::Percentage => None,
         }
     }
 }
@@ -93,6 +115,8 @@ pub struct StatusFacts<'a> {
     pub warnings: usize,
     /// Work the servers have said they are doing, oldest first.
     pub progress: &'a [&'a str],
+    /// A region has the whole body, and the others are hidden.
+    pub zoomed: bool,
 }
 
 /// The right-hand segments, in order.
@@ -102,6 +126,16 @@ pub struct StatusFacts<'a> {
 /// you nothing.
 pub fn segments(facts: &StatusFacts) -> Vec<Segment> {
     let mut out = Vec::with_capacity(7);
+
+    // First: the rest of the layout is hidden, and this says it is still
+    // there. Accent, because it is a state to notice and the way back.
+    if facts.zoomed {
+        out.push(Segment {
+            id: SegmentId::Zoom,
+            text: "zoomed".to_string(),
+            emphasis: Emphasis::Accent,
+        });
+    }
 
     out.push(Segment {
         id: SegmentId::FileName,

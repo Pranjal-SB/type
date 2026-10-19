@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use ratatui::layout::Rect;
 use typ_app::App;
-use typ_app::layout::split;
+use typ_app::dock::Dock;
 use typ_core::{Action, PanelEvent};
 
 /// One directory per test — see the tree panel fixture for why sharing races.
@@ -21,10 +21,12 @@ fn a_new_app_focuses_the_tree() {
 }
 
 #[test]
-fn cycling_focus_moves_to_the_editor_and_back() {
+fn cycling_focus_moves_to_the_editor_the_status_bar_and_back() {
     let mut app = App::new(&fixture("cycle")).unwrap();
     app.cycle_focus();
     assert_eq!(app.focused_name(), "editor");
+    app.cycle_focus();
+    assert_eq!(app.focused_name(), "status bar");
     app.cycle_focus();
     assert_eq!(app.focused_name(), "tree");
 }
@@ -63,36 +65,36 @@ fn opening_a_file_moves_focus_to_the_editor() {
 
 #[test]
 fn layout_gives_the_tree_a_fixed_width_sidebar() {
-    let body = split(Rect::new(0, 0, 100, 30));
+    let body = Dock::left().areas(Rect::new(0, 0, 100, 30));
     // The sidebar and its rule take 30 columns between them: 29 of list, one
     // of line. The editor starts on the column after the rule, so no cell is
     // drawn twice and neither panel has to know what sits beside it.
-    assert_eq!(body.tree.width, 29);
+    assert_eq!(body.content.width, 29);
     assert_eq!(body.rule, Rect::new(29, 0, 1, 30));
-    assert_eq!(body.editor.x, 30);
-    assert_eq!(body.editor.width, 70);
+    assert_eq!(body.rest.x, 30);
+    assert_eq!(body.rest.width, 70);
     assert_eq!(body.heading, Rect::new(0, 0, 29, 1));
-    assert_eq!(body.tree.y, 1, "the list starts under its heading");
+    assert_eq!(body.content.y, 1, "the list starts under its heading");
 }
 
 #[test]
 fn layout_shrinks_the_sidebar_on_narrow_terminals() {
     // Exact, not `< 30` and `> 0`, which a one-column sidebar satisfied.
     // Gap 137. Under 60 columns the sidebar is a third of the width.
-    let body = split(Rect::new(0, 0, 40, 30));
-    assert_eq!(body.tree.width, 12);
+    let body = Dock::left().areas(Rect::new(0, 0, 40, 30));
+    assert_eq!(body.content.width, 12);
     assert_eq!(body.rule.x, 12);
-    assert_eq!(body.editor.x, 13);
-    assert_eq!(body.editor.width, 27);
+    assert_eq!(body.rest.x, 13);
+    assert_eq!(body.rest.width, 27);
 }
 
 #[test]
 fn layout_survives_a_frame_too_small_to_split() {
     for width in 0..4 {
         for height in 0..3 {
-            let body = split(Rect::new(0, 0, width, height));
-            assert!(body.editor.right() <= width.max(body.editor.x));
-            assert!(body.tree.height <= height);
+            let body = Dock::left().areas(Rect::new(0, 0, width, height));
+            assert!(body.rest.right() <= width.max(body.rest.x));
+            assert!(body.content.height <= height);
         }
     }
 }

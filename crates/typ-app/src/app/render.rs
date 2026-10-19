@@ -5,9 +5,9 @@
 //! nothing to do with editor state — it reads `App` and writes cells.
 //!
 //! `SEGMENT_GAP` stays in `app.rs` because the status *strings* are built there
-//! too, and a constant shared by two modules belongs to neither exclusively. A
-//! child module can read its parent's private items, which is what makes that
-//! work without widening anything.
+//! and drawn in `status_bar`, and a constant shared by two modules belongs to
+//! neither exclusively. A child module can read its parent's private items,
+//! which is what makes that work without widening anything.
 
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -15,47 +15,32 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 use typ_core::{Panel, RenderContext};
 
+use crate::app::docking::Zoom;
 use crate::app::panes::PaneArea;
-use crate::app::{App, Focus, SEGMENT_GAP};
+use crate::app::{App, Focus};
 use crate::pane::Axis;
 
 impl App {
     pub fn render(&mut self, frame: &mut ratatui::Frame) {
         let (_, status_area) = crate::layout::split_frame(frame.area());
-        let (body, menu_area) = self.split_body(frame.area());
-        let regions = crate::layout::split(body);
-        let tree_area = regions.tree;
+        let (_, menu_area) = self.split_body(frame.area());
+        let regions = self.regions(frame.area());
+        let tree_area = regions.content;
         let (w, h) = (frame.area().width, frame.area().height);
 
-        let tree_ctx = RenderContext {
-            theme: &self.theme,
-            syntax: &self.syntax_theme,
-            // The tree draws files, not their contents.
-            diagnostics: &[],
-            is_focused: self.focus == Focus::Tree,
-            panel_index: 0,
-            terminal_width: w,
-            terminal_height: h,
-        };
-
-        // The app draws the lines; each panel draws its content inside them.
-        typ_core::chrome::labelled_rule(
-            regions.heading,
-            frame.buffer_mut(),
-            &self.tree.title(),
-            self.focus == Focus::Tree,
-            &self.theme,
-            self.theme.chrome_bg,
-        );
-        self.tree.render(tree_area, frame.buffer_mut(), &tree_ctx);
-        typ_core::chrome::rule(regions.rule, frame.buffer_mut(), &self.theme, self.theme.bg);
+        self.render_dock(&regions, frame.buffer_mut(), (w, h));
 
         self.screen = frame.area();
-        let panes = self.pane_areas(regions.editor);
+        let panes = self.pane_areas(regions.rest);
         for (number, area) in panes.iter().enumerate() {
             self.render_pane(number + 1, area, frame.buffer_mut(), (w, h));
         }
-        for (axis, rule) in self.layout.rules(regions.editor) {
+        // A zoom hides every rule between panes with the panes it hid.
+        let rules = match self.zoomed() {
+            None => self.layout.rules(regions.rest),
+            Some(_) => Vec::new(),
+        };
+        for (axis, rule) in rules {
             let buf = frame.buffer_mut();
             match axis {
                 Axis::Columns => typ_core::chrome::rule(rule, buf, &self.theme, self.theme.bg),
@@ -119,61 +104,23 @@ impl App {
         let focused_area = match self.focus {
             Focus::Tree => tree_area,
             Focus::Editor => editor_area,
+            Focus::Status => {
+                if let Some(at) = self.status_cursor(status_area) {
+                    frame.set_cursor_position(at);
+                }
+                return;
+            }
         };
         if let Some((x, y)) = self.focused().cursor_position(focused_area) {
             frame.set_cursor_position((x, y));
         }
     }
 
-    fn render_status(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-        let background = Style::default()
-            .fg(self.theme.status_bar_fg)
-            .bg(self.theme.status_bar_bg);
-        let left = self.status_left();
-        let right_segments = self.status_segments();
-        // Measured in cells, not chars. A CJK file name is one char and two
-        // cells per character, and counting chars pushed the right half's
-        // tail off the end of the bar. Gap 105.
-        let right_width: usize = right_segments
-            .iter()
-            .map(|s| typ_buffer::display_width(&s.text))
-            .sum::<usize>()
-            + SEGMENT_GAP.len() * right_segments.len().saturating_sub(1);
-
-        // The right half is the fixed cost; the left is truncated to whatever
-        // is left over, so a long message never pushes the position off-screen.
-        let width = area.width as usize;
-        let room = width.saturating_sub(right_width + 2);
-        let left = clip_to_cells(&left, room);
-        let gap = width.saturating_sub(typ_buffer::display_width(&left) + right_width);
-
-        // Each segment carries its own emphasis. This is where
-        // `status_bar_inactive_fg` and `status_bar_accent` earn their place:
-        // without them the bar is one weight of text and a reader has to parse
-        // it rather than glance at it.
-        let mut spans = vec![
-            Span::styled(left, background),
-            Span::styled(" ".repeat(gap), background),
-        ];
-        for (index, segment) in right_segments.iter().enumerate() {
-            if index > 0 {
-                spans.push(Span::styled(SEGMENT_GAP, background));
-            }
-            spans.push(Span::styled(
-                segment.text.clone(),
-                background.fg(segment.emphasis.colour(&self.theme)),
-            ));
-        }
-
-        Paragraph::new(Line::from(spans))
-            .style(background)
-            .render(area, buf);
-    }
-
     pub(super) fn focused(&self) -> &dyn Panel {
         match self.focus {
             Focus::Tree => &self.tree,
-            Focus::Editor => &self.panes[self.pane].shown().panel,
+            // The bar has no panel; see `focused_mut`.
+            Focus::Editor | Focus::Status => &self.panes[self.pane].shown().panel,
         }
     }
 
@@ -189,9 +136,25 @@ impl App {
     ///
     /// With panes, "the editor" is the current pane's text.
     pub fn areas(&self, area: Rect) -> (Rect, Rect) {
-        let (body, _) = self.split_body(area);
-        let regions = crate::layout::split(body);
-        (regions.tree, self.current_pane_area(regions.editor).content)
+        let regions = self.regions(area);
+        (
+            regions.content,
+            self.current_pane_area(regions.rest).content,
+        )
+    }
+
+    /// The dock's regions and the panes' area in `frame`: the one place the
+    /// body is divided, for render and every hit-test.
+    pub(crate) fn regions(&self, frame: Rect) -> crate::dock::DockAreas {
+        let body = self.split_body(frame).0;
+        match self.zoomed() {
+            Some(Zoom::Pane(_)) => crate::dock::DockAreas::hidden(body),
+            zoom => crate::dock::Dock {
+                zoomed: zoom == Some(Zoom::Dock),
+                ..self.dock
+            }
+            .areas(body),
+        }
     }
 
     /// One pane: the visible tab's text, then its tab row over the top, led by
@@ -208,6 +171,7 @@ impl App {
             number: number_area,
             bar,
             content,
+            zoom,
             ..
         } = *area;
         let focused = self.focus == Focus::Editor && index == self.pane;
@@ -224,6 +188,7 @@ impl App {
             terminal_width: w,
             terminal_height: h,
         };
+        let zoomed = self.zoomed() == Some(Zoom::Pane(self.panes[index].id));
         let pane = &mut self.panes[index];
         pane.shown_mut().panel.render(content, buf, &ctx);
 
@@ -231,6 +196,7 @@ impl App {
             let labels: Vec<String> = pane.tabs.iter().map(|tab| tab.panel.title()).collect();
             crate::tabbar::draw(buf, bar, &labels, pane.active, &self.theme, focused);
         }
+        crate::app::docking::draw_zoom(buf, zoom, zoomed, &self.theme);
         if number_area.width > 0 {
             // The pane's label (interface §4): accent and bold on the pane
             // with the keys, the tab row's own quiet colour on the rest.
@@ -253,18 +219,6 @@ impl App {
             );
         }
     }
-}
-
-/// The longest prefix of `text` that fits in `room` cells, whole graphemes only.
-fn clip_to_cells(text: &str, room: usize) -> String {
-    use unicode_segmentation::UnicodeSegmentation;
-    let mut used = 0;
-    text.graphemes(true)
-        .take_while(|g| {
-            used += typ_buffer::display_width(g);
-            used <= room
-        })
-        .collect()
 }
 
 impl App {

@@ -272,9 +272,7 @@ impl App {
 
     /// Where the tab bar is, or a zero-height rect when there is not one.
     pub fn tab_bar_area(&self, area: Rect) -> Rect {
-        let (body, _) = self.split_body(area);
-        self.current_pane_area(crate::layout::split(body).editor)
-            .bar
+        self.current_pane_area(self.regions(area).rest).bar
     }
 
     /// Give a mouse event to the tab bar. Returns whether the bar took it.

@@ -89,7 +89,7 @@ scrim = "scrim"
 status_bar_bg = "base02"
 status_bar_fg = "base07"
 status_bar_inactive_fg = "base05"
-status_bar_accent = "accent"
+status_bar_accent = "accent_bright"  # accent is 6.29 on base02, under the 6.5 for text read alone
 
 tree_directory_fg = "accent_bright"
 tree_file_fg = "base06"

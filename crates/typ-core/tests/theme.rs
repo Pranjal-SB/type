@@ -425,3 +425,40 @@ fn the_gutter_floor_follows_the_ground_the_gutter_is_drawn_on() {
         names(&light, Kind::Light)
     );
 }
+
+#[test]
+fn chrome_text_has_to_read_on_chrome_bg() {
+    // The tab rows, the menu and the floats draw text on `chrome_bg`, not on
+    // the status bar's own ground, so each colour drawn there is measured
+    // there.
+    let theme = ThemeColors::default();
+    for (rule, broken) in [
+        (
+            "status_bar_accent on chrome_bg",
+            ThemeColors {
+                status_bar_accent: theme.chrome_bg,
+                ..theme
+            },
+        ),
+        (
+            "fg on chrome_bg",
+            ThemeColors {
+                fg: theme.border,
+                ..theme
+            },
+        ),
+        (
+            "status_bar_inactive_fg on chrome_bg",
+            ThemeColors {
+                status_bar_inactive_fg: theme.border,
+                ..theme
+            },
+        ),
+    ] {
+        let bad = audit(&broken, Kind::Dark);
+        assert!(
+            bad.iter().any(|f| f.starts_with(rule)),
+            "{rule} has to be reported, got: {bad:?}"
+        );
+    }
+}

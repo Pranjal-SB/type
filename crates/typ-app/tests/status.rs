@@ -96,7 +96,7 @@ fn the_idle_status_bar_advertises_the_core_bindings() {
     let app = App::new(&fixture("hint")).unwrap();
     assert!(app.status().is_none());
     let hint = app.status_left();
-    assert!(hint.contains("Tab"), "hint was: {hint}");
+    assert!(hint.contains("F6"), "hint was: {hint}");
     assert!(hint.contains("Ctrl+S"), "hint was: {hint}");
     assert!(hint.contains("Ctrl+Q"), "hint was: {hint}");
 }
@@ -161,4 +161,22 @@ fn a_configured_indent_width_wins_over_the_measurement() {
         "the setting has to survive opening a file, status: {}",
         app.status_right()
     );
+}
+
+#[test]
+fn the_idle_hint_names_the_chord_bound_to_focus_next() {
+    // Tab indents, so a hint saying `Tab focus` sent people to the wrong key.
+    // It is generated from the keymap, so a rebind moves it too.
+    let mut app = App::new(&fixture("hint-rebind")).unwrap();
+    let hint = app.status_left();
+    assert!(hint.starts_with("F6 focus"), "hint: {hint}");
+    assert!(!hint.contains("Tab focus"), "hint: {hint}");
+
+    let mut keymap = typ_core::Keymap::default_bindings();
+    keymap
+        .merge_toml("\"f6\" = \"\"\n\"f8\" = \"focus_next\"")
+        .unwrap();
+    app.set_keymap(keymap);
+    let hint = app.status_left();
+    assert!(hint.starts_with("F8 focus"), "hint: {hint}");
 }

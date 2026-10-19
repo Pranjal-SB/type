@@ -120,6 +120,8 @@ this document.
 | `tree_directory_fg` / `tree_file_fg` on `chrome_bg` | content | Measured on the surface it draws on, not on `bg`. |
 | every `diagnostic_*` on `bg` | content | Read individually, so legible alone. |
 | `receded_fg` on `bg` and on `chrome_bg` | quiet | An unfocused panel's text, on whichever surface that panel sits. Still read, so still a floor. |
+| `status_bar_accent` and `fg` on `chrome_bg` | content | The tab rows, the menu and the floats draw them on the raised surface, which a theme may tune apart from the status bar's ground. |
+| `status_bar_inactive_fg` on `chrome_bg` | quiet | Same reason: the unfocused pane numbers and the menu's descriptions. |
 
 | Group | Dark ground | Light ground |
 |---|---|---|

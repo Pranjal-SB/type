@@ -3,6 +3,37 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.4.1] - 2026-10-03 (M4.1 Docks, shell slice 3 continued)
+
+The left dock from `docs/design/interface.md` §2 and §5, zoom, and focus that reaches every
+region and comes back the way it went. Layout presets and sessions follow in v0.4.2.
+
+### Added
+- **The dock.** The tree lives in a left dock. `Ctrl+B` opens and focuses it when it is folded,
+  focuses it when it is open, and folds it when it has focus, focus going back where it came
+  from. Folded, it is one column: a rule with `▸` at its top, and a click on it opens the dock.
+  Drag its rule, or `Ctrl+K =` with the dock focused and the arrows, to resize it between 12
+  columns and half the screen; `=` puts it back.
+- **Zoom.** `Ctrl+K Z` gives the focused region, the dock or a pane, the whole body, and again
+  puts the layout back exactly. The `◰` at the right of the dock's heading and of every tab row
+  does the same, and so does a double-click on the dock's heading. The status bar says `zoomed`
+  while it is.
+- **The status bar takes focus.** `F6` walks the dock, the panes in reading order, then the
+  status bar. There `←` `→` move between the segments that do something and `Enter` does it:
+  the position opens goto-line, the problem count jumps to the next problem. A click on a segment
+  does the same thing. `F8` jumps to the next problem from anywhere.
+
+### Changed
+- **`Esc` walks back.** In the dock or the status bar, with nothing of its own to cancel, `Esc`
+  returns to the region focus came from, up to eight deep, skipping a pane that has closed or a
+  dock that has folded. In a pane it never moves focus: the editor is where `Esc` brings you
+  back to, not somewhere it takes you from.
+- **The idle hint says `F6 focus`**, read from the keymap, as are its `Ctrl+S` and `Ctrl+Q`. It
+  said `Tab focus` long after Tab became indent.
+- **The contrast audit measures chrome text on `chrome_bg`**: `status_bar_accent` and `fg` at the
+  content floor, `status_bar_inactive_fg` at the quiet one. Slate's status-bar accent moved to
+  its lifted blue (`accent_bright`) and Dracula's to cyan, both under the floor before.
+
 ## [0.4.0] - 2026-10-03 (M4 Panes, shell slice 3 begun)
 
 The first part of the layout model in `docs/design/interface.md` §2, §5 and §7: lines between
@@ -607,7 +638,8 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.0
 [0.3.3]: https://github.com/Pranjal-SB/type/releases/tag/v0.3.3
 [0.3.2]: https://github.com/Pranjal-SB/type/releases/tag/v0.3.2

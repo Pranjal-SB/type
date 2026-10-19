@@ -73,10 +73,11 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             run(app, a);
             assert!(app.should_quit(), "the confirming quit did not quit");
         },
+        // One pane, so past it to the status bar.
         Action::FocusNext => |app, a| {
             assert_eq!(app.focus(), Focus::Editor);
             run(app, a);
-            assert_eq!(app.focus(), Focus::Tree);
+            assert_eq!(app.focus(), Focus::Status);
         },
         Action::FocusPrevious => |app, a| {
             assert_eq!(app.focus(), Focus::Editor);
@@ -180,6 +181,35 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
                 "{}",
                 app.status_left()
             );
+        },
+        // The palette's path, which is also the mouse's: a row in ctrl+p.
+        Action::ToggleLeftDock => |app, a| {
+            run(app, a);
+            assert_eq!(app.focus(), Focus::Tree);
+            run(app, a);
+            assert!(!app.dock_open(), "the focused dock did not fold");
+            assert_eq!(app.focus(), Focus::Editor);
+        },
+        // No server, no problems, and it has to say so.
+        Action::NextProblem => |app, a| {
+            run(app, a);
+            assert!(app.status().is_some(), "{} said nothing", a.name());
+        },
+        // Nothing selected in the editor: `esc` goes back the way focus came.
+        Action::CollapseSelections => |app, a| {
+            app.set_focus(Focus::Tree);
+            run(app, a);
+            assert_eq!(app.focus(), Focus::Editor);
+        },
+        Action::Zoom => |app, a| {
+            run(app, a);
+            assert!(
+                app.status_right().contains("zoomed"),
+                "{}",
+                app.status_right()
+            );
+            run(app, a);
+            assert!(!app.status_right().contains("zoomed"));
         },
         Action::OpenMenu => |app, a| {
             run(app, a);

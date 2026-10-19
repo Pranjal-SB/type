@@ -9,11 +9,21 @@ use crossterm::event::MouseEvent;
 use ratatui::layout::Rect;
 use typ_core::{Edge, Panel, PanelEvent};
 
+use crate::app::docking::Zoom;
 use crate::app::{App, Focus, Pane};
 use crate::pane::{Axis, PaneId};
 
 /// Cells one arrow moves a rule in resize mode.
-const NUDGE: i32 = 1;
+pub(super) const NUDGE: i32 = 1;
+
+/// What a held mouse button is dragging.
+#[derive(Debug, Clone)]
+pub(crate) enum Drag {
+    /// The rule of the split at this path.
+    Split(crate::pane::SplitPath),
+    /// The rule between the dock and the panes.
+    Dock,
+}
 
 /// Where one pane is drawn: the regions inside its rect.
 ///
@@ -33,6 +43,8 @@ pub(crate) struct PaneArea {
     pub bar: Rect,
     /// The visible tab's text.
     pub content: Rect,
+    /// The ` ◰` at the right end of the tab row.
+    pub zoom: Rect,
 }
 
 impl App {
@@ -41,9 +53,9 @@ impl App {
     pub(crate) fn pane_areas(&self, editor: Rect) -> Vec<PaneArea> {
         let numbered = self.panes.len() > 1;
         let mut areas: Vec<PaneArea> = self
-            .layout
-            .rects(editor)
+            .visible_panes(editor)
             .into_iter()
+            .filter(|(_, whole)| !whole.is_empty())
             .filter_map(|(id, whole)| {
                 let index = self.index_of(id)?;
                 let (row, content) = crate::layout::split_tabs(whole);
@@ -51,9 +63,10 @@ impl App {
                 // name. Clamped so a sliver of a pane is not overrun.
                 let width = if numbered { 3.min(row.width) } else { 0 };
                 let number = Rect { width, ..row };
+                let zoom = crate::layout::zoom_button(row, 0);
                 let bar = Rect {
                     x: row.x + width,
-                    width: row.width - width,
+                    width: zoom.x.saturating_sub(row.x + width),
                     ..row
                 };
                 Some(PaneArea {
@@ -62,11 +75,21 @@ impl App {
                     number,
                     bar,
                     content,
+                    zoom,
                 })
             })
             .collect();
         areas.sort_by_key(|area| (area.whole.y, area.whole.x));
         areas
+    }
+
+    /// The panes on screen and where: every leaf, or the zoomed pane alone
+    /// with the whole region.
+    fn visible_panes(&self, editor: Rect) -> Vec<(PaneId, Rect)> {
+        match self.zoomed() {
+            Some(Zoom::Pane(id)) => vec![(id, editor)],
+            _ => self.layout.rects(editor),
+        }
     }
 
     /// The current pane's areas inside the editor region.
@@ -80,13 +103,13 @@ impl App {
                 number: Rect::default(),
                 bar: Rect::default(),
                 content: Rect::default(),
+                zoom: Rect::default(),
             })
     }
 
     /// The editor region of `frame`.
     fn editor_region(&self, frame: Rect) -> Rect {
-        let (body, _) = self.split_body(frame);
-        crate::layout::split(body).editor
+        self.regions(frame).rest
     }
 
     /// Split the current pane, the new one on the second side of `axis`.
@@ -136,12 +159,22 @@ impl App {
             return;
         };
         self.panes.remove(self.pane);
-        self.make_current(self.index_of(next).unwrap_or(0));
+        // Moved before `make_current`, which would otherwise remember the
+        // pane that just closed by an index that now names another.
+        self.pane = self.index_of(next).unwrap_or(0);
+        self.make_current(self.pane);
+        self.forget(crate::app::focus::Place::Pane(id));
     }
 
     /// Make the pane at `index` in `panes` the one with the keys.
-    fn make_current(&mut self, index: usize) {
+    pub(super) fn make_current(&mut self, index: usize) {
+        if self.focus == Focus::Editor && index != self.pane {
+            self.remember();
+        }
         self.pane = index;
+        if self.zoomed_pane != Some(self.panes[index].id) {
+            self.zoomed_pane = None;
+        }
         self.set_focus(Focus::Editor);
         self.warn_if_changed_on_disk();
         self.mark_dirty();
@@ -214,9 +247,17 @@ impl App {
             return false;
         };
         if area.index != self.pane {
+            if self.focus == Focus::Editor {
+                self.remember();
+            }
             self.pane = area.index;
             self.warn_if_changed_on_disk();
             self.mark_dirty();
+        }
+        if area.zoom.contains((column, row).into()) {
+            self.set_focus(Focus::Editor);
+            self.toggle_zoom();
+            return true;
         }
         area.number.contains((column, row).into())
     }
@@ -248,6 +289,10 @@ impl App {
         if !chord.raw.modifiers.is_empty() {
             self.resizing = false;
             return false;
+        }
+        // The dock's rule, when the keys are in the dock.
+        if self.focus == Focus::Tree {
+            return self.resize_dock_with(chord.raw.code);
         }
         let editor = self.editor_region(self.screen);
         let id = self.panes[self.pane].id;
@@ -282,17 +327,33 @@ impl App {
         true
     }
 
-    /// A press on a rule between panes starts dragging it. Returns whether
-    /// there was a rule there.
+    /// A press on a rule, between panes or beside the open dock, starts
+    /// dragging it. Returns whether there was a rule there.
     pub fn press_rule_at(&mut self, column: u16, row: u16, frame: Rect) -> bool {
-        self.dragging = self.layout.rule_at(self.editor_region(frame), column, row);
+        let regions = self.regions(frame);
+        self.dragging = if self.dock.open && regions.rule.contains((column, row).into()) {
+            Some(Drag::Dock)
+        } else {
+            // A zoomed pane hides every rule between panes.
+            self.zoomed()
+                .is_none()
+                .then(|| self.layout.rule_at(regions.rest, column, row))
+                .flatten()
+                .map(Drag::Split)
+        };
         self.dragging.is_some()
     }
 
     /// The pointer moved with the button held. Returns whether a rule moved.
     pub fn drag_rule_to(&mut self, column: u16, row: u16, frame: Rect) -> bool {
-        let Some(path) = self.dragging.clone() else {
-            return false;
+        let path = match self.dragging.clone() {
+            Some(Drag::Split(path)) => path,
+            Some(Drag::Dock) => {
+                self.dock.place_rule(self.split_body(frame).0, column);
+                self.mark_dirty();
+                return true;
+            }
+            None => return false,
         };
         let cell = match self.layout.axis_at(&path) {
             Some(Axis::Columns) => column,

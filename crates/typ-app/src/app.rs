@@ -2,7 +2,9 @@ use std::path::Path;
 
 mod background;
 mod dispatch;
+mod docking;
 mod door;
+pub(crate) mod focus;
 pub(crate) mod panes;
 mod picker;
 mod render;
@@ -11,11 +13,13 @@ mod render;
 /// the extraction is meant to shorten this file, not to open it up.
 mod search;
 mod servers;
+/// The status bar as a region: its layout, its focus and its clicks.
+mod status_bar;
 mod tabs;
 
 use anyhow::Result;
 use typ_buffer::SearchQuery;
-use typ_core::{Keymap, Panel, ThemeColors};
+use typ_core::{Action, Keymap, Panel, ThemeColors};
 use typ_find::{FileHit, FindWorker, LineHit};
 use typ_panel_editor::EditorPanel;
 use typ_panel_editor::render::Whitespace;
@@ -31,13 +35,25 @@ use crate::status::{Segment, StatusFacts, segments};
 pub enum Focus {
     Tree,
     Editor,
+    /// The status bar, a segment at a time (interface §4). `App.pane` still
+    /// names the pane its segments describe.
+    Status,
 }
 
 pub struct App {
     tree: TreePanel,
+    /// Where the tree is, and in what posture.
+    dock: crate::dock::Dock,
+    /// The pane `ctrl+k z` zoomed, if one is. In force only while that pane
+    /// has the keys; see `docking::zoomed`.
+    zoomed_pane: Option<crate::pane::PaneId>,
+    /// When the dock's heading was last pressed, for a double-click to zoom.
+    heading_pressed: Option<std::time::Instant>,
     /// Every pane, in no particular order: `layout` says where each one is.
     /// **Never empty**, for the reason a pane's `tabs` never is.
     panes: Vec<Pane>,
+    /// The status segment that has the keys while `focus` is `Status`.
+    segment: crate::status::SegmentId,
     /// Index into `panes` of the current pane: the one focus goes back to, and
     /// where the tree opens a file. Always valid.
     pane: usize,
@@ -55,7 +71,7 @@ pub struct App {
     /// Resize mode is on: the arrows move a rule rather than the cursor.
     resizing: bool,
     /// The rule a held mouse button is dragging, if one is.
-    dragging: Option<crate::pane::SplitPath>,
+    dragging: Option<panes::Drag>,
     /// The one watch on the whole workspace, once `set_event_sender` has
     /// started it. See `background::start_workspace_watch`.
     workspace: Option<Workspace>,
@@ -72,7 +88,7 @@ pub struct App {
     focus: Focus,
     /// Where focus was before it came here, for `esc` to go back to. A stack
     /// one deep, because two panels is as deep as it gets until docks land.
-    came_from: Option<Focus>,
+    came_from: Vec<focus::Place>,
     quit: bool,
     /// Message shown in the status bar until the next keypress.
     status: Option<String>,
@@ -287,21 +303,68 @@ impl Tab {
 /// M6, and whitespace has neither.
 const SEGMENT_GAP: &str = "  ";
 
-/// The order `f6` walks. Fixed, so a screen-reader user can learn it
-/// (interface §5); docks and the status bar join it when they exist.
-const FOCUS_ORDER: [Focus; 2] = [Focus::Tree, Focus::Editor];
-
 /// What the status bar says while resize mode is on.
 const RESIZE_HINT: &str = "Resize: arrows move the rule  ·  = evens it  ·  Enter or Esc done";
 
 /// Shown when there is nothing more urgent to say. Discoverability is part of
 /// the product: bindings nobody can find are bindings that do not exist.
-const HINT: &str = "Tab focus  ·  Enter open  ·  Ctrl+S save  ·  Ctrl+Q quit";
+///
+/// Each chord is read from the keymap, so a rebind moves the hint with it. It
+/// said `Tab focus` from M1 until long after Tab became indent, because it was
+/// written down. `Enter open` stays written: it is the tree's raw key.
+fn hint(keymap: &Keymap) -> String {
+    let label = |action, what| chord_label(keymap, action).map(|chord| format!("{chord} {what}"));
+    [
+        label(Action::FocusNext, "focus"),
+        Some("Enter open".to_string()),
+        label(Action::Save, "save"),
+        label(Action::Quit, "quit"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join("  ·  ")
+}
+
+/// The chord to show for `action`, spelled the way a key cap is: `F6`,
+/// `Ctrl+S`. Of several, the one with fewest modifiers, then the shortest:
+/// `f6` over `ctrl+tab`, which a terminal without the kitty protocol cannot
+/// tell from Tab.
+fn chord_label(keymap: &Keymap, action: Action) -> Option<String> {
+    let chord = keymap
+        .bindings_for(action)
+        .into_iter()
+        .min_by_key(|chord| (chord.matches('+').count(), chord.len()))?;
+    Some(
+        chord
+            .split(' ')
+            .map(|step| {
+                step.split('+')
+                    .map(capitalised)
+                    .collect::<Vec<_>>()
+                    .join("+")
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
+fn capitalised(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
 
 impl App {
     pub fn new(root: &Path) -> Result<Self> {
         Ok(Self {
             tree: TreePanel::new(root)?,
+            dock: crate::dock::Dock::left(),
+            zoomed_pane: None,
+            segment: crate::status::SegmentId::Position,
+            heading_pressed: None,
             panes: vec![Pane::new(crate::pane::PaneId(0))],
             pane: 0,
             layout: crate::pane::Layout::Leaf(crate::pane::PaneId(0)),
@@ -316,7 +379,7 @@ impl App {
             keymap: Keymap::default_bindings(),
             theme: ThemeColors::default(),
             focus: Focus::Tree,
-            came_from: None,
+            came_from: Vec::new(),
             quit: false,
             status: None,
             quit_pending: false,
@@ -412,7 +475,7 @@ impl App {
         }
         match &self.teaching {
             Some((line, _)) => line.clone(),
-            None => HINT.to_string(),
+            None => hint(&self.keymap),
         }
     }
 
@@ -449,6 +512,7 @@ impl App {
             errors: self.count_diagnostics(typ_core::Severity::Error),
             warnings: self.count_diagnostics(typ_core::Severity::Warning),
             progress: &self.lsp.progress(),
+            zoomed: self.zoomed().is_some(),
         })
     }
 
@@ -523,49 +587,12 @@ impl App {
         match self.focus {
             Focus::Tree => self.tree.name(),
             Focus::Editor => self.panes[self.pane].shown().panel.name(),
+            Focus::Status => "status bar",
         }
     }
 
     pub fn editor_title(&self) -> String {
         self.panes[self.pane].shown().panel.title()
-    }
-
-    /// The next region in `FOCUS_ORDER`, wrapping.
-    pub fn cycle_focus(&mut self) {
-        self.step_focus(1);
-    }
-
-    fn step_focus(&mut self, delta: isize) {
-        let at = FOCUS_ORDER
-            .iter()
-            .position(|f| *f == self.focus)
-            .unwrap_or(0);
-        let next = (at as isize + delta).rem_euclid(FOCUS_ORDER.len() as isize);
-        self.set_focus(FOCUS_ORDER[next as usize]);
-    }
-
-    /// Move focus, remembering where it came from.
-    pub fn set_focus(&mut self, focus: Focus) {
-        if focus != self.focus {
-            self.came_from = Some(self.focus);
-            self.focus = focus;
-        }
-    }
-
-    /// `esc` with nothing of the panel's own to cancel: back to where focus
-    /// came from. The editor is home, so `esc` there never moves focus: it is
-    /// the pane every other one returns to (interface §5, "back to the
-    /// editor"). Returns whether focus moved.
-    fn focus_back(&mut self) -> bool {
-        if self.focus == Focus::Editor || self.focused().captures_escape() {
-            return false;
-        }
-        let back = self
-            .came_from
-            .filter(|f| *f != self.focus)
-            .unwrap_or(Focus::Editor);
-        self.set_focus(back);
-        true
     }
 
     pub fn keymap(&self) -> &Keymap {
@@ -657,7 +684,9 @@ impl App {
     pub fn focused_mut(&mut self) -> &mut dyn Panel {
         match self.focus {
             Focus::Tree => &mut self.tree,
-            Focus::Editor => &mut self.panes[self.pane].shown_mut().panel,
+            // The bar has no panel of its own; `dispatch` keeps keys from
+            // reaching the one behind it.
+            Focus::Editor | Focus::Status => &mut self.panes[self.pane].shown_mut().panel,
         }
     }
 

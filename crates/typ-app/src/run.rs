@@ -17,7 +17,7 @@ use crate::app::{App, Focus};
 use crate::backend::TypBackend;
 
 /// The end of the channel a worker holds. Cloneable, and the only way a worker
-/// talks to the app — no worker is ever handed a reference to `App`.
+/// talks to the app â no worker is ever handed a reference to `App`.
 pub type AppSender = mpsc::Sender<AppEvent>;
 
 /// The end the loop blocks on.
@@ -63,7 +63,7 @@ pub fn run(mut app: App) -> Result<()> {
     // one added mouse capture and bracketed paste on top. Building the terminal
     // by hand means the whole job lands here: without it a panic drops the user
     // back to a shell in raw mode, on the alternate screen, still emitting
-    // mouse escape sequences and wrapping every paste in markers. FINDINGS §6.
+    // mouse escape sequences and wrapping every paste in markers. FINDINGS Â§6.
     install_panic_hook(|| {
         let _ = stdout().execute(DisableBracketedPaste);
         let _ = stdout().execute(DisableMouseCapture);
@@ -180,14 +180,14 @@ pub fn pump_input(tx: &AppSender, mut read: impl FnMut() -> std::io::Result<Even
 ///
 /// **A named function because the line it replaces was never written.** From
 /// M2.7 until v0.3.0 `event_loop` made this channel, handed one end to the
-/// input pump, and never gave the other to the app — so in every shipped
+/// input pump, and never gave the other to the app â so in every shipped
 /// binary `parse_worker`, `find_worker` and `sender` were all `None`. Syntax
 /// highlighting, the file picker's corpus, project search, external-change
 /// reloading and every language server were fully tested and completely dead,
 /// because one call was missing one layer above where the tests look.
 ///
 /// `parse_wiring.rs` opens by saying its whole reason for existing is that "a
-/// wiring mistake — a request never made, a result never routed — passes all
+/// wiring mistake â a request never made, a result never routed â passes all
 /// of them". It was right, and it was one frame too low: the tests wire the
 /// app by hand, so the only thing they could not catch was the binary failing
 /// to.
@@ -197,7 +197,7 @@ pub fn wire(app: &mut App) -> AppReceiver {
     spawn_input_pump(tx);
     // **Once before the loop blocks.** `sync_language_servers` otherwise runs
     // only at the end of a batch, and the loop draws a frame and then waits on
-    // `recv()` — so a file opened from the command line reached no server until
+    // `recv()` â so a file opened from the command line reached no server until
     // the user pressed a key. `set_event_sender` already does the same thing
     // for the parse, and for the same reason.
     app.sync_language_servers();
@@ -209,8 +209,8 @@ fn event_loop(terminal: &mut Terminal<TypBackend<Stdout>>, app: &mut App) -> Res
 
     loop {
         // `Terminal::draw` diffs against the previous buffer and emits only the
-        // cells that changed, so a redundant draw costs no terminal traffic —
-        // but it still costs the whole render pass, which is 439 µs deep in a
+        // cells that changed, so a redundant draw costs no terminal traffic â
+        // but it still costs the whole render pass, which is 439 Âµs deep in a
         // 50k-line file. That is what the flag is for.
         if app.take_dirty() {
             // No bracketing here any more: `TypBackend` opens the frame on its
@@ -258,7 +258,7 @@ fn event_loop(terminal: &mut Terminal<TypBackend<Stdout>>, app: &mut App) -> Res
 /// Dispatch a batch of events, then answer once.
 ///
 /// Taken from yazi, which blocks for one event and then drains everything else
-/// already queued before rendering. The alternative — draw per event — costs a
+/// already queued before rendering. The alternative â draw per event â costs a
 /// full render pass for every notch of a scroll, every character of a paste and
 /// every event of a watcher burst.
 ///
@@ -275,7 +275,7 @@ pub fn step_batch(app: &mut App, events: Vec<AppEvent>, area: Rect) -> Result<Fl
     while let Some(event) = events.next() {
         // Fold a run of wheel events into one scroll. Only a *consecutive*
         // run, and only over the same panel, so nothing is reordered and
-        // nothing is discarded — the batch is a vector being folded, not a
+        // nothing is discarded â the batch is a vector being folded, not a
         // queue being drained past. The old coalescing read ahead and `break`ed
         // on the first non-scroll, which dropped it: flick the wheel while
         // typing and a character vanished.
@@ -333,7 +333,7 @@ fn scroll_step(app: &mut App, m: MouseEvent, delta: i32, area: Rect) -> Result<F
 /// Send a scroll to whichever panel the pointer is over.
 fn route_scroll(app: &mut App, m: MouseEvent, delta: i32, area: Rect) -> Vec<PanelEvent> {
     // The overlay first, wherever the pointer is. A wheel while the picker is
-    // up scrolls the picker — scrolling the file underneath a modal is what
+    // up scrolls the picker â scrolling the file underneath a modal is what
     // every other program treats as a bug.
     if app.picker().is_some() {
         return app.route_picker_scroll(delta, area);
@@ -357,7 +357,7 @@ fn finish(app: &mut App, events: Vec<PanelEvent>, mut changed: bool) -> Result<F
     }
     app.apply(events)?;
 
-    // Every path that can edit the buffer arrives here — chord, paste, mouse,
+    // Every path that can edit the buffer arrives here â chord, paste, mouse,
     // prompt, and whatever the next one turns out to be. Hooking each call
     // site instead would work until somebody adds a call site, and the symptom
     // would be highlighting that silently stops updating for one kind of edit.
@@ -449,6 +449,23 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                     return finish(app, events, changed);
                 }
 
+                // The folded dock's column is one target: a press opens it.
+                if matches!(m.kind, MouseEventKind::Down(MouseButton::Left))
+                    && app.press_dock_at(m.column, m.row, area)
+                {
+                    app.clear_transient();
+                    return finish(app, events, true);
+                }
+
+                // The dock's heading: a press focuses the dock, its ` ◰` or a
+                // double-click zooms it.
+                if matches!(m.kind, MouseEventKind::Down(MouseButton::Left))
+                    && app.press_dock_heading(m.column, m.row, area, now)
+                {
+                    app.clear_transient();
+                    return finish(app, events, true);
+                }
+
                 // A rule between panes is dragged, not clicked through: the
                 // press picks it up, motion with the button held moves it.
                 let rule_drag = match m.kind {
@@ -500,7 +517,15 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                 // hit tests clamp a row past their bottom to their last line,
                 // so without this a click there moved the caret. Gap 84. Only
                 // a press: a drag that runs off the bottom is still selecting.
-                if matches!(m.kind, MouseEventKind::Down(_)) && m.row >= tree_area.bottom() {
+                // Either side: a zoom leaves one of the two with no rows at all.
+                let bottom = tree_area.bottom().max(editor_area.bottom());
+                // A segment that does something does it, as `enter` on it does.
+                if matches!(m.kind, MouseEventKind::Down(MouseButton::Left))
+                    && app.press_status_at(m.column, m.row, area)?
+                {
+                    return finish(app, events, true);
+                }
+                if matches!(m.kind, MouseEventKind::Down(_)) && m.row >= bottom {
                     return finish(app, events, changed);
                 }
 
@@ -530,7 +555,7 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
             }
             // Defect 10. ratatui's `draw` autoresizes a fullscreen viewport,
             // querying the backend and clearing into the new area, and panels
-            // learn their size at render time — so the whole fix is getting to
+            // learn their size at render time â so the whole fix is getting to
             // a draw. Harmless until Task 3, and a frozen screen after it.
             Event::Resize(..) => {}
             // An escape sequence nobody claimed, a focus report, anything the
