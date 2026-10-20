@@ -11,8 +11,6 @@
 
 use ratatui::layout::Rect;
 
-use typ_core::Panel;
-
 use crate::app::App;
 use crate::status::SegmentId;
 
@@ -173,7 +171,7 @@ impl App {
             let bar = area.bar;
             if bar.height > 0 {
                 let pane = &self.panes[area.index];
-                let labels: Vec<String> = pane.tabs.iter().map(|tab| tab.panel.title()).collect();
+                let labels: Vec<String> = pane.tabs.iter().map(|tab| tab.panel().title()).collect();
                 for cell in crate::tabbar::cells(&labels, pane.active, bar.width) {
                     let rect = Rect::new(bar.x + cell.x, bar.y, cell.width, 1);
                     let kind = TargetKind::Tab {

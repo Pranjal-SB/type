@@ -316,11 +316,12 @@ impl App {
         let overrides: Vec<(std::path::PathBuf, String)> = self
             .all_tabs()
             .filter_map(|tab| {
-                let path = tab.panel.path()?;
-                tab.panel
+                let editor = tab.editor()?;
+                let path = editor.path()?;
+                editor
                     .buffer()
                     .is_dirty()
-                    .then(|| (path.to_path_buf(), tab.panel.buffer().text()))
+                    .then(|| (path.to_path_buf(), editor.buffer().text()))
             })
             .collect();
         let root = self.root.clone();

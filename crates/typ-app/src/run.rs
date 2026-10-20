@@ -351,7 +351,7 @@ fn route_scroll(app: &mut App, m: MouseEvent, delta: i32, area: Rect) -> Vec<Pan
     } else if let Some(events) = app.scroll_pane_at(m, delta, area) {
         events
     } else {
-        app.editor_mut().handle_scroll(delta, editor_area)
+        app.shown_panel_mut().handle_scroll(delta, editor_area)
     }
 }
 
@@ -575,7 +575,7 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                             events = app.tree_mut().handle_mouse(m, tree_area);
                         } else {
                             app.set_focus(Focus::Editor);
-                            events = app.editor_mut().handle_mouse(m, editor_area);
+                            events = app.shown_panel_mut().handle_mouse(m, editor_area);
                         }
                     }
                 }

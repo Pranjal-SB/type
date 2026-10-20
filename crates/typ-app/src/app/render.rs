@@ -132,7 +132,7 @@ impl App {
         match self.focus {
             Focus::Tree => &self.tree,
             // The bar has no panel; see `focused_mut`.
-            Focus::Editor | Focus::Status => &self.panes[self.pane].shown().panel,
+            Focus::Editor | Focus::Status => self.panes[self.pane].shown().panel(),
         }
     }
 
@@ -202,10 +202,10 @@ impl App {
         };
         let zoomed = self.zoomed() == Some(Zoom::Pane(self.panes[index].id));
         let pane = &mut self.panes[index];
-        pane.shown_mut().panel.render(content, buf, &ctx);
+        pane.shown_mut().panel_mut().render(content, buf, &ctx);
 
         if bar.height > 0 {
-            let labels: Vec<String> = pane.tabs.iter().map(|tab| tab.panel.title()).collect();
+            let labels: Vec<String> = pane.tabs.iter().map(|tab| tab.panel().title()).collect();
             crate::tabbar::draw(buf, bar, &labels, pane.active, &self.theme, focused);
         }
         crate::app::docking::draw_zoom(buf, zoom, zoomed, &self.theme);
@@ -245,7 +245,7 @@ impl App {
         };
         let Some(cursor) = self.panes[self.pane]
             .shown()
-            .panel
+            .panel()
             .cursor_position(editor_area)
         else {
             return;

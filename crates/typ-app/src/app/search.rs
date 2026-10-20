@@ -17,6 +17,9 @@ use typ_core::{Direction, KeyChord};
 use super::App;
 use crate::prompt::PromptKind;
 
+/// What a search says on a tab with no text to search.
+const NO_TEXT: &str = "This tab has no text to search.";
+
 impl App {
     /// Keys while a prompt is open.
     pub(crate) fn handle_prompt_chord(&mut self, chord: KeyChord) -> Result<()> {
@@ -104,7 +107,9 @@ impl App {
                     self.prompt = None;
                 } else if let Some(line) = parse_line_number(&input) {
                     self.prompt = None;
-                    self.panes[self.pane].shown_mut().panel.goto_line(line);
+                    if let Some(editor) = self.shown_editor_mut() {
+                        editor.goto_line(line);
+                    }
                 } else {
                     // Rejected, and the prompt stays open with the input still
                     // in it: closing on a typo throws the answer away and makes
@@ -134,12 +139,16 @@ impl App {
     }
 
     pub(crate) fn jump_to_match(&mut self, query: &SearchQuery, direction: Direction) {
-        let hits = self.panes[self.pane].shown().panel.buffer_find_all(query);
+        let Some(editor) = self.shown_editor() else {
+            self.status = Some(NO_TEXT.to_string());
+            return;
+        };
+        let hits = editor.buffer_find_all(query);
         if hits.is_empty() {
             self.status = Some(format!("No matches for {}", query.needle));
             return;
         }
-        let from = self.panes[self.pane].shown().panel.cursor();
+        let from = editor.cursor();
         let next = match direction {
             // `>=`, not `>`: opening a search with the cursor at the top of the
             // file must find a match that starts there. Jumping leaves the
@@ -155,8 +164,10 @@ impl App {
                 .find(|hit| hit.range().1 < from)
                 .or_else(|| hits.last()),
         };
-        if let Some(hit) = next.copied() {
-            self.panes[self.pane].shown_mut().panel.select_range(hit);
+        if let Some(hit) = next.copied()
+            && let Some(editor) = self.shown_editor_mut()
+        {
+            editor.select_range(hit);
             self.status = Some(format!("{} matches", hits.len()));
         }
     }
@@ -167,10 +178,11 @@ impl App {
         }
         let case_sensitive = needle.chars().any(char::is_uppercase);
         let query = SearchQuery::new(needle.to_string(), case_sensitive);
-        let count = self.panes[self.pane]
-            .shown_mut()
-            .panel
-            .replace_all(&query, replacement);
+        let Some(editor) = self.shown_editor_mut() else {
+            self.status = Some(NO_TEXT.to_string());
+            return;
+        };
+        let count = editor.replace_all(&query, replacement);
         self.status = Some(match count {
             0 => format!("No matches for {needle}"),
             1 => "1 replacement".to_string(),

@@ -11,7 +11,7 @@ use anyhow::Result;
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use typ_core::{Action, Group, KeyChord, Panel, RenderContext};
+use typ_core::{Action, Group, KeyChord, RenderContext};
 
 use super::{App, Focus};
 use crate::app::targets::TargetKind;
@@ -37,7 +37,7 @@ impl App {
                 let content = self.current_pane_area(self.editor_region(frame)).content;
                 let anchor = self.panes[self.pane]
                     .shown()
-                    .panel
+                    .panel()
                     .cursor_position(content)
                     .unwrap_or((content.x, content.y));
                 self.show_context(TEXT, anchor);

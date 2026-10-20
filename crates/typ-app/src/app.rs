@@ -276,7 +276,7 @@ impl Pane {
 /// silently re-point an in-flight request at whichever file shifted into that
 /// index.
 struct Tab {
-    panel: EditorPanel,
+    content: TabContent,
     /// A counter stamped every time this tab becomes active.
     ///
     /// Closing activates the highest, which is the tab the user was last
@@ -311,15 +311,63 @@ struct Tab {
     changed_on_disk: bool,
 }
 
+/// What a tab holds.
+///
+/// Only an editor so far. Every path that needs a buffer (save, the servers,
+/// parsing, the watch, the session, a search) asks for one through
+/// [`Tab::editor`] and has its answer for a tab that has none, so a second
+/// kind of tab arrives without a path to find.
+enum TabContent {
+    Editor(EditorPanel),
+}
+
 impl Tab {
     fn new(panel: EditorPanel) -> Self {
         Tab {
-            panel,
+            content: TabContent::Editor(panel),
             parsed_revision: None,
             awaited_generation: None,
             last_used: 0,
             watch: None,
             changed_on_disk: false,
+        }
+    }
+
+    /// The editor, when the tab holds one.
+    fn editor(&self) -> Option<&EditorPanel> {
+        match &self.content {
+            TabContent::Editor(editor) => Some(editor),
+        }
+    }
+
+    fn editor_mut(&mut self) -> Option<&mut EditorPanel> {
+        match &mut self.content {
+            TabContent::Editor(editor) => Some(editor),
+        }
+    }
+
+    /// Whatever the tab holds, as the panel it draws and routes keys to.
+    fn panel(&self) -> &dyn Panel {
+        match &self.content {
+            TabContent::Editor(editor) => editor,
+        }
+    }
+
+    fn panel_mut(&mut self) -> &mut dyn Panel {
+        match &mut self.content {
+            TabContent::Editor(editor) => editor,
+        }
+    }
+
+    /// The file behind the tab. `None` for an untitled buffer.
+    fn path(&self) -> Option<&Path> {
+        self.editor().and_then(EditorPanel::path)
+    }
+
+    /// What a message calls the tab: the file's name with no dirty marker.
+    fn name(&self) -> String {
+        match &self.content {
+            TabContent::Editor(editor) => editor.file_name(),
         }
     }
 }
@@ -550,20 +598,23 @@ impl App {
     /// list and its emphasis rules live in `status.rs` rather than here, that is
     /// a change of source rather than a rewrite of content.
     pub fn status_segments(&self) -> Vec<Segment> {
-        let cursor = self.panes[self.pane].shown().panel.cursor();
-        let path = self.panes[self.pane].shown().panel.path();
+        let Some(editor) = self.shown_editor() else {
+            return Vec::new();
+        };
+        let cursor = editor.cursor();
+        let path = editor.path();
         let file_type = crate::status::file_type_of(path);
-        let file_name = self.panes[self.pane].shown().panel.file_name();
+        let file_name = editor.file_name();
         segments(&StatusFacts {
             file_name: &file_name,
-            modified: self.panes[self.pane].shown().panel.is_dirty(),
+            modified: editor.is_dirty(),
             file_type: file_type.as_deref(),
-            line_ending: self.panes[self.pane].shown().panel.line_ending().label(),
-            indent_width: self.panes[self.pane].shown().panel.tab_width(),
-            selection_count: self.panes[self.pane].shown().panel.selections().len(),
+            line_ending: editor.line_ending().label(),
+            indent_width: editor.tab_width(),
+            selection_count: editor.selections().len(),
             line: cursor.line,
             col: cursor.col,
-            total_lines: self.panes[self.pane].shown().panel.line_count(),
+            total_lines: editor.line_count(),
             errors: self.count_diagnostics(typ_core::Severity::Error),
             warnings: self.count_diagnostics(typ_core::Severity::Warning),
             progress: &self.lsp.progress(),
@@ -621,7 +672,7 @@ impl App {
         // too, for the same reason.
         let blocker = self
             .all_tabs()
-            .find_map(|tab| tab.panel.needs_close_confirmation())
+            .find_map(|tab| tab.panel().needs_close_confirmation())
             .or_else(|| self.tree.needs_close_confirmation());
         match blocker {
             Some(message) => {
@@ -645,13 +696,13 @@ impl App {
     pub fn focused_name(&self) -> &'static str {
         match self.focus {
             Focus::Tree => self.tree.name(),
-            Focus::Editor => self.panes[self.pane].shown().panel.name(),
+            Focus::Editor => self.panes[self.pane].shown().panel().name(),
             Focus::Status => "status bar",
         }
     }
 
     pub fn editor_title(&self) -> String {
-        self.panes[self.pane].shown().panel.title()
+        self.panes[self.pane].shown().panel().title()
     }
 
     pub fn keymap(&self) -> &Keymap {
@@ -665,18 +716,19 @@ impl App {
     }
 
     fn apply_indent_width(&mut self) {
-        if let Some(width) = self.indent_width {
-            self.panes[self.pane].shown_mut().panel.set_tab_width(width);
+        if let Some(width) = self.indent_width
+            && let Some(editor) = self.shown_editor_mut()
+        {
+            editor.set_tab_width(width);
         }
     }
 
     /// Which whitespace the editor marks.
     pub fn set_whitespace(&mut self, whitespace: Whitespace) {
         self.whitespace = whitespace;
-        self.panes[self.pane]
-            .shown_mut()
-            .panel
-            .set_whitespace(whitespace);
+        if let Some(editor) = self.shown_editor_mut() {
+            editor.set_whitespace(whitespace);
+        }
     }
 
     pub fn set_keymap(&mut self, keymap: Keymap) {
@@ -745,7 +797,7 @@ impl App {
             Focus::Tree => &mut self.tree,
             // The bar has no panel of its own; `dispatch` keeps keys from
             // reaching the one behind it.
-            Focus::Editor | Focus::Status => &mut self.panes[self.pane].shown_mut().panel,
+            Focus::Editor | Focus::Status => self.panes[self.pane].shown_mut().panel_mut(),
         }
     }
 

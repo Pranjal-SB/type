@@ -7,7 +7,7 @@
 
 use crossterm::event::MouseEvent;
 use ratatui::layout::Rect;
-use typ_core::{Edge, Panel, PanelEvent};
+use typ_core::{Edge, PanelEvent};
 
 use crate::app::docking::Zoom;
 use crate::app::{App, Focus, Pane};
@@ -146,7 +146,7 @@ impl App {
             && let Some(message) = self.panes[self.pane]
                 .tabs
                 .iter()
-                .find_map(|tab| tab.panel.needs_close_confirmation())
+                .find_map(|tab| tab.panel().needs_close_confirmation())
         {
             self.status = Some(format!(
                 "{message}  Close the pane again to discard, Ctrl+S to save."
@@ -203,7 +203,7 @@ impl App {
         let here = current.whole;
         let (cx, cy) = self.panes[self.pane]
             .shown()
-            .panel
+            .panel()
             .cursor_position(current.content)
             .unwrap_or((here.x + here.width / 2, here.y + here.height / 2));
 
@@ -277,7 +277,7 @@ impl App {
         Some(
             self.panes[area.index]
                 .shown_mut()
-                .panel
+                .panel_mut()
                 .handle_scroll(delta, area.content),
         )
     }

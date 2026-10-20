@@ -19,18 +19,22 @@ impl App {
                 let mut active = 0;
                 let mut tabs = Vec::new();
                 for (index, tab) in pane.tabs.iter().enumerate() {
-                    let Some(path) = tab.panel.path() else {
+                    // A view is not a file to come back to either.
+                    let Some((editor, path)) = tab
+                        .editor()
+                        .and_then(|editor| Some((editor, editor.path()?)))
+                    else {
                         continue;
                     };
                     if index == pane.active {
                         active = tabs.len();
                     }
-                    let cursor = tab.panel.cursor();
+                    let cursor = editor.cursor();
                     tabs.push(SavedTab {
                         path: path.to_path_buf(),
                         line: cursor.line,
                         col: cursor.col,
-                        top: tab.panel.top_line(),
+                        top: editor.top_line(),
                     });
                 }
                 SavedPane {
