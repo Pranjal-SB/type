@@ -463,6 +463,12 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                     return finish(app, events, changed);
                 }
 
+                // A row of the completion list accepts it; a press anywhere
+                // else puts the list away and carries on to what it hit.
+                if app.route_completion_mouse(m, area)? {
+                    return finish(app, events, true);
+                }
+
                 // The menu is next, for the same reason: a press that ran a
                 // row, or cancelled the menu, is not also a click on a panel.
                 if app.pending_prefix().is_some() {

@@ -123,6 +123,12 @@ impl App {
             return Ok(());
         }
 
+        // The completion list takes `tab`, `enter`, the arrows and `esc`, and
+        // leaves every other key to the editor, which goes on typing.
+        if self.handle_completion_chord(&chord)? {
+            return Ok(());
+        }
+
         let bound = match self.keymap.resolve(None, &chord) {
             typ_core::Resolved::Matched(action) => Some(action),
             // Nothing runs yet, so nothing transient is cleared: a close
@@ -286,6 +292,7 @@ impl App {
             }
             Action::GotoDefinition => self.ask_server(crate::lsp::Ask::Definition),
             Action::Hover => self.ask_server(crate::lsp::Ask::Hover),
+            Action::AcceptCompletion => self.accept_completion(),
             Action::NextProblem => self.next_problem(),
             Action::Save => match self.shown_editor_mut().map(|editor| editor.save()) {
                 // A view writes what it changes as it changes it.

@@ -87,7 +87,8 @@ impl App {
                 TargetKind::Segment(_)
                 | TargetKind::MenuRow(_)
                 | TargetKind::FloatRow(_)
-                | TargetKind::BarGroup(_),
+                | TargetKind::BarGroup(_)
+                | TargetKind::CompletionRow(_),
             ) => return,
             None => {
                 let editor = self.editor_region(frame);

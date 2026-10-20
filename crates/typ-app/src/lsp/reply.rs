@@ -162,7 +162,14 @@ fn flatten_markdown(text: &str) -> String {
 /// **Three shapes**: `CompletionItem[]`, `CompletionList` and null. The order
 /// is `sortText`, falling back to the label, which is the order the server
 /// meant the list read in before anything is typed.
-pub(crate) fn completion_items(result: &serde_json::Value) -> (Vec<crate::completion::Item>, bool) {
+///
+/// `at` turns a position in the server's encoding into the buffer's, which is
+/// where a `textEdit`'s start is converted: once, on arrival, against the text
+/// the server was answering about.
+pub(crate) fn completion_items(
+    result: &serde_json::Value,
+    at: impl Fn(typ_lsp::lsp_types::Position) -> typ_buffer::Position,
+) -> (Vec<crate::completion::Item>, bool) {
     let (items, incomplete) = match result {
         serde_json::Value::Array(items) => (items.as_slice(), false),
         serde_json::Value::Object(_) => (
@@ -180,7 +187,7 @@ pub(crate) fn completion_items(result: &serde_json::Value) -> (Vec<crate::comple
     let mut keyed: Vec<(String, crate::completion::Item)> = items
         .iter()
         .filter_map(|item| {
-            let decoded = completion_item(item)?;
+            let decoded = completion_item(item, &at)?;
             let sort = text_of(item, "sortText").unwrap_or_else(|| decoded.label.clone());
             Some((sort, decoded))
         })
@@ -201,7 +208,10 @@ fn text_of(value: &serde_json::Value, field: &str) -> Option<String> {
 /// The text it puts in is the `textEdit`'s, then `insertText`, then the label:
 /// the specification's own order. An `InsertReplaceEdit` is taken by its
 /// insert range, which is what typing over the rest of a word would keep.
-fn completion_item(item: &serde_json::Value) -> Option<crate::completion::Item> {
+fn completion_item(
+    item: &serde_json::Value,
+    at: impl Fn(typ_lsp::lsp_types::Position) -> typ_buffer::Position,
+) -> Option<crate::completion::Item> {
     let label = text_of(item, "label")?;
     let edit = item.get("textEdit");
     let edit_text = edit.and_then(|e| text_of(e, "newText"));
@@ -227,7 +237,7 @@ fn completion_item(item: &serde_json::Value) -> Option<crate::completion::Item> 
         kind: item.get("kind").and_then(|k| k.as_u64()),
         detail: text_of(item, "detail"),
         docs,
-        edit_start: edit_start.filter(|_| edit.is_some()),
+        edit_start: edit_start.map(at),
         label,
     })
 }

@@ -7,6 +7,8 @@
 //! sent the change: one question per batch however many keys were in it, and
 //! never more than one in flight. An answer for a version the server has since
 //! been sent is dropped, and the word is asked about again.
+//!
+//! The list on screen (its keys, clicks and paint) is `complete_list.rs`.
 
 use crate::completion::{self, List};
 use crate::lsp::{Ask, Pending};
@@ -32,15 +34,33 @@ enum Trigger {
 /// The list, and whether a key has asked for one.
 #[derive(Default)]
 pub(crate) struct Completing {
-    list: Option<List>,
+    pub(super) list: Option<List>,
     wanted: Option<Trigger>,
 }
 
 impl App {
-    /// The labels the list shows, while it is up.
+    /// The labels the list shows, best first, while it is up.
     pub fn completion_labels(&self) -> Option<Vec<String>> {
         let list = self.completing.list.as_ref()?;
-        Some(list.items.iter().map(|item| item.label.clone()).collect())
+        Some(list.shown().map(|item| item.label.clone()).collect())
+    }
+
+    /// The rest of the chosen item, drawn after the caret.
+    pub fn ghost_text(&self) -> Option<String> {
+        self.completing.list.as_ref()?.ghost().map(str::to_string)
+    }
+
+    /// Put a list up without a server, for the frame and keystroke budgets.
+    pub fn show_completion_for_test(&mut self, items: Vec<completion::Item>) {
+        let Some(editor) = self.shown_editor() else {
+            return;
+        };
+        let Some(path) = editor.path().map(|p| p.to_path_buf()) else {
+            return;
+        };
+        let start = self.word_start_here();
+        self.completing.list = Some(List::new(path, items, false, start));
+        self.refilter_completion();
     }
 
     /// A character was typed into the editor.
@@ -64,12 +84,11 @@ impl App {
         };
     }
 
-    /// The end of a batch: drop a list the caret has left, and ask if a key
+    /// The end of a batch: narrow the list to the word as it now is, drop it
+    /// if the caret has left the word or nothing matches, and ask if a key
     /// wanted it and nothing is already being asked.
     pub(super) fn settle_completion(&mut self) {
-        if self.completing.list.is_some() && self.completion_query().is_none() {
-            self.completing.list = None;
-        }
+        self.refilter_completion();
         let Some(trigger) = self.completing.wanted else {
             return;
         };
@@ -79,6 +98,9 @@ impl App {
             return;
         }
         self.completing.wanted = None;
+        if self.focus != Focus::Editor {
+            return;
+        }
         let Some(editor) = self.shown_editor() else {
             return;
         };
@@ -86,9 +108,8 @@ impl App {
             return;
         };
         let cursor = editor.cursor();
-        let line = editor.line_text(cursor.line);
         if matches!(trigger, Trigger::Typed | Trigger::Incomplete)
-            && completion::word_start(&line, cursor.col) == cursor.col
+            && self.word_start_here() == cursor
         {
             // Nothing to complete: the word was typed over before the server
             // got round to it.
@@ -129,23 +150,20 @@ impl App {
             self.complete_again();
             return false;
         }
-        let (items, incomplete) = crate::lsp::completion_items(&result);
+        let encoding = self.lsp.encoding(pending.server);
+        let start = self.word_start_here();
         let Some(editor) = self.shown_editor() else {
             return false;
         };
-        let cursor = editor.cursor();
-        let line = editor.line_text(cursor.line);
-        let start = typ_buffer::Position {
-            line: cursor.line,
-            col: completion::word_start(&line, cursor.col),
-        };
-        self.completing.list = (!items.is_empty()).then_some(List {
-            path,
-            items,
-            incomplete,
-            start,
+        let buffer = editor.buffer();
+        let (items, incomplete) = crate::lsp::completion_items(&result, |at| {
+            buffer.position(typ_lsp::from_lsp(encoding, buffer.rope().slice(..), at))
         });
-        true
+        let had = self.completing.list.is_some();
+        self.completing.list =
+            (!items.is_empty()).then(|| List::new(path, items, incomplete, start));
+        self.refilter_completion();
+        had || self.completing.list.is_some()
     }
 
     /// Ask again at the end of the batch, about the word as it is by then,
@@ -154,8 +172,42 @@ impl App {
         self.completing.wanted.get_or_insert(Trigger::Typed);
     }
 
+    /// Put the list away, and stop wanting one.
+    pub(super) fn close_completion(&mut self) {
+        self.completing.list = None;
+        self.completing.wanted = None;
+        self.lsp.cancel(Ask::Completion);
+    }
+
+    /// Narrow the list to the word as typed, closing it when the caret has
+    /// left the word or nothing matches.
+    fn refilter_completion(&mut self) {
+        let Some(query) = self.completion_query() else {
+            self.completing.list = None;
+            return;
+        };
+        if let Some(list) = self.completing.list.as_mut()
+            && !list.filter(&query)
+        {
+            self.completing.list = None;
+        }
+    }
+
+    /// Where the word before the caret starts.
+    fn word_start_here(&self) -> typ_buffer::Position {
+        let Some(editor) = self.shown_editor() else {
+            return typ_buffer::Position::default();
+        };
+        let cursor = editor.cursor();
+        let line = editor.line_text(cursor.line);
+        typ_buffer::Position {
+            line: cursor.line,
+            col: completion::word_start(&line, cursor.col),
+        }
+    }
+
     /// What has been typed of the word, or `None` when the caret has left it.
-    fn completion_query(&self) -> Option<String> {
+    pub(super) fn completion_query(&self) -> Option<String> {
         let list = self.completing.list.as_ref()?;
         if self.focus != Focus::Editor {
             return None;
@@ -168,7 +220,8 @@ impl App {
         if cursor.line != list.start.line || cursor.col < list.start.col {
             return None;
         }
-        let typed = completion::between(&editor.line_text(cursor.line), list.start.col, cursor.col);
+        let line = editor.line_text(cursor.line);
+        let typed = completion::between(&line, list.start.col, cursor.col);
         typed.chars().all(completion::is_word).then_some(typed)
     }
 }

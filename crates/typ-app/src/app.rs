@@ -2,6 +2,7 @@ use std::path::Path;
 
 mod background;
 mod complete;
+mod complete_list;
 /// The context menu.
 mod context;
 mod dispatch;

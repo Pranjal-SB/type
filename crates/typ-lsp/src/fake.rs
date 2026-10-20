@@ -74,6 +74,9 @@ struct Flags {
     /// Hold each completion answer until the next `didChange` arrives, so it
     /// describes a document the client has already moved past.
     complete_late: bool,
+    /// Offer `日本語` as well, with a `textEdit` over the word before the
+    /// position, counted in the encoding this server speaks.
+    complete_edit: bool,
     garbage: bool,
     exit_now: bool,
     sleep: bool,
@@ -111,6 +114,7 @@ impl Flags {
             progress_create: has("--progress-create"),
             no_completion: has("--no-completion"),
             complete_late: has("--complete-late"),
+            complete_edit: has("--complete-edit"),
             garbage: has("--garbage"),
             exit_now: has("--exit-now"),
             sleep: has("--sleep"),
@@ -176,15 +180,58 @@ fn progress_burst(out: &mut impl Write) {
     );
 }
 
-/// What `textDocument/completion` answers: two functions, one with docs.
-fn completion() -> serde_json::Value {
-    serde_json::json!({
-        "isIncomplete": false,
-        "items": [
-            { "label": "foo", "kind": 3, "detail": "fn foo()", "documentation": "Does foo." },
-            { "label": "format", "kind": 3, "detail": "fn format(s: &str)" },
-        ],
-    })
+/// What `textDocument/completion` answers: two functions, one with docs, and
+/// under `--complete-edit` a CJK word placed by a `textEdit`.
+fn completion(flags: &Flags, text: &str, params: &serde_json::Value) -> serde_json::Value {
+    let mut items = vec![
+        serde_json::json!({ "label": "foo", "kind": 3, "detail": "fn foo()", "documentation": "Does foo." }),
+        serde_json::json!({ "label": "format", "kind": 3, "detail": "fn format(s: &str)" }),
+    ];
+    if flags.complete_edit {
+        let line = params
+            .pointer("/position/line")
+            .and_then(|l| l.as_u64())
+            .unwrap_or(0);
+        let at = params
+            .pointer("/position/character")
+            .and_then(|c| c.as_u64())
+            .unwrap_or(0);
+        let start = word_start(text, line as usize, at as usize, flags.utf8);
+        items.push(serde_json::json!({
+            "label": "日本語",
+            "kind": 6,
+            "textEdit": {
+                "range": {
+                    "start": { "line": line, "character": start },
+                    "end": { "line": line, "character": at },
+                },
+                "newText": "日本語",
+            },
+        }));
+    }
+    serde_json::json!({ "isIncomplete": false, "items": items })
+}
+
+/// Where the word ending at `at` on `line` starts, in UTF-8 bytes or UTF-16
+/// units: the server's own count, which is the thing under test.
+fn word_start(text: &str, line: usize, at: usize, utf8: bool) -> usize {
+    let line = text.split('\n').nth(line).unwrap_or("");
+    let width = |c: char| if utf8 { c.len_utf8() } else { c.len_utf16() };
+    let mut seen = 0;
+    let before: Vec<char> = line
+        .chars()
+        .take_while(|c| {
+            seen += width(*c);
+            seen <= at
+        })
+        .collect();
+    let word: usize = before
+        .iter()
+        .rev()
+        .take_while(|c| c.is_alphanumeric() || **c == '_')
+        .map(|c| width(*c))
+        .sum();
+    before.iter().map(|c| width(*c)).sum::<usize>() - word
 }
 
 /// A URI naming `name` in the same directory as `uri`.
@@ -304,6 +351,8 @@ pub fn run() {
     let mut refusals = 0usize;
     // A completion answer waiting for the next `didChange`.
     let mut held: Option<lsp_server::RequestId> = None;
+    // The document as last sent, which every sync kind here sends whole.
+    let mut text = String::new();
 
     while let Ok(Some(message)) = Message::read(&mut input) {
         seen += 1;
@@ -377,7 +426,7 @@ pub fn run() {
                             },
                         })
                     }
-                    "textDocument/completion" => completion(),
+                    "textDocument/completion" => completion(&flags, &text, &params),
                     "textDocument/hover" if flags.hover_empty => serde_json::Value::Null,
                     "textDocument/hover" if flags.hover_plain => serde_json::json!({
                         "contents": "plain words",
@@ -401,12 +450,19 @@ pub fn run() {
                 if method == "exit" {
                     return;
                 }
+                if let Some(sent) = params
+                    .pointer("/textDocument/text")
+                    .or_else(|| params.pointer("/contentChanges/0/text"))
+                    .and_then(|t| t.as_str())
+                {
+                    text = sent.to_string();
+                }
                 if method == "textDocument/didChange"
                     && let Some(id) = held.take()
                 {
                     let _ = Message::Response(Response {
                         id,
-                        response_result: Ok(completion()),
+                        response_result: Ok(completion(&flags, &text, &serde_json::Value::Null)),
                     })
                     .write(&mut out);
                     let _ = out.flush();

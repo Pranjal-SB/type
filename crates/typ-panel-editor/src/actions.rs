@@ -15,6 +15,30 @@ use typ_core::{Action, Direction, Motion, PanelEvent};
 use crate::EditorPanel;
 
 impl EditorPanel {
+    /// Accept a completion at every caret: the `back` graphemes before each
+    /// head become `text`, as one undo step of its own (M4.6 decision 2).
+    ///
+    /// Every caret, not the primary: the same prefix was typed at each, so the
+    /// same word goes in at each, as typing it would have put it.
+    pub fn complete(&mut self, back: usize, text: &str) -> Option<Vec<PanelEvent>> {
+        self.buffer.undo_boundary();
+        let text = text.to_string();
+        let events = self.edit_at_each_selection(EditKind::Other, move |selection, _buffer| {
+            let head = selection.head;
+            let start = Position {
+                line: head.line,
+                col: head.col.saturating_sub(back),
+            };
+            Edit {
+                start,
+                end: head,
+                text: text.clone(),
+            }
+        });
+        self.buffer.undo_boundary();
+        events
+    }
+
     /// Move one selection according to a motion.
     ///
     /// `extend` decides whether the anchor follows. A plain move from a
