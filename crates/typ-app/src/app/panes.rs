@@ -108,7 +108,7 @@ impl App {
     }
 
     /// The editor region of `frame`.
-    fn editor_region(&self, frame: Rect) -> Rect {
+    pub(super) fn editor_region(&self, frame: Rect) -> Rect {
         self.regions(frame).rest
     }
 

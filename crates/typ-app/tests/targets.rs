@@ -100,7 +100,7 @@ fn each_kind_has_its_region_letter() {
             | TargetKind::DockFolded
             | TargetKind::TreeRow(_) => 's',
             TargetKind::Segment(_) => 'b',
-            TargetKind::MenuRow(_) => 'f',
+            TargetKind::MenuRow(_) | TargetKind::FloatRow(_) => 'f',
         };
         assert_eq!(target.region(), expected, "{target:?}");
     }

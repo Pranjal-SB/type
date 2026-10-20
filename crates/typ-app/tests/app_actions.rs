@@ -224,6 +224,12 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             let labels = app.warp_labels().expect("no labels went up");
             assert!(labels.iter().any(|(label, _)| label == "t1"), "{labels:?}");
         },
+        // A float of the actions for the focused text.
+        Action::ContextMenu => |app, a| {
+            run(app, a);
+            let rows = app.context_rows().expect("no context menu");
+            assert!(rows.contains(&Action::Copy), "{rows:?}");
+        },
         Action::OpenMenu => |app, a| {
             run(app, a);
             assert_eq!(app.pending_prefix(), Some("ctrl+k"));

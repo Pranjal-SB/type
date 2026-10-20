@@ -47,6 +47,7 @@ const NAMED_KEYS: &[&str] = &[
     "down",
     "left",
     "right",
+    "menu",
 ];
 
 /// A binding as a config file spells it: one chord, or a prefix and one more

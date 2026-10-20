@@ -141,6 +141,9 @@ pub enum Action {
     /// Warp labels (interface §5): every mouse target on screen gets a
     /// two-letter label, and typing one clicks it.
     Warp,
+    /// The context menu (interface §8 4b): the actions for what is under the
+    /// cursor, in a float.
+    ContextMenu,
     Copy,
     Cut,
     Paste,
@@ -441,6 +444,7 @@ impl Action {
         Action::Zoom,
         Action::CycleLayout,
         Action::Warp,
+        Action::ContextMenu,
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -539,6 +543,7 @@ impl Action {
             Action::Zoom => "zoom",
             Action::CycleLayout => "cycle_layout",
             Action::Warp => "warp",
+            Action::ContextMenu => "context_menu",
             Action::FocusPane(n) => FOCUS_PANE_NAMES
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -658,6 +663,7 @@ impl Action {
             Action::Zoom => "zoom the focused region",
             Action::CycleLayout => "switch the layout preset",
             Action::Warp => "jump to anything on screen",
+            Action::ContextMenu => "open the context menu",
             Action::FocusPane(n) => FOCUS_PANE_DESCRIPTIONS
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -737,7 +743,9 @@ impl Action {
             | Action::Hover
             | Action::NextProblem
             | Action::RestartLanguageServers => Group::Code,
-            Action::Quit | Action::OpenCommandPalette | Action::OpenMenu => Group::App,
+            Action::Quit | Action::OpenCommandPalette | Action::OpenMenu | Action::ContextMenu => {
+                Group::App
+            }
         }
     }
 }

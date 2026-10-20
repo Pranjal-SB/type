@@ -1,6 +1,8 @@
 use std::path::Path;
 
 mod background;
+/// The context menu.
+mod context;
 mod dispatch;
 mod docking;
 mod door;
@@ -206,6 +208,8 @@ pub struct App {
     teaching: Option<(String, std::time::Instant)>,
     /// Warp labels, while they are up. They take the keyboard.
     warp: Option<warp::Warp>,
+    /// The context menu, while it is up. It takes the keyboard.
+    context: Option<crate::float_menu::FloatMenu>,
 }
 
 /// The workspace watch, from the render thread's side.
@@ -430,6 +434,7 @@ impl App {
             menu: None,
             teaching: None,
             warp: None,
+            context: None,
         })
     }
 
@@ -591,6 +596,7 @@ impl App {
         // leaving its second key to land on whatever comes next.
         self.menu = None;
         self.warp = None;
+        self.context = None;
     }
 
     /// Quit, unless a panel has something to confirm first.

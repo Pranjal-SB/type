@@ -53,6 +53,17 @@ impl TreePanel {
         self.entries.get(self.selected).map(|e| e.path.as_path())
     }
 
+    /// Index of the selected entry.
+    pub fn selected_index(&self) -> usize {
+        self.selected
+    }
+
+    /// Select an entry without activating it: what a right-click does, so
+    /// the context menu is about the row it was opened on.
+    pub fn select(&mut self, index: usize) {
+        self.selected = index.min(self.entries.len().saturating_sub(1));
+    }
+
     pub fn depth_of_selection(&self) -> usize {
         self.entries.get(self.selected).map_or(0, |e| e.depth)
     }

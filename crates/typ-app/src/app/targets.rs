@@ -38,6 +38,9 @@ pub enum TargetKind {
     Segment(SegmentId),
     /// A row of the `ctrl+k` menu, by its index in the menu.
     MenuRow(usize),
+    /// A row of the open float menu (the context menu, or the menu bar's
+    /// dropdown), by its place among the rows it shows.
+    FloatRow(usize),
 }
 
 impl TargetKind {
@@ -51,7 +54,7 @@ impl TargetKind {
             | TargetKind::DockFolded
             | TargetKind::TreeRow(_) => 's',
             TargetKind::Segment(_) => 'b',
-            TargetKind::MenuRow(_) => 'f',
+            TargetKind::MenuRow(_) | TargetKind::FloatRow(_) => 'f',
         }
     }
 }
@@ -89,6 +92,12 @@ impl App {
         if let (Some(menu), Some(area)) = (&self.menu, menu_area) {
             out.extend(menu.row_rects(area).into_iter().map(|(index, rect)| {
                 Target::at(rect, (rect.x, rect.y), TargetKind::MenuRow(index))
+            }));
+        }
+        if let Some(menu) = &self.context {
+            let (body, _) = crate::layout::split_frame(frame);
+            out.extend(menu.row_rects(body).into_iter().map(|(index, rect)| {
+                Target::at(rect, (rect.x, rect.y), TargetKind::FloatRow(index))
             }));
         }
         out
