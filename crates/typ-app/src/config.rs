@@ -18,10 +18,12 @@ pub mod keys;
 pub mod schema;
 pub mod settings;
 pub mod theme;
+mod write;
 
 pub use keys::load_keymap;
 pub use settings::{Settings, load_settings};
 pub use theme::{embedded_names, load_theme};
+pub use write::write_setting;
 
 /// Where user config lives, if the platform will say.
 ///

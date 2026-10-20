@@ -31,6 +31,11 @@ ratatui = "0.30.2"
 # losing it this way a footgun. Helix pins the identical line.
 ropey = { version = "1.6", default-features = false, features = ["simd"] }
 toml = "1.1"
+# The same project's format-preserving editor, for the settings tab's writes:
+# `toml` parses and serialises but drops comments, and a settings change that
+# deletes the user's notes in config.toml is a change nobody asked for. Default
+# features only (parse and display); it shares toml's parser and writer.
+toml_edit = "0.25"
 unicode-segmentation = "1.11"
 unicode-width = "0.2"
 # The highlighter Helix extracted and has run since 25.07. Taken for its rope
