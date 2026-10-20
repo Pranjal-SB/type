@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.4.3, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.4.4, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -73,7 +73,10 @@ picked the layout yourself, and quitting on a project remembers its panes, tabs 
 the next start on it. Anything you can click has a key and anything you can press can be clicked:
 `Ctrl+K J` puts a two-letter label on every target on screen and typing one clicks it, a
 right-click or `Shift+F10` opens the actions for what is under it, and `F10` shows a menu bar of
-every action group. A test fails the build when an action is missing either path.
+every action group. A test fails the build when an action is missing either path. `Ctrl+K ,`
+opens the settings as a tab: search them, change one with the arrows, `Space`, `Enter` or a
+click, and it is written to `config.toml` with your comments left where they were and applied
+as you change it.
 
 Every shipped theme is checked against a contrast rubric at truecolor **and again after
 degradation**, which is the half nobody else checks: quantising moves every colour by a
@@ -214,6 +217,7 @@ has it as "show the ctrl+k menu".
 | `Ctrl+K R` | Restart the language servers |
 | `Ctrl+K J` | Warp labels (below) |
 | `Ctrl+K .` | The context menu (also `Shift+F10`, and the menu key where the terminal reports it) |
+| `Ctrl+K ,` | Settings (below) |
 
 **Panes**
 
@@ -260,6 +264,21 @@ so `git commit` never opens into yesterday's layout. Sessions live in the state 
 | `F10` | click a group's name | The menu bar over the top row: `←` `→` between groups, `↓` or `Enter` drops one down, `Esc` steps back |
 
 While a menu has the keys, the left of the status bar says which they are.
+
+**Settings**
+
+`Ctrl+K ,` or `>settings` opens every setting in `config.toml` as a tab. Typing filters it;
+`@section` keeps one section and `:modified` the values you changed, which carry a `●`.
+
+| Key | Mouse | Action |
+|---|---|---|
+| `↑` `↓`, `Tab` | click a row | Move between the search row and the settings |
+| `←` `→` | click `‹` or `›` | The previous or next choice |
+| `Enter` | click the value | A choice's list, a number to type (`Esc` reverts), or the file for a table |
+| `Space` | click `[x]` | Flip a box |
+| `r` | click `r reset` | Back to the default |
+| `Ctrl+Z` | click `ctrl+z undo` | Undo the last change |
+| `Ctrl+O` | click `ctrl+o config.toml` | Open `config.toml` itself |
 
 **Tree**
 
@@ -430,7 +449,9 @@ for now.
 | v0.4.0 | M4 | Panes: rules not boxes, the layout tree, splits, pane focus and resize, one workspace watcher | shipped |
 | v0.4.1 | M4.1 | Docks: the left dock, `Ctrl+B` and folding, dock resize, zoom, `F6` over every region and the status bar, a deeper focus stack | shipped |
 | v0.4.2 | M4.2 | Layouts: Focus and Standard presets, adapt to width, sessions, status segments that drop by width | shipped |
-| v0.4.3 | M4.3 | Menus and warp: warp labels, the context menu, the menu bar, a keyboard and mouse parity test | **current** |
+| v0.4.3 | M4.3 | Menus and warp: warp labels, the context menu, the menu bar, a keyboard and mouse parity test | shipped |
+| v0.4.4 | M4.4 | Settings: the settings tab, edits written to `config.toml` with comments kept, applied live | **current** |
+| v0.4.5 | M4.5 | Keybindings: the same tab over `keys.toml`, recording a chord, conflicts | |
 | v0.5.0 | M5 | Terminal panel and git integration | |
 | v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |
 
