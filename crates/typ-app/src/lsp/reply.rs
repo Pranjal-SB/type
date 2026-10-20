@@ -241,3 +241,59 @@ fn completion_item(
         label,
     })
 }
+
+/// The signature a `textDocument/signatureHelp` answer makes active, with its
+/// active parameter as a char range into the label.
+///
+/// `activeParameter` on the signature wins over the one beside the list, as
+/// the specification says. A parameter's label is either its own text, found
+/// in the signature's, or a pair of UTF-16 offsets into it.
+pub(crate) fn signature_help(result: &serde_json::Value) -> Option<crate::signature::Signature> {
+    let signatures = result.get("signatures")?.as_array()?;
+    let index = result
+        .get("activeSignature")
+        .and_then(|i| i.as_u64())
+        .unwrap_or(0);
+    let one = signatures
+        .get(usize::try_from(index).ok()?)
+        .or(signatures.first())?;
+    let label = text_of(one, "label")?;
+    let active = one
+        .get("activeParameter")
+        .or_else(|| result.get("activeParameter"))
+        .and_then(|i| i.as_u64())
+        .and_then(|i| {
+            one.get("parameters")?
+                .as_array()?
+                .get(usize::try_from(i).ok()?)
+        })
+        .and_then(|parameter| parameter_range(&label, parameter.get("label")?));
+    Some(crate::signature::Signature { label, active })
+}
+
+/// A parameter's place in its signature's label, in chars.
+fn parameter_range(label: &str, parameter: &serde_json::Value) -> Option<(usize, usize)> {
+    match parameter {
+        serde_json::Value::String(text) => {
+            let byte = label.find(text.as_str())?;
+            let start = label[..byte].chars().count();
+            Some((start, start + text.chars().count()))
+        }
+        serde_json::Value::Array(pair) => {
+            let unit = |at: &serde_json::Value| -> Option<usize> {
+                let mut units = usize::try_from(at.as_u64()?).ok()?;
+                let mut chars = 0;
+                for c in label.chars() {
+                    if units == 0 {
+                        break;
+                    }
+                    units = units.saturating_sub(c.len_utf16());
+                    chars += 1;
+                }
+                Some(chars)
+            };
+            Some((unit(pair.first()?)?, unit(pair.get(1)?)?))
+        }
+        _ => None,
+    }
+}

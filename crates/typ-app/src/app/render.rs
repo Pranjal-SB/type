@@ -58,6 +58,7 @@ impl App {
         // together — opening the picker clears the transient state the hover is
         // part of — but the order says which would win if they were.
         self.render_completion(frame.area(), frame.buffer_mut());
+        self.render_signature(frame.area(), frame.buffer_mut());
         self.render_hover(frame, editor_area);
         self.render_context(frame.area(), frame.buffer_mut());
         self.render_bar(frame.area(), frame.buffer_mut());

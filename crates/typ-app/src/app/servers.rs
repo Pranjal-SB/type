@@ -115,6 +115,7 @@ impl App {
             .collect();
         self.lsp.sync(&docs);
         self.settle_completion();
+        self.settle_signature();
     }
 
     /// What the servers have said about the buffer on screen.
@@ -303,6 +304,8 @@ impl App {
             Err(error) if error.code == crate::lsp::CONTENT_MODIFIED => {
                 if pending.kind == crate::lsp::Ask::Completion {
                     self.complete_again();
+                } else if pending.kind == crate::lsp::Ask::Signature {
+                    self.sign_again();
                 } else if pending.retries < crate::lsp::MAX_RETRIES {
                     self.ask_server_again(pending.kind, pending.retries + 1);
                 }
@@ -326,6 +329,9 @@ impl App {
         if pending.kind == crate::lsp::Ask::Completion {
             return self.completion_answered(pending, result);
         }
+        if pending.kind == crate::lsp::Ask::Signature {
+            return self.signature_answered(pending, result);
+        }
 
         // **Stale.** The question was about a position the cursor has left, and
         // a jump to where the user used to be is a jump nobody asked for.
@@ -338,7 +344,7 @@ impl App {
 
         match pending.kind {
             crate::lsp::Ask::Definition => self.jump_to_definition(pending.server, result),
-            crate::lsp::Ask::Completion => false,
+            crate::lsp::Ask::Completion | crate::lsp::Ask::Signature => false,
             crate::lsp::Ask::Hover => {
                 self.hover = crate::lsp::hover_text(&result);
                 if self.hover.is_none() {

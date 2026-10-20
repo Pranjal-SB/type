@@ -23,6 +23,7 @@ mod search;
 mod servers;
 /// The app as a session, and back.
 mod sessions;
+mod signature;
 /// The status bar as a region: its layout, its focus and its clicks.
 mod status_bar;
 mod tabs;
@@ -225,6 +226,8 @@ pub struct App {
     bar: Option<menu_bar::MenuBar>,
     /// The completion list, and whether a key has asked for one.
     completing: complete::Completing,
+    /// Signature help, and whether a key has asked for it.
+    signing: signature::Signing,
 }
 
 /// The workspace watch, from the render thread's side.
@@ -538,6 +541,7 @@ impl App {
             lsp: crate::lsp::Lsp::new(root),
             hover: None,
             completing: complete::Completing::default(),
+            signing: signature::Signing::default(),
             menu: None,
             teaching: None,
             warp: None,

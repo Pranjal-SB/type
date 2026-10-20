@@ -50,6 +50,7 @@ pub(crate) enum Ask {
     Definition,
     Hover,
     Completion,
+    Signature,
 }
 
 impl Lsp {
@@ -76,6 +77,7 @@ impl Lsp {
             Ask::Definition => ("definitionProvider", "textDocument/definition"),
             Ask::Hover => ("hoverProvider", "textDocument/hover"),
             Ask::Completion => ("completionProvider", "textDocument/completion"),
+            Ask::Signature => ("signatureHelpProvider", "textDocument/signatureHelp"),
         };
 
         let Some(client) = self.client(id) else {
@@ -215,6 +217,7 @@ impl NoAnswer {
             NoAnswer::Empty(Ask::Definition) => "No definition found.",
             NoAnswer::Empty(Ask::Hover) => "No hover information here.",
             NoAnswer::Empty(Ask::Completion) => "No completions here.",
+            NoAnswer::Empty(Ask::Signature) => "No signature here.",
         }
     }
 }

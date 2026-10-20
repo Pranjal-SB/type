@@ -463,6 +463,12 @@ fn initialize_params(root: &Path) -> serde_json::Value {
                     },
                     "contextSupport": true,
                 },
+                "signatureHelp": {
+                    "signatureInformation": {
+                        "parameterInformation": { "labelOffsetSupport": true },
+                        "activeParameterSupport": true,
+                    },
+                },
             },
             "window": { "workDoneProgress": true },
         },

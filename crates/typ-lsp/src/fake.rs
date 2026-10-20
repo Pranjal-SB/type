@@ -74,6 +74,8 @@ struct Flags {
     /// Hold each completion answer until the next `didChange` arrives, so it
     /// describes a document the client has already moved past.
     complete_late: bool,
+    /// Leave `signatureHelpProvider` out of the capabilities.
+    no_signature: bool,
     /// Offer `日本語` as well, with a `textEdit` over the word before the
     /// position, counted in the encoding this server speaks.
     complete_edit: bool,
@@ -115,6 +117,7 @@ impl Flags {
             no_completion: has("--no-completion"),
             complete_late: has("--complete-late"),
             complete_edit: has("--complete-edit"),
+            no_signature: has("--no-signature"),
             garbage: has("--garbage"),
             exit_now: has("--exit-now"),
             sleep: has("--sleep"),
@@ -136,6 +139,9 @@ fn capabilities(flags: &Flags) -> serde_json::Value {
     });
     if !flags.no_completion {
         caps["completionProvider"] = serde_json::json!({ "triggerCharacters": ["."] });
+    }
+    if !flags.no_signature {
+        caps["signatureHelpProvider"] = serde_json::json!({ "triggerCharacters": ["(", ","] });
     }
     if flags.pull {
         caps["diagnosticProvider"] = serde_json::json!({
@@ -210,6 +216,36 @@ fn completion(flags: &Flags, text: &str, params: &serde_json::Value) -> serde_js
         }));
     }
     serde_json::json!({ "isIncomplete": false, "items": items })
+}
+
+/// What `textDocument/signatureHelp` answers: one signature, its parameter
+/// the number of commas since the last open paren before the position. Null
+/// outside any parens. The position is read as chars, which is exact for the
+/// ASCII the tests type. The second parameter's label is an offset pair, the
+/// other shape the protocol allows.
+fn signature(text: &str, params: &serde_json::Value) -> serde_json::Value {
+    let line = params
+        .pointer("/position/line")
+        .and_then(|l| l.as_u64())
+        .unwrap_or(0);
+    let at = params
+        .pointer("/position/character")
+        .and_then(|c| c.as_u64())
+        .unwrap_or(0);
+    let line = text.split('\n').nth(line as usize).unwrap_or("");
+    let before: String = line.chars().take(at as usize).collect();
+    let Some(open) = before.rfind('(') else {
+        return serde_json::Value::Null;
+    };
+    let active = before[open..].matches(',').count();
+    serde_json::json!({
+        "signatures": [{
+            "label": "fn f(a: i32, b: &str)",
+            "parameters": [{ "label": "a: i32" }, { "label": [13, 20] }],
+        }],
+        "activeSignature": 0,
+        "activeParameter": active,
+    })
 }
 
 /// Where the word ending at `at` on `line` starts, in UTF-8 bytes or UTF-16
@@ -427,6 +463,7 @@ pub fn run() {
                         })
                     }
                     "textDocument/completion" => completion(&flags, &text, &params),
+                    "textDocument/signatureHelp" => signature(&text, &params),
                     "textDocument/hover" if flags.hover_empty => serde_json::Value::Null,
                     "textDocument/hover" if flags.hover_plain => serde_json::json!({
                         "contents": "plain words",

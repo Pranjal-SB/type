@@ -129,6 +129,12 @@ impl App {
             return Ok(());
         }
 
+        // Signature help never takes a key: `esc` puts it away and goes on
+        // to do whatever else it does.
+        if chord.raw.code == KeyCode::Esc {
+            self.close_signature();
+        }
+
         let bound = match self.keymap.resolve(None, &chord) {
             typ_core::Resolved::Matched(action) => Some(action),
             // Nothing runs yet, so nothing transient is cleared: a close
@@ -183,6 +189,7 @@ impl App {
         {
             if self.focus == Focus::Editor {
                 self.completion_typed(c);
+                self.signature_typed(c);
             }
             return self.apply(events);
         }
