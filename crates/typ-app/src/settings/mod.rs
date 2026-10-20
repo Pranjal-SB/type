@@ -4,8 +4,9 @@
 //! A view in the registry's sense: it opens through `OpenWith` on the
 //! `config.toml` it edits, reads that file itself, and talks to the app only in
 //! `PanelEvent`s (invariant 5). `layout.rs` is its one geometry, for the
-//! drawing and the clicks alike.
+//! drawing and the clicks alike; `edit.rs` changes values.
 
+mod edit;
 mod layout;
 
 use std::any::Any;
@@ -18,7 +19,8 @@ use typ_core::{HandlerId, KeyChord, Panel, PanelEvent, RenderContext};
 
 use crate::config::schema::{ROWS, Row};
 use crate::config::{Settings, load_settings};
-use layout::Item;
+use edit::Edit;
+use layout::{Item, Target};
 
 /// The handler the settings tab registers under.
 pub const SETTINGS: HandlerId = HandlerId("settings");
@@ -39,6 +41,13 @@ enum Key {
     Zone,
     Backspace,
     Escape,
+    Left,
+    Right,
+    Enter,
+    Toggle,
+    Reset,
+    Undo,
+    OpenRaw,
 }
 
 const KEYS: &[(&str, Key)] = &[
@@ -49,6 +58,13 @@ const KEYS: &[(&str, Key)] = &[
     ("shift+backtab", Key::Zone),
     ("backspace", Key::Backspace),
     ("esc", Key::Escape),
+    ("left", Key::Left),
+    ("right", Key::Right),
+    ("enter", Key::Enter),
+    (" ", Key::Toggle),
+    ("r", Key::Reset),
+    ("ctrl+z", Key::Undo),
+    ("ctrl+o", Key::OpenRaw),
 ];
 
 pub struct SettingsView {
@@ -65,6 +81,12 @@ pub struct SettingsView {
     top: usize,
     /// Where the last frame drew the tab, for the clicks that land on it.
     area: Rect,
+    /// The control being worked, on the selected row.
+    edit: Option<Edit>,
+    /// The file before each change, newest last, and which setting it was.
+    undo: Vec<(&'static str, Option<String>)>,
+    /// The setting the last change was to, until the app takes it.
+    changed: Option<&'static str>,
 }
 
 impl SettingsView {
@@ -77,6 +99,9 @@ impl SettingsView {
             selected: None,
             top: 0,
             area: Rect::default(),
+            edit: None,
+            undo: Vec::new(),
+            changed: None,
         };
         view.reload();
         view
@@ -152,6 +177,7 @@ impl SettingsView {
     }
 
     fn step(&mut self, down: bool) {
+        self.edit = None;
         let visible = self.visible();
         let at = self
             .selected
@@ -166,59 +192,89 @@ impl SettingsView {
     }
 
     fn type_char(&mut self, c: char) {
+        self.edit = None;
         self.query.push(c);
         self.selected = None;
         self.top = 0;
     }
 
-    fn key(&mut self, key: Key) -> bool {
-        match key {
-            Key::Up => self.step(false),
-            Key::Down => self.step(true),
-            Key::Zone => {
-                self.selected = match self.selected {
-                    Some(_) => None,
-                    None => self.visible().first().copied(),
-                }
-            }
-            Key::Backspace => {
+    fn key(&mut self, key: Key) -> Vec<PanelEvent> {
+        let redraw = vec![PanelEvent::NeedsRedraw];
+        match (key, self.selected) {
+            (Key::Up, _) => self.step(false),
+            (Key::Down, _) => self.step(true),
+            (Key::Zone, Some(_)) => self.selected = None,
+            (Key::Zone, None) => self.selected = self.visible().first().copied(),
+            (Key::Backspace, _) => {
                 self.query.pop();
                 self.selected = None;
                 self.top = 0;
             }
-            Key::Escape => {
-                if self.selected.is_some() {
-                    self.selected = None;
-                } else if !self.query.is_empty() {
-                    self.query.clear();
-                    self.top = 0;
-                } else {
-                    return false;
-                }
+            (Key::Escape, Some(_)) => self.selected = None,
+            (Key::Escape, None) if !self.query.is_empty() => {
+                self.query.clear();
+                self.top = 0;
             }
+            (Key::Escape, None) => return Vec::new(),
+            (Key::Left, Some(index)) => return self.cycle(index, -1),
+            (Key::Right, Some(index)) => return self.cycle(index, 1),
+            (Key::Enter, Some(index)) => return self.activate(index),
+            (Key::Enter, None) => self.selected = self.visible().first().copied(),
+            (Key::Toggle, Some(index)) => return self.toggle(index),
+            (Key::Reset, Some(index)) => return self.reset(index),
+            (Key::Undo, _) => return self.undo(),
+            (Key::OpenRaw, _) => return self.open_raw(),
+            (Key::Left | Key::Right | Key::Toggle | Key::Reset, None) => return Vec::new(),
         }
-        true
+        redraw
     }
 
-    fn click(&mut self, column: u16, row: u16) {
+    fn click(&mut self, column: u16, row: u16) -> Vec<PanelEvent> {
         let geometry = self.geometry(self.area);
         let at = (column, row).into();
+        let redraw = vec![PanelEvent::NeedsRedraw];
+        if let Some((_, target)) = geometry.targets.iter().find(|(rect, _)| rect.contains(at)) {
+            return match *target {
+                Target::Less(index) => {
+                    self.selected = Some(index);
+                    self.cycle(index, -1)
+                }
+                Target::More(index) => {
+                    self.selected = Some(index);
+                    self.cycle(index, 1)
+                }
+                Target::Value(index) => self.activate(index),
+                Target::Choice(index, n) => self.pick(index, n),
+                Target::Reset => match self.selected {
+                    Some(index) => self.reset(index),
+                    None => vec![PanelEvent::Notify {
+                        level: typ_core::NotifyLevel::Info,
+                        message: "Select a setting to reset.".to_string(),
+                    }],
+                },
+                Target::Undo => self.undo(),
+                Target::OpenRaw => self.open_raw(),
+            };
+        }
+        // Anywhere else puts a control being worked away, as `esc` would.
+        self.edit = None;
         if geometry.search.contains(at) {
             self.selected = None;
-            return;
+            return redraw;
         }
         if let Some((_, section)) = geometry.sections.iter().find(|(rect, _)| rect.contains(at)) {
             self.query = format!("@{}", slug(section));
             self.selected = None;
             self.top = 0;
-            return;
+            return redraw;
         }
         if let Some((_, item)) = geometry.items.iter().find(|(rect, _)| rect.contains(at)) {
             match item {
                 Item::Name(index) | Item::Detail(index) => self.selected = Some(*index),
-                Item::Rule(_) => {}
+                Item::Rule(_) | Item::Choice(..) => {}
             }
         }
+        redraw
     }
 }
 
@@ -243,25 +299,36 @@ impl Panel for SettingsView {
     }
 
     fn handle_key(&mut self, chord: KeyChord) -> Vec<PanelEvent> {
-        let handled = match KEYS.iter().find(|(name, _)| *name == chord.canonical) {
-            Some((_, key)) => self.key(*key),
-            None => match chord.raw.code {
-                KeyCode::Char(c)
-                    if !chord
-                        .raw
-                        .modifiers
-                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
-                {
-                    self.type_char(c);
-                    true
-                }
-                _ => false,
-            },
+        if let Some(events) = self.edit_key(&chord) {
+            return events;
+        }
+        let plain = match chord.raw.code {
+            KeyCode::Char(c)
+                if !chord
+                    .raw
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                Some(c)
+            }
+            _ => None,
         };
-        if handled {
-            vec![PanelEvent::NeedsRedraw]
-        } else {
-            Vec::new()
+        let key = KEYS
+            .iter()
+            .find(|(name, _)| *name == chord.canonical)
+            .map(|(_, key)| *key);
+        match (key, plain) {
+            // On the search row a letter is the query, `r` and space too.
+            (Some(Key::Toggle | Key::Reset), Some(c)) if self.selected.is_none() => {
+                self.type_char(c);
+                vec![PanelEvent::NeedsRedraw]
+            }
+            (Some(key), _) => self.key(key),
+            (None, Some(c)) => {
+                self.type_char(c);
+                vec![PanelEvent::NeedsRedraw]
+            }
+            (None, None) => Vec::new(),
         }
     }
 
@@ -270,8 +337,7 @@ impl Panel for SettingsView {
             return Vec::new();
         }
         self.area = panel_area;
-        self.click(event.column, event.row);
-        vec![PanelEvent::NeedsRedraw]
+        self.click(event.column, event.row)
     }
 
     fn handle_scroll(&mut self, delta: i32, _panel_area: Rect) -> Vec<PanelEvent> {

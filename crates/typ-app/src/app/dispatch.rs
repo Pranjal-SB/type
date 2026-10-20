@@ -348,6 +348,7 @@ impl App {
                 PanelEvent::RunCommand { .. } => {}
             }
         }
+        self.apply_settings_change();
         Ok(())
     }
 }

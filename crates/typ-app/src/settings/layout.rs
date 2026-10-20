@@ -9,6 +9,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use typ_core::RenderContext;
 
+use super::edit::Edit;
 use super::{SettingsView, slug};
 use crate::config::schema::{Kind, ROWS, Row};
 
@@ -20,6 +21,8 @@ const COLUMN: u16 = 26;
 pub(super) const SEARCH_LABEL: &str = " search  ";
 /// What the search row says while there is no query.
 const SEARCH_HINT: &str = "type to filter \u{b7} @section \u{b7} :modified";
+/// Between the footer's keys.
+const FOOTER_GAP: &str = "  \u{b7}  ";
 
 /// One line of the list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +33,25 @@ pub(super) enum Item {
     Name(usize),
     /// Its second: description, default, source.
     Detail(usize),
+    /// One choice in the list open under row `.0`.
+    Choice(usize, usize),
+}
+
+/// Something a click does more than select a row with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Target {
+    /// The left arrow of a choice.
+    Less(usize),
+    /// The right arrow.
+    More(usize),
+    /// The value itself: the list, the box, the field, the file.
+    Value(usize),
+    /// A choice in an open list.
+    Choice(usize, usize),
+    /// The footer's three.
+    Reset,
+    Undo,
+    OpenRaw,
 }
 
 pub(super) struct Geometry {
@@ -40,6 +62,8 @@ pub(super) struct Geometry {
     pub column_rule: Option<Rect>,
     /// Every list line on screen, after the scroll.
     pub items: Vec<(Rect, Item)>,
+    /// The controls and the footer's keys, each a click target.
+    pub targets: Vec<(Rect, Target)>,
 }
 
 /// Every section, in table order.
@@ -67,19 +91,43 @@ impl SettingsView {
             }
             out.push(Item::Name(index));
             out.push(Item::Detail(index));
+            if self.selected == Some(index) && matches!(self.edit, Some(Edit::List { .. })) {
+                let count = self.choices(row).len();
+                out.extend((0..count).map(|n| Item::Choice(index, n)));
+            }
         }
         out
     }
 
+    /// The footer's parts, with what each does.
+    fn footer_parts(&self) -> [(String, Target); 3] {
+        let file = self.path.file_name().map_or_else(
+            || "config.toml".into(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        [
+            ("r reset".to_string(), Target::Reset),
+            ("ctrl+z undo".to_string(), Target::Undo),
+            (format!("ctrl+o {file}"), Target::OpenRaw),
+        ]
+    }
+
+    /// Where a row's control sits on its name line: right-aligned, a cell in.
+    fn control_rect(&self, line: Rect, row: &Row) -> Rect {
+        let width = typ_buffer::display_width(&self.control(row)) as u16;
+        let x = line.right().saturating_sub(width + 1).max(line.x);
+        Rect::new(x, line.y, width.min(line.width), 1)
+    }
+
     /// The list's area in `area`: below the search row and a blank line,
-    /// right of the section column when there is one.
+    /// above the footer, right of the section column when there is one.
     fn list_area(area: Rect) -> Rect {
         let left = if area.width >= WIDE { COLUMN + 1 } else { 0 };
         Rect::new(
             area.x + left,
             area.y + 2,
             area.width.saturating_sub(left),
-            area.height.saturating_sub(2),
+            area.height.saturating_sub(3),
         )
     }
 
@@ -98,7 +146,7 @@ impl SettingsView {
             Vec::new()
         };
         let column_rule = wide.then(|| Rect::new(area.x + COLUMN, list.y, 1, list.height));
-        let items = self
+        let items: Vec<(Rect, Item)> = self
             .lines()
             .into_iter()
             .skip(self.top)
@@ -106,11 +154,46 @@ impl SettingsView {
             .enumerate()
             .map(|(n, item)| (Rect::new(list.x, list.y + n as u16, list.width, 1), item))
             .collect();
+
+        let mut targets = Vec::new();
+        for (rect, item) in &items {
+            match *item {
+                Item::Name(index) => {
+                    let row = &ROWS[index];
+                    let control = self.control_rect(*rect, row);
+                    if matches!(row.kind, Kind::Choice(_) | Kind::Theme) && control.width >= 3 {
+                        let (x, w) = (control.x, control.width);
+                        targets.push((Rect::new(x, rect.y, 1, 1), Target::Less(index)));
+                        targets.push((Rect::new(x + w - 1, rect.y, 1, 1), Target::More(index)));
+                        targets.push((Rect::new(x + 1, rect.y, w - 2, 1), Target::Value(index)));
+                    } else {
+                        targets.push((control, Target::Value(index)));
+                    }
+                }
+                Item::Choice(index, n) => targets.push((*rect, Target::Choice(index, n))),
+                Item::Rule(_) | Item::Detail(_) => {}
+            }
+        }
+
+        // The footer, the frame's last line.
+        if area.height > 3 {
+            let y = area.bottom() - 1;
+            let mut x = area.x + 1;
+            for (text, target) in self.footer_parts() {
+                let width = typ_buffer::display_width(&text) as u16;
+                if x + width > area.right() {
+                    break;
+                }
+                targets.push((Rect::new(x, y, width, 1), target));
+                x += width + FOOTER_GAP.chars().count() as u16;
+            }
+        }
         Geometry {
             search,
             sections,
             column_rule,
             items,
+            targets,
         }
     }
 
@@ -163,10 +246,66 @@ impl SettingsView {
                 }
                 Item::Name(index) => self.draw_name(*rect, buf, &ROWS[index], index, ctx),
                 Item::Detail(index) => self.draw_detail(*rect, buf, &ROWS[index], index, ctx),
+                Item::Choice(index, n) => self.draw_choice(*rect, buf, index, n, ctx),
+            }
+        }
+        self.draw_footer(&geometry, buf, ctx);
+    }
+
+    fn draw_footer(&self, geometry: &Geometry, buf: &mut Buffer, ctx: &RenderContext) {
+        let theme = ctx.theme;
+        let quiet = Style::default().fg(theme.line_number_fg).bg(theme.bg);
+        let keys = Style::default().fg(theme.fg).bg(theme.bg);
+        let parts = self.footer_parts();
+        let placed: Vec<&Rect> = geometry
+            .targets
+            .iter()
+            .filter(|(_, t)| matches!(t, Target::Reset | Target::Undo | Target::OpenRaw))
+            .map(|(rect, _)| rect)
+            .collect();
+        for (n, rect) in placed.iter().enumerate() {
+            buf.set_stringn(rect.x, rect.y, &parts[n].0, rect.width as usize, keys);
+            if n + 1 < placed.len() {
+                buf.set_stringn(rect.right(), rect.y, FOOTER_GAP, FOOTER_GAP.len(), quiet);
             }
         }
     }
 
+    /// One line of the list under an enum: a rule down its left, the
+    /// highlighted choice on the selection's ground.
+    fn draw_choice(
+        &self,
+        rect: Rect,
+        buf: &mut Buffer,
+        index: usize,
+        n: usize,
+        ctx: &RenderContext,
+    ) {
+        let theme = ctx.theme;
+        let at = match self.edit {
+            Some(Edit::List { at }) => at,
+            _ => 0,
+        };
+        let ground = if n == at {
+            theme.selection_primary_bg
+        } else {
+            theme.bg
+        };
+        let border = Style::default().fg(theme.float_border).bg(theme.bg);
+        buf.set_stringn(rect.x + 3, rect.y, "\u{2502}", 1, border);
+        let choices = self.choices(&ROWS[index]);
+        let current = (ROWS[index].show)(&self.settings);
+        let mark = if choices.get(n) == Some(&current) {
+            "\u{25cf} "
+        } else {
+            "  "
+        };
+        let text = format!(" {mark}{}", choices.get(n).map_or("", String::as_str));
+        let style = Style::default().fg(theme.fg).bg(ground);
+        let width = rect.width.saturating_sub(5).min(28);
+        buf.set_style(Rect::new(rect.x + 4, rect.y, width, 1), style);
+        buf.set_stringn(rect.x + 4, rect.y, text, width as usize, style);
+    }
     fn draw_search(&self, rect: Rect, buf: &mut Buffer, ctx: &RenderContext) {
         let theme = ctx.theme;
         if rect.height == 0 {
@@ -264,22 +403,27 @@ impl SettingsView {
         );
 
         let control = self.control(row);
-        let width = typ_buffer::display_width(&control) as u16;
-        let x = rect.right().saturating_sub(width + 1);
-        if x > rect.x + 4 + row.key.len() as u16 {
-            buf.set_stringn(
-                x,
-                rect.y,
-                &control,
-                width as usize,
-                Style::default().fg(text).bg(ground),
-            );
+        let place = self.control_rect(rect, row);
+        if place.x > rect.x + 4 + row.key.len() as u16 {
+            let refused = self.selected == Some(index)
+                && matches!(&self.edit, Some(Edit::Field { error: Some(_), .. }));
+            let style = if refused {
+                Style::default().fg(theme.diagnostic_error).bg(ground)
+            } else {
+                Style::default().fg(text).bg(ground)
+            };
+            buf.set_stringn(place.x, place.y, &control, place.width as usize, style);
         }
     }
 
     /// The row's control as text: `‹ value ›`, `[x]`, `[ 4 ]`, or the file.
     pub(super) fn control(&self, row: &Row) -> String {
-        let value = (row.show)(&self.settings);
+        let mut value = (row.show)(&self.settings);
+        if let (Some(Edit::Field { input, .. }), Some(index)) = (&self.edit, self.selected)
+            && ROWS[index].key == row.key
+        {
+            value = format!("{input}\u{2581}");
+        }
         match row.kind {
             Kind::Choice(_) | Kind::Theme => format!("\u{2039} {value} \u{203a}"),
             Kind::Toggle => if value == "true" { "[x]" } else { "[ ]" }.to_string(),
@@ -299,21 +443,34 @@ impl SettingsView {
         let ground = self.row_ground(index, ctx);
         let quiet = Style::default().fg(ctx.theme.line_number_fg).bg(ground);
         buf.set_style(rect, quiet);
+        // A restart is said straight after what the setting is, so it is read
+        // before the value is changed and is the last part a narrow row cuts.
+        let restart = if row.restart {
+            " \u{b7} needs a restart"
+        } else {
+            ""
+        };
         let mut text = format!(
-            "{} \u{b7} default {} \u{b7} {}",
+            "{}{restart} \u{b7} default {} \u{b7} {}",
             row.description,
             row.default,
             self.source(row)
         );
-        if row.restart {
-            text.push_str(" \u{b7} needs a restart");
+        let mut style = quiet;
+        if self.selected == Some(index)
+            && let Some(Edit::Field {
+                error: Some(error), ..
+            }) = &self.edit
+        {
+            text = error.clone();
+            style = Style::default().fg(ctx.theme.diagnostic_error).bg(ground);
         }
         buf.set_stringn(
             rect.x + 3,
             rect.y,
             text,
             rect.width.saturating_sub(4) as usize,
-            quiet,
+            style,
         );
     }
 }

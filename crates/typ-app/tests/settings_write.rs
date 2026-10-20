@@ -65,6 +65,34 @@ fn none_removes_the_key() {
     let after = std::fs::read_to_string(&path).unwrap();
     assert!(!after.contains("layout"), "{after}");
     assert!(after.contains("theme = \"slate\" # dark"), "{after}");
+    // The comment above the key was about the file, not only the key.
+    assert!(
+        after.starts_with(
+            "# My settings. Keep this note.
+"
+        ),
+        "{after}"
+    );
+}
+
+#[test]
+fn removing_the_last_key_keeps_the_comment_above_it() {
+    let path = dir("remove-last").join("config.toml");
+    std::fs::write(
+        &path,
+        "# note
+whitespace = \"all\"
+",
+    )
+    .unwrap();
+
+    write_setting(&path, "whitespace", None).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "# note
+"
+    );
 }
 
 #[test]

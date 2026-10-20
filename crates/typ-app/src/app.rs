@@ -7,6 +7,8 @@ mod dispatch;
 mod docking;
 mod door;
 pub(crate) mod focus;
+/// A settings change applied to the running editor.
+mod live;
 /// The menu bar.
 mod menu_bar;
 pub(crate) mod panes;
@@ -147,6 +149,11 @@ pub struct App {
     /// `whitespace` from `config.toml`. Held here for the same reason as
     /// `indent_width`: opening a file builds a new panel.
     whitespace: Whitespace,
+    /// The colour depth themes are degraded to, so a theme changed in the
+    /// settings tab comes down to the depth the first one did.
+    depth: typ_core::Depth,
+    /// `session` from `config.toml`: whether quitting writes the session.
+    session_enabled: bool,
     /// Parses buffers off the render thread. `None` until `set_event_sender`,
     /// because the worker needs somewhere to send results.
     ///
@@ -507,6 +514,8 @@ impl App {
             dirty: true,
             indent_width: None,
             whitespace: Whitespace::default(),
+            depth: typ_core::Depth::TrueColor,
+            session_enabled: true,
             parse_worker: None,
             syntax_theme: typ_core::SyntaxTheme::default(),
             find_worker: None,
@@ -822,6 +831,16 @@ impl App {
     /// by value.
     pub fn set_syntax_theme(&mut self, syntax: typ_core::SyntaxTheme) {
         self.syntax_theme = syntax;
+    }
+
+    /// The palette in force.
+    pub fn theme_colors(&self) -> ThemeColors {
+        self.theme
+    }
+
+    /// The syntax half of the theme in force.
+    pub fn syntax_theme(&self) -> &typ_core::SyntaxTheme {
+        &self.syntax_theme
     }
 
     pub fn prompt(&self) -> Option<&Prompt> {

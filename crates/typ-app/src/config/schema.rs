@@ -66,7 +66,7 @@ pub const ROWS: &[Row] = &[
     Row {
         key: "color_depth",
         section: "appearance",
-        description: "colours the terminal is sent; auto asks the terminal",
+        description: "colours sent to the terminal; auto asks it",
         kind: Kind::Choice(&["auto", "truecolor", "256"]),
         default: "auto",
         restart: true,

@@ -81,6 +81,10 @@ impl App {
         let Some(path) = &self.session_file else {
             return;
         };
+        // Turned off in the settings tab since the start.
+        if !self.session_enabled {
+            return;
+        }
         if let Err(e) = crate::session::save(path, &self.session()) {
             crate::log_warn!("saving the session to {} failed: {e}", path.display());
         }

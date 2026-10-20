@@ -40,12 +40,63 @@ pub fn write_setting(
                 document.insert(key, toml_edit::Item::Value(value));
             }
         },
-        None => {
-            document.remove(key);
-        }
+        None => remove_keeping_comments(&mut document, key),
     }
 
     save(path, &document.to_string()).map_err(|e| named(&e))
+}
+
+/// Remove `key`, and keep the comment lines above it.
+///
+/// `toml_edit` files a comment above a key as that key's prefix, so a plain
+/// remove deletes the note at the top of the file along with the first
+/// setting under it. The prefix moves to the key that now stands in its
+/// place, or to the end of the file when there is none.
+fn remove_keeping_comments(document: &mut toml_edit::DocumentMut, key: &str) {
+    let table = document.as_table_mut();
+    let Some(at) = table.iter().position(|(k, _)| k == key) else {
+        return;
+    };
+    let prefix = table
+        .key(key)
+        .and_then(|k| k.leaf_decor().prefix())
+        .and_then(|p| p.as_str())
+        .filter(|p| p.contains('#'))
+        .map(str::to_string);
+    table.remove(key);
+    let Some(prefix) = prefix else {
+        return;
+    };
+    let next = table.iter_mut().nth(at);
+    match next {
+        Some((mut next, item)) if item.is_value() => {
+            let theirs = next
+                .leaf_decor()
+                .prefix()
+                .and_then(|p| p.as_str())
+                .unwrap_or_default()
+                .to_string();
+            next.leaf_decor_mut()
+                .set_prefix(format!("{prefix}{theirs}"));
+        }
+        _ => {
+            let trailing = document.trailing().as_str().unwrap_or_default().to_string();
+            document.set_trailing(format!("{trailing}{prefix}"));
+        }
+    }
+}
+
+/// Put `config.toml` back as it was: `text`, or no file at all. What undo in
+/// the settings tab writes, through the same temp file and rename.
+pub(crate) fn restore_config(path: &Path, text: Option<&str>) -> Result<(), String> {
+    let result = match text {
+        Some(text) => save(path, text),
+        None => match std::fs::remove_file(path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        },
+    };
+    result.map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Write `text` to `path` through a temp file and a rename.
