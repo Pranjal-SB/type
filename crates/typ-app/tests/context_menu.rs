@@ -268,3 +268,17 @@ fn it_draws_as_a_float_at_the_pointer_with_keys() {
         assert!(FRAME.contains((t.rect.right() - 1, t.rect.bottom() - 1).into()));
     }
 }
+
+#[test]
+fn right_click_on_a_selection_opens_the_menu_and_keeps_the_selection() {
+    // Right-click is the menu everywhere (interface §5), so the editor's
+    // own right-click copy is no longer reached: copy is the menu's row.
+    let mut app = app("selection");
+    app.apply_named_action(Action::SelectAll).unwrap();
+    let selected = app.editor().selections().primary();
+    let editor = app.areas(FRAME).1;
+    mouse(&mut app, MouseButton::Right, (editor.x + 4, editor.y));
+
+    assert!(rows(&app).contains(&Action::Copy));
+    assert_eq!(app.editor().selections().primary(), selected);
+}
