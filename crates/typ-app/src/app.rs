@@ -448,18 +448,22 @@ fn chord_label(keymap: &Keymap, action: Action) -> Option<String> {
         .bindings_for(action)
         .into_iter()
         .min_by_key(|chord| (chord.matches('+').count(), chord.len()))?;
-    Some(
-        chord
-            .split(' ')
-            .map(|step| {
-                step.split('+')
-                    .map(capitalised)
-                    .collect::<Vec<_>>()
-                    .join("+")
-            })
-            .collect::<Vec<_>>()
-            .join(" "),
-    )
+    Some(spelled(chord))
+}
+
+/// A chord as a key cap spells it: `ctrl+k s` is `Ctrl+K S`. The hint and the
+/// keybindings tab both say keys this way.
+pub(crate) fn spelled(chord: &str) -> String {
+    chord
+        .split(' ')
+        .map(|step| {
+            step.split('+')
+                .map(capitalised)
+                .collect::<Vec<_>>()
+                .join("+")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn capitalised(word: &str) -> String {
@@ -497,6 +501,7 @@ impl App {
             registry: {
                 let mut registry = Registry::with_builtins();
                 registry.register_view(crate::settings::SETTINGS, crate::settings::open);
+                registry.register_view(crate::keybindings::KEYBINDINGS, crate::keybindings::open);
                 registry
             },
             keymap: Keymap::default_bindings(),

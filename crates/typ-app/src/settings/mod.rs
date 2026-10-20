@@ -21,6 +21,7 @@ use crate::config::schema::{ROWS, Row};
 use crate::config::{Settings, load_settings};
 use edit::Edit;
 use layout::{Item, Target};
+pub(crate) use layout::{SEARCH_LABEL, draw_footer, footer_places, search_row};
 
 /// The handler the settings tab registers under.
 pub const SETTINGS: HandlerId = HandlerId("settings");
@@ -350,9 +351,8 @@ impl Panel for SettingsView {
             return None;
         }
         let search = self.geometry(panel_area).search;
-        let x = search.x
-            + layout::SEARCH_LABEL.len() as u16
-            + typ_buffer::display_width(&self.query) as u16;
+        let x =
+            search.x + SEARCH_LABEL.len() as u16 + typ_buffer::display_width(&self.query) as u16;
         Some((x.min(search.right().saturating_sub(1)), search.y))
     }
 

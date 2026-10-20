@@ -326,6 +326,13 @@ pub trait Panel: Any {
         false
     }
 
+    /// True while the panel takes every key raw, ahead of the keymap: a key
+    /// being recorded or searched for has to arrive as itself, not as what it
+    /// is bound to.
+    fn captures_keys(&self) -> bool {
+        false
+    }
+
     /// `Some(message)` blocks closing until confirmed.
     fn needs_close_confirmation(&self) -> Option<String> {
         None

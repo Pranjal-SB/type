@@ -342,6 +342,9 @@ const DEFAULTS: &[(&str, Action)] = &[
     // Settings, `ctrl+k ,`: VS Code's `ctrl+,` is a chord a terminal does
     // not deliver, and the comma under the door keeps the same key.
     ("ctrl+k ,", Action::OpenSettings),
+    // The keybindings beside them, `ctrl+k k`: VS Code's is `ctrl+k ctrl+s`,
+    // and `ctrl+k s` is left for whoever wants save under the door.
+    ("ctrl+k k", Action::OpenKeybindings),
     ("ctrl+k 1", Action::FocusPane(1)),
     ("ctrl+k 2", Action::FocusPane(2)),
     ("ctrl+k 3", Action::FocusPane(3)),
@@ -453,6 +456,11 @@ impl Keymap {
                 next.strip_prefix(chord)
                     .is_some_and(|rest| rest.starts_with(' '))
             })
+    }
+
+    /// What the row spelled `sequence` runs, a whole sequence or one chord.
+    pub fn action_for(&self, sequence: &str) -> Option<Action> {
+        self.bindings.get(sequence).copied()
     }
 
     /// Every row, in table order.

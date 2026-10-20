@@ -74,7 +74,7 @@ pub fn depth_from(colorterm: Option<&str>, term: Option<&str>, wt_session: Optio
 /// shift bit, so `ctrl+shift+f` arrives as `ctrl+f` or not at all; and
 /// `Ctrl+Tab` is a bare Tab. Arrows, the page keys and function keys carry
 /// their modifiers in xterm's CSI form and need nothing. `controls.md` §1.
-fn needs_protocol(chord: &str) -> bool {
+pub(crate) fn needs_protocol(chord: &str) -> bool {
     chord.split(' ').any(|step| {
         step == "ctrl+tab"
             || step

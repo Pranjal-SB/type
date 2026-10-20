@@ -18,7 +18,7 @@ pub(super) const WIDE: u16 = 100;
 /// The section column, rule excluded.
 const COLUMN: u16 = 26;
 /// What the search row says before the query.
-pub(super) const SEARCH_LABEL: &str = " search  ";
+pub(crate) const SEARCH_LABEL: &str = " search  ";
 /// What the search row says while there is no query.
 const SEARCH_HINT: &str = "type to filter \u{b7} @section \u{b7} :modified";
 /// Between the footer's keys.
@@ -175,18 +175,10 @@ impl SettingsView {
             }
         }
 
-        // The footer, the frame's last line.
-        if area.height > 3 {
-            let y = area.bottom() - 1;
-            let mut x = area.x + 1;
-            for (text, target) in self.footer_parts() {
-                let width = typ_buffer::display_width(&text) as u16;
-                if x + width > area.right() {
-                    break;
-                }
-                targets.push((Rect::new(x, y, width, 1), target));
-                x += width + FOOTER_GAP.chars().count() as u16;
-            }
+        let parts = self.footer_parts();
+        let texts: Vec<&str> = parts.iter().map(|(text, _)| text.as_str()).collect();
+        for (rect, (_, target)) in footer_places(area, &texts).into_iter().zip(parts) {
+            targets.push((rect, target));
         }
         Geometry {
             search,
@@ -253,22 +245,15 @@ impl SettingsView {
     }
 
     fn draw_footer(&self, geometry: &Geometry, buf: &mut Buffer, ctx: &RenderContext) {
-        let theme = ctx.theme;
-        let quiet = Style::default().fg(theme.line_number_fg).bg(theme.bg);
-        let keys = Style::default().fg(theme.fg).bg(theme.bg);
         let parts = self.footer_parts();
-        let placed: Vec<&Rect> = geometry
+        let texts: Vec<&str> = parts.iter().map(|(text, _)| text.as_str()).collect();
+        let placed: Vec<Rect> = geometry
             .targets
             .iter()
             .filter(|(_, t)| matches!(t, Target::Reset | Target::Undo | Target::OpenRaw))
-            .map(|(rect, _)| rect)
+            .map(|(rect, _)| *rect)
             .collect();
-        for (n, rect) in placed.iter().enumerate() {
-            buf.set_stringn(rect.x, rect.y, &parts[n].0, rect.width as usize, keys);
-            if n + 1 < placed.len() {
-                buf.set_stringn(rect.right(), rect.y, FOOTER_GAP, FOOTER_GAP.len(), quiet);
-            }
-        }
+        draw_footer(buf, ctx, &texts, &placed);
     }
 
     /// One line of the list under an enum: a rule down its left, the
@@ -307,27 +292,14 @@ impl SettingsView {
         buf.set_stringn(rect.x + 4, rect.y, text, width as usize, style);
     }
     fn draw_search(&self, rect: Rect, buf: &mut Buffer, ctx: &RenderContext) {
-        let theme = ctx.theme;
-        if rect.height == 0 {
-            return;
-        }
-        let label = if self.selected.is_none() && ctx.is_focused {
-            Style::default()
-                .fg(theme.border_focused)
-                .bg(theme.bg)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(theme.line_number_fg).bg(theme.bg)
-        };
-        let (x, _) = buf.set_stringn(rect.x, rect.y, SEARCH_LABEL, rect.width as usize, label);
-        let room = rect.right().saturating_sub(x) as usize;
-        if self.query.is_empty() {
-            let hint = Style::default().fg(theme.line_number_fg).bg(theme.bg);
-            buf.set_stringn(x, rect.y, SEARCH_HINT, room, hint);
-        } else {
-            let query = Style::default().fg(theme.fg).bg(theme.bg);
-            buf.set_stringn(x, rect.y, &self.query, room, query);
-        }
+        search_row(
+            rect,
+            buf,
+            ctx,
+            self.selected.is_none(),
+            &self.query,
+            SEARCH_HINT,
+        );
     }
 
     fn draw_sections(&self, geometry: &Geometry, buf: &mut Buffer, ctx: &RenderContext) {
@@ -472,5 +444,73 @@ impl SettingsView {
             rect.width.saturating_sub(4) as usize,
             style,
         );
+    }
+}
+
+/// The search row a view tab opens with: the label, lit while it has the
+/// keys, then the query or, while there is none, `hint`. The settings and the
+/// keybindings tabs both start with it.
+pub(crate) fn search_row(
+    rect: Rect,
+    buf: &mut Buffer,
+    ctx: &RenderContext,
+    has_keys: bool,
+    query: &str,
+    hint: &str,
+) {
+    let theme = ctx.theme;
+    if rect.height == 0 {
+        return;
+    }
+    let label = if has_keys && ctx.is_focused {
+        Style::default()
+            .fg(theme.border_focused)
+            .bg(theme.bg)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.line_number_fg).bg(theme.bg)
+    };
+    let (x, _) = buf.set_stringn(rect.x, rect.y, SEARCH_LABEL, rect.width as usize, label);
+    let room = rect.right().saturating_sub(x) as usize;
+    if query.is_empty() {
+        let quiet = Style::default().fg(theme.line_number_fg).bg(theme.bg);
+        buf.set_stringn(x, rect.y, hint, room, quiet);
+    } else {
+        let text = Style::default().fg(theme.fg).bg(theme.bg);
+        buf.set_stringn(x, rect.y, query, room, text);
+    }
+}
+
+/// Where a footer's parts go on the last line of `area`: left to right a
+/// cell in, as many as fit whole. The click targets and the drawing both
+/// read it.
+pub(crate) fn footer_places(area: Rect, parts: &[&str]) -> Vec<Rect> {
+    let mut out = Vec::new();
+    if area.height <= 3 {
+        return out;
+    }
+    let y = area.bottom() - 1;
+    let mut x = area.x + 1;
+    for text in parts {
+        let width = typ_buffer::display_width(text) as u16;
+        if x + width > area.right() {
+            break;
+        }
+        out.push(Rect::new(x, y, width, 1));
+        x += width + FOOTER_GAP.chars().count() as u16;
+    }
+    out
+}
+
+/// Draw the footer's parts where [`footer_places`] put them.
+pub(crate) fn draw_footer(buf: &mut Buffer, ctx: &RenderContext, parts: &[&str], placed: &[Rect]) {
+    let theme = ctx.theme;
+    let quiet = Style::default().fg(theme.line_number_fg).bg(theme.bg);
+    let keys = Style::default().fg(theme.fg).bg(theme.bg);
+    for (n, rect) in placed.iter().enumerate() {
+        buf.set_stringn(rect.x, rect.y, parts[n], rect.width as usize, keys);
+        if n + 1 < placed.len() {
+            buf.set_stringn(rect.right(), rect.y, FOOTER_GAP, FOOTER_GAP.len(), quiet);
+        }
     }
 }

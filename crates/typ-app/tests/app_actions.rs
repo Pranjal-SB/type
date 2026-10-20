@@ -249,6 +249,11 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             run(app, a);
             assert_eq!(app.editor_title(), "Settings");
         },
+        // A tab for the keybindings, on `keys.toml` in the config directory.
+        Action::OpenKeybindings => |app, a| {
+            run(app, a);
+            assert_eq!(app.editor_title(), "Keybindings");
+        },
         Action::OpenMenu => |app, a| {
             run(app, a);
             assert_eq!(app.pending_prefix(), Some("ctrl+k"));
