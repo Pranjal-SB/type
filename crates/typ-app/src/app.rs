@@ -7,6 +7,8 @@ mod dispatch;
 mod docking;
 mod door;
 pub(crate) mod focus;
+/// A settings change applied to the running editor.
+mod live;
 /// The menu bar.
 mod menu_bar;
 pub(crate) mod panes;
@@ -147,6 +149,11 @@ pub struct App {
     /// `whitespace` from `config.toml`. Held here for the same reason as
     /// `indent_width`: opening a file builds a new panel.
     whitespace: Whitespace,
+    /// The colour depth themes are degraded to, so a theme changed in the
+    /// settings tab comes down to the depth the first one did.
+    depth: typ_core::Depth,
+    /// `session` from `config.toml`: whether quitting writes the session.
+    session_enabled: bool,
     /// Parses buffers off the render thread. `None` until `set_event_sender`,
     /// because the worker needs somewhere to send results.
     ///
@@ -276,7 +283,7 @@ impl Pane {
 /// silently re-point an in-flight request at whichever file shifted into that
 /// index.
 struct Tab {
-    panel: EditorPanel,
+    content: TabContent,
     /// A counter stamped every time this tab becomes active.
     ///
     /// Closing activates the highest, which is the tab the user was last
@@ -311,15 +318,95 @@ struct Tab {
     changed_on_disk: bool,
 }
 
+/// What a tab holds: a file in the editor, or a view the registry built.
+///
+/// Every path that needs a buffer (save, the servers, parsing, the watch, the
+/// session, a search) asks for one through [`Tab::editor`] and skips a view.
+///
+/// The editor is not boxed though it is the large variant: there are as many
+/// of these as there are tabs, and the editor is the one every keystroke
+/// reaches.
+#[allow(clippy::large_enum_variant)]
+enum TabContent {
+    Editor(EditorPanel),
+    /// A panel that is not the editor, opened through `OpenWith`. The handler
+    /// and path are what it was opened as, so opening it again finds it.
+    View {
+        handler: typ_core::HandlerId,
+        path: std::path::PathBuf,
+        panel: Box<dyn Panel>,
+    },
+}
+
 impl Tab {
     fn new(panel: EditorPanel) -> Self {
-        Tab {
+        Self::holding(TabContent::Editor(panel))
+    }
+
+    fn view(handler: typ_core::HandlerId, path: &Path, panel: Box<dyn Panel>) -> Self {
+        Self::holding(TabContent::View {
+            handler,
+            path: path.to_path_buf(),
             panel,
+        })
+    }
+
+    fn holding(content: TabContent) -> Self {
+        Tab {
+            content,
             parsed_revision: None,
             awaited_generation: None,
             last_used: 0,
             watch: None,
             changed_on_disk: false,
+        }
+    }
+
+    /// The editor, when the tab holds one.
+    fn editor(&self) -> Option<&EditorPanel> {
+        match &self.content {
+            TabContent::Editor(editor) => Some(editor),
+            TabContent::View { .. } => None,
+        }
+    }
+
+    fn editor_mut(&mut self) -> Option<&mut EditorPanel> {
+        match &mut self.content {
+            TabContent::Editor(editor) => Some(editor),
+            TabContent::View { .. } => None,
+        }
+    }
+
+    /// A view tab, when this is the view `handler` opened on `path`.
+    fn is_view(&self, handler: typ_core::HandlerId, path: &Path) -> bool {
+        matches!(&self.content, TabContent::View { handler: h, path: p, .. } if *h == handler && p == path)
+    }
+
+    /// Whatever the tab holds, as the panel it draws and routes keys to.
+    fn panel(&self) -> &dyn Panel {
+        match &self.content {
+            TabContent::Editor(editor) => editor,
+            TabContent::View { panel, .. } => panel.as_ref(),
+        }
+    }
+
+    fn panel_mut(&mut self) -> &mut dyn Panel {
+        match &mut self.content {
+            TabContent::Editor(editor) => editor,
+            TabContent::View { panel, .. } => panel.as_mut(),
+        }
+    }
+
+    /// The file behind the tab. `None` for an untitled buffer.
+    fn path(&self) -> Option<&Path> {
+        self.editor().and_then(EditorPanel::path)
+    }
+
+    /// What a message calls the tab: the file's name with no dirty marker.
+    fn name(&self) -> String {
+        match &self.content {
+            TabContent::Editor(editor) => editor.file_name(),
+            TabContent::View { panel, .. } => panel.title(),
         }
     }
 }
@@ -407,7 +494,11 @@ impl App {
             workspace: None,
             watches_started: 0,
             close_pane_pending: None,
-            registry: Registry::with_builtins(),
+            registry: {
+                let mut registry = Registry::with_builtins();
+                registry.register_view(crate::settings::SETTINGS, crate::settings::open);
+                registry
+            },
             keymap: Keymap::default_bindings(),
             theme: ThemeColors::default(),
             focus: Focus::Tree,
@@ -423,6 +514,8 @@ impl App {
             dirty: true,
             indent_width: None,
             whitespace: Whitespace::default(),
+            depth: typ_core::Depth::TrueColor,
+            session_enabled: true,
             parse_worker: None,
             syntax_theme: typ_core::SyntaxTheme::default(),
             find_worker: None,
@@ -550,26 +643,60 @@ impl App {
     /// list and its emphasis rules live in `status.rs` rather than here, that is
     /// a change of source rather than a rewrite of content.
     pub fn status_segments(&self) -> Vec<Segment> {
-        let cursor = self.panes[self.pane].shown().panel.cursor();
-        let path = self.panes[self.pane].shown().panel.path();
+        let Some(editor) = self.shown_editor() else {
+            return self.view_segments();
+        };
+        let cursor = editor.cursor();
+        let path = editor.path();
         let file_type = crate::status::file_type_of(path);
-        let file_name = self.panes[self.pane].shown().panel.file_name();
+        let file_name = editor.file_name();
         segments(&StatusFacts {
             file_name: &file_name,
-            modified: self.panes[self.pane].shown().panel.is_dirty(),
+            modified: editor.is_dirty(),
             file_type: file_type.as_deref(),
-            line_ending: self.panes[self.pane].shown().panel.line_ending().label(),
-            indent_width: self.panes[self.pane].shown().panel.tab_width(),
-            selection_count: self.panes[self.pane].shown().panel.selections().len(),
+            line_ending: editor.line_ending().label(),
+            indent_width: editor.tab_width(),
+            selection_count: editor.selections().len(),
             line: cursor.line,
             col: cursor.col,
-            total_lines: self.panes[self.pane].shown().panel.line_count(),
+            total_lines: editor.line_count(),
             errors: self.count_diagnostics(typ_core::Severity::Error),
             warnings: self.count_diagnostics(typ_core::Severity::Warning),
             progress: &self.lsp.progress(),
             zoomed: self.zoomed().is_some(),
             layout: self.preset.name(),
         })
+    }
+
+    /// A view's segments: its name, and what the bar says about the layout
+    /// and the servers. A view has no cursor, line ending or indent to report.
+    fn view_segments(&self) -> Vec<Segment> {
+        use crate::status::SegmentId;
+        let name = self.panes[self.pane].shown().name();
+        segments(&StatusFacts {
+            file_name: &name,
+            modified: false,
+            file_type: None,
+            line_ending: "",
+            indent_width: 0,
+            selection_count: 1,
+            line: 0,
+            col: 0,
+            total_lines: 1,
+            errors: 0,
+            warnings: 0,
+            progress: &self.lsp.progress(),
+            zoomed: self.zoomed().is_some(),
+            layout: self.preset.name(),
+        })
+        .into_iter()
+        .filter(|segment| {
+            matches!(
+                segment.id,
+                SegmentId::Zoom | SegmentId::FileName | SegmentId::Progress | SegmentId::Layout
+            )
+        })
+        .collect()
     }
 
     /// How many diagnostics of one severity the open file has.
@@ -621,7 +748,7 @@ impl App {
         // too, for the same reason.
         let blocker = self
             .all_tabs()
-            .find_map(|tab| tab.panel.needs_close_confirmation())
+            .find_map(|tab| tab.panel().needs_close_confirmation())
             .or_else(|| self.tree.needs_close_confirmation());
         match blocker {
             Some(message) => {
@@ -645,13 +772,13 @@ impl App {
     pub fn focused_name(&self) -> &'static str {
         match self.focus {
             Focus::Tree => self.tree.name(),
-            Focus::Editor => self.panes[self.pane].shown().panel.name(),
+            Focus::Editor => self.panes[self.pane].shown().panel().name(),
             Focus::Status => "status bar",
         }
     }
 
     pub fn editor_title(&self) -> String {
-        self.panes[self.pane].shown().panel.title()
+        self.panes[self.pane].shown().panel().title()
     }
 
     pub fn keymap(&self) -> &Keymap {
@@ -665,18 +792,19 @@ impl App {
     }
 
     fn apply_indent_width(&mut self) {
-        if let Some(width) = self.indent_width {
-            self.panes[self.pane].shown_mut().panel.set_tab_width(width);
+        if let Some(width) = self.indent_width
+            && let Some(editor) = self.shown_editor_mut()
+        {
+            editor.set_tab_width(width);
         }
     }
 
     /// Which whitespace the editor marks.
     pub fn set_whitespace(&mut self, whitespace: Whitespace) {
         self.whitespace = whitespace;
-        self.panes[self.pane]
-            .shown_mut()
-            .panel
-            .set_whitespace(whitespace);
+        if let Some(editor) = self.shown_editor_mut() {
+            editor.set_whitespace(whitespace);
+        }
     }
 
     pub fn set_keymap(&mut self, keymap: Keymap) {
@@ -703,6 +831,16 @@ impl App {
     /// by value.
     pub fn set_syntax_theme(&mut self, syntax: typ_core::SyntaxTheme) {
         self.syntax_theme = syntax;
+    }
+
+    /// The palette in force.
+    pub fn theme_colors(&self) -> ThemeColors {
+        self.theme
+    }
+
+    /// The syntax half of the theme in force.
+    pub fn syntax_theme(&self) -> &typ_core::SyntaxTheme {
+        &self.syntax_theme
     }
 
     pub fn prompt(&self) -> Option<&Prompt> {
@@ -745,7 +883,7 @@ impl App {
             Focus::Tree => &mut self.tree,
             // The bar has no panel of its own; `dispatch` keeps keys from
             // reaching the one behind it.
-            Focus::Editor | Focus::Status => &mut self.panes[self.pane].shown_mut().panel,
+            Focus::Editor | Focus::Status => self.panes[self.pane].shown_mut().panel_mut(),
         }
     }
 

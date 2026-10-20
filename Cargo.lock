@@ -2045,6 +2045,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "toml_edit"
+version = "0.25.17+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3641d5bbb5349a79e1020a242d251efbc546ad8048d133958323ce9c40a9c9c"
+dependencies = [
+ "indexmap",
+ "toml_datetime",
+ "toml_parser",
+ "toml_writer",
+ "winnow",
+]
+
+[[package]]
 name = "toml_parser"
 version = "1.1.5+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2150,7 +2163,7 @@ dependencies = [
 
 [[package]]
 name = "typ-app"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -2158,6 +2171,7 @@ dependencies = [
  "ropey",
  "serde_json",
  "toml",
+ "toml_edit",
  "typ-buffer",
  "typ-core",
  "typ-find",
@@ -2172,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "typ-buffer"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "clipboard-win",
@@ -2185,7 +2199,7 @@ dependencies = [
 
 [[package]]
 name = "typ-core"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -2200,7 +2214,7 @@ dependencies = [
 
 [[package]]
 name = "typ-editor"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "mimalloc",
@@ -2210,7 +2224,7 @@ dependencies = [
 
 [[package]]
 name = "typ-find"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "grep-matcher",
  "grep-regex",
@@ -2222,7 +2236,7 @@ dependencies = [
 
 [[package]]
 name = "typ-lsp"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "gen-lsp-types",
  "libc",
@@ -2235,7 +2249,7 @@ dependencies = [
 
 [[package]]
 name = "typ-panel-editor"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -2250,7 +2264,7 @@ dependencies = [
 
 [[package]]
 name = "typ-panel-tree"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -2260,7 +2274,7 @@ dependencies = [
 
 [[package]]
 name = "typ-picker"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -2272,14 +2286,14 @@ dependencies = [
 
 [[package]]
 name = "typ-registry"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "typ-core",
 ]
 
 [[package]]
 name = "typ-syntax"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "ropey",
  "tree-house",
@@ -2657,6 +2671,9 @@ name = "winnow"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "wit-bindgen"

@@ -395,3 +395,44 @@ fn a_burst_of_events_costs_one_frame() {
         "a 30-event burst cost more than 30 frames' worth of budget"
     );
 }
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored --nocapture"]
+fn opening_the_settings_tab_stays_inside_a_frame() {
+    // Open the tab on a commented `config.toml` and paint it: the open reads
+    // and parses the file, the frame draws every row. Closed again between
+    // runs, so each one opens rather than switches.
+    let _guard = exclusive();
+    let mut app = big_app("settings-open");
+    let config = std::env::temp_dir()
+        .join("typ-app-perf")
+        .join("settings-open")
+        .join("config.toml");
+    std::fs::write(
+        &config,
+        "# mine\ntheme = \"mocha\" # dark\nadapt = false\nindent_width = 4\n",
+    )
+    .unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(AREA.width, AREA.height)).unwrap();
+    draw(&mut app, &mut terminal); // warm
+    let open = typ_core::PanelEvent::OpenWith {
+        handler: typ_app::settings::SETTINGS,
+        path: config,
+    };
+
+    let mut best = std::time::Duration::MAX;
+    for _ in 0..5 {
+        let start = Instant::now();
+        app.apply(vec![open.clone()]).unwrap();
+        draw(&mut app, &mut terminal);
+        best = best.min(start.elapsed());
+        assert_eq!(app.editor_title(), "Settings");
+        app.apply_named_action(typ_core::Action::CloseTab).unwrap();
+    }
+
+    println!("settings tab, open and first frame: {best:?}");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "opening the settings tab costs {best:?}, over the {BUDGET_US} µs frame budget"
+    );
+}

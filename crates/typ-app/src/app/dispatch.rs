@@ -255,6 +255,12 @@ impl App {
             Action::Warp => self.open_warp(),
             Action::ContextMenu => self.open_context_menu(),
             Action::MenuBar => self.open_menu_bar(),
+            Action::OpenSettings => match crate::config::settings_path() {
+                Some(path) => self.open_view(crate::settings::SETTINGS, &path),
+                None => {
+                    self.status = Some("No config directory to keep settings in.".to_string());
+                }
+            },
             Action::RestartLanguageServers => {
                 let started = self.lsp.restart_all();
                 self.status = Some(match started {
@@ -266,8 +272,10 @@ impl App {
             Action::GotoDefinition => self.ask_server(crate::lsp::Ask::Definition),
             Action::Hover => self.ask_server(crate::lsp::Ask::Hover),
             Action::NextProblem => self.next_problem(),
-            Action::Save => match self.panes[self.pane].shown_mut().panel.save() {
-                Ok(()) => {
+            Action::Save => match self.shown_editor_mut().map(|editor| editor.save()) {
+                // A view writes what it changes as it changes it.
+                None => self.status = Some("This tab has no file to save.".to_string()),
+                Some(Ok(())) => {
                     self.status = Some("Saved.".to_string());
                     // After the atomic save, never before it: a server told
                     // about a write that then failed is holding a document
@@ -277,7 +285,7 @@ impl App {
                 // A save that fails silently is how work gets lost. The status
                 // bar says so and the log keeps the whole error chain, which is
                 // the part that is actually diagnosable.
-                Err(e) => {
+                Some(Err(e)) => {
                     crate::log_error!("save failed: {e:#}");
                     self.status = Some(format!("Save failed: {e:#}"));
                 }
@@ -317,12 +325,19 @@ impl App {
                     // producer was the file tree, which always means the top of
                     // the file; a project-search result that opens at line 0 has
                     // thrown away the only thing the search found out.
-                    if self.open_or_report(&path) && (line > 0 || col > 0) {
-                        self.panes[self.pane].shown_mut().panel.goto(line, col);
+                    if self.open_or_report(&path)
+                        && (line > 0 || col > 0)
+                        && let Some(editor) = self.shown_editor_mut()
+                    {
+                        editor.goto(line, col);
                     }
                 }
-                PanelEvent::OpenWith { path, .. } => {
-                    self.open_or_report(&path);
+                PanelEvent::OpenWith { handler, path } => {
+                    if handler == typ_registry::EDITOR {
+                        self.open_or_report(&path);
+                    } else {
+                        self.open_view(handler, &path);
+                    }
                 }
                 // Redraw happens every loop pass in the walking skeleton.
                 PanelEvent::NeedsRedraw => {}
@@ -333,6 +348,7 @@ impl App {
                 PanelEvent::RunCommand { .. } => {}
             }
         }
+        self.apply_settings_change();
         Ok(())
     }
 }

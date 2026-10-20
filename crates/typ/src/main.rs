@@ -209,6 +209,7 @@ fn real_main() -> Result<()> {
     // The line to look at when somebody reports that the colours are wrong.
     typ_app::log_info!("colour depth: {depth:?}, theme: {}", settings.theme);
 
+    app.set_color_depth(depth);
     let (colors, syntax, warning) = typ_app::config::load_theme(
         typ_app::config::config_dir().as_deref(),
         &settings.theme,
@@ -221,12 +222,19 @@ fn real_main() -> Result<()> {
     // Invariant 10: `typ <file>` opens that file and nothing else, or `git
     // commit` would open into yesterday's layout. Only a start on a directory
     // reads a session, and only such a run writes one back.
-    if restores_session(file.as_deref(), &extras, settings.session)
+    //
+    // A start on a directory always knows its session file, so turning
+    // `session` on in the settings tab takes effect at this quit; only a start
+    // with it on reads one.
+    if restores_session(file.as_deref(), &extras, true)
         && let Some(path) = typ_app::session::file_for(&root)
     {
-        complaints.extend(app.restore_session(&path));
+        if settings.session {
+            complaints.extend(app.restore_session(&path));
+        }
         app.set_session_file(Some(path));
     }
+    app.set_session_enabled(settings.session);
 
     if !complaints.is_empty() {
         for complaint in &complaints {

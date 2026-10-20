@@ -27,6 +27,11 @@ impl App {
     /// remembered the answer are both gone. The guard moves to *closing* a tab,
     /// where the work is actually at risk.
     pub fn open_path(&mut self, path: &Path) -> Result<()> {
+        let handler = self.registry.handler_for(path);
+        if self.registry.view(handler).is_some() {
+            self.open_view(handler, path);
+            return Ok(());
+        }
         if let Some((pane, index)) = self.tab_for(path) {
             self.pane = pane;
             self.activate_tab(index);
@@ -42,8 +47,10 @@ impl App {
         // become useful. Only when nobody has typed in it — an untitled buffer
         // with work in it is exactly what the old open guard protected.
         let tabs = &self.panes[self.pane].tabs;
-        let scratch =
-            tabs.len() == 1 && tabs[0].panel.path().is_none() && !tabs[0].panel.is_dirty();
+        let scratch = tabs.len() == 1
+            && tabs[0]
+                .editor()
+                .is_some_and(|e| e.path().is_none() && !e.is_dirty());
         if scratch {
             self.panes[self.pane].tabs[0] = Tab::new(self.panel_for(path)?);
             self.watch_tab(self.pane, 0);
@@ -90,7 +97,7 @@ impl App {
             std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
         }
         let wanted = resolve(path);
-        self.find_tab(|tab| tab.panel.path().is_some_and(|open| resolve(open) == wanted))
+        self.find_tab(|tab| tab.path().is_some_and(|open| resolve(open) == wanted))
     }
 
     /// Open `path` alongside whatever is already open, and switch to it.
@@ -108,6 +115,34 @@ impl App {
         self.watch_tab(self.pane, self.panes[self.pane].active);
         self.settle_active_tab();
         Ok(())
+    }
+
+    /// Open `path` in the view `handler` registered, or switch to it if it
+    /// is already open. A handler with no view says so on the status bar.
+    ///
+    /// A view joins the current pane beside whatever is there: an untitled
+    /// scratch buffer stays, since a view is not a file it was waiting for.
+    pub(crate) fn open_view(&mut self, handler: typ_core::HandlerId, path: &Path) {
+        if let Some((pane, index)) = self.find_tab(|tab| tab.is_view(handler, path)) {
+            self.pane = pane;
+            self.activate_tab(index);
+            self.set_focus(Focus::Editor);
+            return;
+        }
+        let Some(build) = self.registry.view(handler) else {
+            self.status = Some(format!(
+                "Could not open {}: no {} viewer is available yet",
+                path.display(),
+                handler.0
+            ));
+            return;
+        };
+        let tab = Tab::view(handler, path, build(path));
+        let pane = &mut self.panes[self.pane];
+        pane.tabs.push(tab);
+        pane.active = pane.tabs.len() - 1;
+        self.settle_active_tab();
+        self.mark_dirty();
     }
 
     /// Make the tab at `index` the visible one.
@@ -205,13 +240,13 @@ impl App {
         if index >= self.panes[self.pane].tabs.len() {
             return;
         }
-        let panel = &self.panes[self.pane].tabs[index].panel;
+        let tab = &self.panes[self.pane].tabs[index];
         if self.close_pending != Some(index)
-            && let Some(message) = panel.needs_close_confirmation()
+            && let Some(message) = tab.panel().needs_close_confirmation()
         {
             self.status = Some(format!(
                 "{message}  Close {} again to discard, Ctrl+S to save.",
-                panel.file_name()
+                tab.name()
             ));
             self.close_pending = Some(index);
             return;
@@ -254,10 +289,10 @@ impl App {
         self.panes[self.pane].shown_mut().last_used = self.next_use;
 
         self.apply_indent_width();
-        self.panes[self.pane]
-            .shown_mut()
-            .panel
-            .set_whitespace(self.whitespace);
+        let whitespace = self.whitespace;
+        if let Some(editor) = self.shown_editor_mut() {
+            editor.set_whitespace(whitespace);
+        }
         self.set_focus(Focus::Editor);
         // No watch here: a file is watched when it opens, by the workspace or
         // by its own, so a switch costs the OS nothing.
@@ -300,7 +335,7 @@ impl App {
         let labels: Vec<String> = self.panes[self.pane]
             .tabs
             .iter()
-            .map(|tab| tab.panel.title())
+            .map(|tab| tab.panel().title())
             .collect();
         let x = event.column - bar.x;
         let Some(cell) = crate::tabbar::cells(&labels, self.panes[self.pane].active, bar.width)
@@ -328,18 +363,46 @@ impl App {
         true
     }
 
-    /// The active tab.
+    /// The active tab's editor.
     ///
     /// **Signature unchanged from when there was one editor**, which is what
-    /// let this milestone's first task touch no test: seventy-six callers
-    /// outside this file go through here and none of them need to know a list
-    /// exists.
+    /// let M2.9's first task touch no test: the callers are tests, and each
+    /// one knows the tab it asks about holds a file. Code in the app asks
+    /// [`App::shown_editor`], which says when a tab holds something else.
+    ///
+    /// # Panics
+    ///
+    /// When the active tab is not an editor.
     pub fn editor(&self) -> &EditorPanel {
-        &self.panes[self.pane].shown().panel
+        self.shown_editor()
+            .expect("the active tab holds a view, not an editor")
     }
 
+    /// # Panics
+    ///
+    /// When the active tab is not an editor, as [`App::editor`].
     pub fn editor_mut(&mut self) -> &mut EditorPanel {
-        &mut self.panes[self.pane].shown_mut().panel
+        self.shown_editor_mut()
+            .expect("the active tab holds a view, not an editor")
+    }
+
+    /// The active tab's editor, `None` when the tab holds something else.
+    pub fn shown_editor(&self) -> Option<&EditorPanel> {
+        self.panes[self.pane].shown().editor()
+    }
+
+    pub fn shown_editor_mut(&mut self) -> Option<&mut EditorPanel> {
+        self.panes[self.pane].shown_mut().editor_mut()
+    }
+
+    /// Whatever the active tab holds, as the panel that draws it.
+    pub fn shown_panel(&self) -> &dyn Panel {
+        self.panes[self.pane].shown().panel()
+    }
+
+    /// The same, to give it an event.
+    pub fn shown_panel_mut(&mut self) -> &mut dyn Panel {
+        self.panes[self.pane].shown_mut().panel_mut()
     }
 
     /// One open file by position, active or not.
@@ -347,8 +410,14 @@ impl App {
     /// Separate from `editor()` because the two can differ and the difference is
     /// the whole point: a parse landing on a backgrounded tab is invisible
     /// through the active-tab accessor.
+    ///
+    /// # Panics
+    ///
+    /// When that tab is not an editor, as [`App::editor`].
     pub fn tab(&self, index: usize) -> &EditorPanel {
-        &self.panes[self.pane].tabs[index].panel
+        self.panes[self.pane].tabs[index]
+            .editor()
+            .expect("that tab holds a view, not an editor")
     }
 
     /// How many files are open. Never zero.

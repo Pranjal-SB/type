@@ -41,10 +41,13 @@ impl App {
 
     fn request_parse_for(&mut self, pane: usize) {
         let tab = self.panes[pane].shown_mut();
-        let Some(language) = tab.panel.language() else {
+        let Some(editor) = tab.editor() else {
             return;
         };
-        let revision = tab.panel.buffer().revision();
+        let Some(language) = editor.language() else {
+            return;
+        };
+        let revision = editor.buffer().revision();
         if tab.parsed_revision == Some(revision) {
             return;
         }
@@ -52,7 +55,7 @@ impl App {
             return;
         };
 
-        let Some(generation) = worker.request(language, tab.panel.buffer().snapshot()) else {
+        let Some(generation) = worker.request(language, editor.buffer().snapshot()) else {
             // The thread is gone: a panic compiling a grammar's queries is
             // how. Recording a request that was never delivered is what left
             // highlighting dead while `is_wired` still said yes. Gap 91.
@@ -101,7 +104,9 @@ impl App {
         };
         let tab = &mut self.panes[pane].tabs[index];
         tab.awaited_generation = None;
-        tab.panel.set_syntax(parsed.generation, parsed.syntax);
+        if let Some(editor) = tab.editor_mut() {
+            editor.set_syntax(parsed.generation, parsed.syntax);
+        }
         // Only a tree for a buffer on screen changes what is painted.
         index == self.panes[pane].active
     }
@@ -207,11 +212,7 @@ impl App {
     /// working, it just stops noticing outside writes. It goes to the log,
     /// which is where the answer will be looked for.
     pub(super) fn watch_tab(&mut self, pane: usize, index: usize) {
-        let Some(path) = self.panes[pane].tabs[index]
-            .panel
-            .path()
-            .map(Path::to_path_buf)
-        else {
+        let Some(path) = self.panes[pane].tabs[index].path().map(Path::to_path_buf) else {
             return;
         };
         if self.panes[pane].tabs[index].watch.is_some() || self.covered(&path) {
@@ -237,7 +238,7 @@ impl App {
         self.panes[pane].tabs[index].changed_on_disk = false;
         self.status = Some(format!(
             "{} changed on disk. Your unsaved changes are kept; Ctrl+S overwrites it.",
-            self.panes[pane].tabs[index].panel.file_name()
+            self.panes[pane].tabs[index].name()
         ));
     }
 
@@ -265,7 +266,7 @@ impl App {
         if path == self.root {
             let open: Vec<std::path::PathBuf> = self
                 .all_tabs()
-                .filter_map(|tab| tab.panel.path().map(Path::to_path_buf))
+                .filter_map(|tab| tab.path().map(Path::to_path_buf))
                 .collect();
             let mut changed = false;
             for file in open {
@@ -273,7 +274,7 @@ impl App {
             }
             return Ok(changed);
         }
-        let Some((pane, index)) = self.find_tab(|tab| tab.panel.path() == Some(path)) else {
+        let Some((pane, index)) = self.find_tab(|tab| tab.path() == Some(path)) else {
             return Ok(false);
         };
         let on_screen = index == self.panes[pane].active;
@@ -281,18 +282,19 @@ impl App {
         if !path.exists() {
             self.status = Some(format!(
                 "{} was deleted on disk. Ctrl+S writes it back.",
-                self.panes[pane].tabs[index].panel.file_name()
+                self.panes[pane].tabs[index].name()
             ));
             return Ok(true);
         }
 
         // Covers our own save: the watcher reports the write, and what is on
         // disk is what we have, so there is nothing to do.
-        if self.panes[pane].tabs[index].panel.matches_disk() {
+        let tab = &self.panes[pane].tabs[index];
+        if tab.editor().is_some_and(|editor| editor.matches_disk()) {
             return Ok(false);
         }
 
-        if self.panes[pane].tabs[index].panel.is_dirty() {
+        if tab.editor().is_some_and(|editor| editor.is_dirty()) {
             if on_screen {
                 self.warn_changed_on_disk(pane, index);
             } else {
@@ -306,10 +308,13 @@ impl App {
         // here, and propagating that ends the process from `step_batch`,
         // discarding every *other* tab's unsaved work on a watcher event rather
         // than on anything the user did. Gap 70.
-        if let Err(e) = self.panes[pane].tabs[index].panel.reload() {
+        if let Some(Err(e)) = self.panes[pane].tabs[index]
+            .editor_mut()
+            .map(|editor| editor.reload())
+        {
             self.status = Some(format!(
                 "Could not reload {}: {e:#}",
-                self.panes[pane].tabs[index].panel.file_name()
+                self.panes[pane].tabs[index].name()
             ));
             return Ok(true);
         }
@@ -338,13 +343,13 @@ impl App {
             .panes
             .iter()
             .map(Pane::shown)
-            .find(|tab| tab.panel.path() == Some(path))
+            .find(|tab| tab.path() == Some(path))
         else {
             return false;
         };
         self.status = Some(format!(
             "No longer watching {} for outside changes: {reason}",
-            shown.panel.file_name()
+            shown.name()
         ));
         true
     }

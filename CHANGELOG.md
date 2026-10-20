@@ -3,6 +3,38 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.4.4] - 2026-10-20 (M4.4 Settings, half of shell slice 5)
+
+The settings surface from `docs/design/interface.md` §8 4c and §8b, as a tab in the editor area,
+writing `config.toml` with its comments kept. Keybindings, the other half of slice 5, are M4.5.
+
+### Added
+- **The settings tab.** `Ctrl+K ,`, or `>settings` in the palette. A search row, then every
+  setting grouped under labelled rules (`editor › indentation`), two lines a row: the name and
+  its control, then what it does, its default and where the value came from. `●` marks a value
+  that differs from its default. `@section` and `:modified` filter, as in the picker; at 100
+  columns and wider the sections stand in a column of their own, and clicking one filters to it.
+- **Changing a value, by key or click.** `←` `→` step through a choice and `Enter` lists them,
+  `Space` flips a box, `Enter` edits a number (an out-of-range one is refused in red and nothing
+  is written; `Esc` reverts). `r` resets to the default, `Ctrl+Z` undoes the last change, `Ctrl+O`
+  opens `config.toml` itself; the footer has the same three to click. Theme, whitespace, indent
+  width, layout, adapt and session apply as you change them; colour depth and language servers
+  say they wait for the next start before you change them.
+- **Writes keep your file.** One value changes and every other byte stays, comments and order
+  included, through a temp file and a rename. A `config.toml` that does not parse is refused
+  rather than replaced.
+- **Tabs that are not files.** A view registered with `typ-registry` opens through `OpenWith` as
+  a tab: saving, the language servers, parsing, the watch and the session all skip it.
+
+### Changed
+- `toml_edit` joins the dependencies, for the comment-keeping writes. It shares `toml`'s parser
+  and writer.
+
+### Not in this release
+- A project-level `.typ/config.toml` and the user/project toggle, the colour swatch and chip list
+  controls (no setting needs them yet), live preview while arrowing through a choice list, and
+  warp labels inside the settings tab.
+
 ## [0.4.3] - 2026-10-20 (M4.3 Menus and warp, shell slice 4 shipped)
 
 Interface §0.1 made checkable: anything you can click has a key, anything you can press can be
@@ -705,7 +737,8 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.4
 [0.4.3]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.3
 [0.4.2]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.2
 [0.4.1]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.1

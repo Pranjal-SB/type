@@ -22,7 +22,7 @@ pub(super) fn diagnostics_for<'a>(
     lsp: &'a crate::lsp::Lsp,
     tab: &Tab,
 ) -> &'a [typ_core::Diagnostic] {
-    match tab.panel.path() {
+    match tab.path() {
         Some(path) => lsp.diagnostics(path),
         None => &[],
     }
@@ -44,7 +44,6 @@ impl App {
     pub fn notify_server_for_test(&mut self, method: &str) {
         if let Some(path) = self.panes[self.pane]
             .shown()
-            .panel
             .path()
             .map(|p| p.to_path_buf())
         {
@@ -103,12 +102,13 @@ impl App {
         let docs: Vec<crate::lsp::DocSnapshot> = self
             .all_tabs_mut()
             .filter_map(|tab| {
-                let edits = tab.panel.take_edits();
-                let path = tab.panel.path()?;
+                let editor = tab.editor_mut()?;
+                let edits = editor.take_edits();
+                let path = editor.path()?;
                 Some(crate::lsp::DocSnapshot {
                     path: path.to_path_buf(),
-                    revision: tab.panel.buffer().revision(),
-                    rope: tab.panel.buffer().snapshot(),
+                    revision: editor.buffer().revision(),
+                    rope: editor.buffer().snapshot(),
                     edits,
                 })
             })
@@ -127,7 +127,10 @@ impl App {
     /// `f8`, or `enter` on the error count: the cursor to the first problem
     /// after it in this file, wrapping to the first of all.
     pub(super) fn next_problem(&mut self) {
-        let cursor = self.panes[self.pane].shown().panel.cursor();
+        let Some(cursor) = self.shown_editor().map(|editor| editor.cursor()) else {
+            self.status = Some("No problems in this tab.".to_string());
+            return;
+        };
         let here = (cursor.line, cursor.col);
         let starts: Vec<(usize, usize)> = self
             .diagnostics()
@@ -140,7 +143,11 @@ impl App {
             .min()
             .or_else(|| starts.iter().min());
         match next {
-            Some(&(line, col)) => self.panes[self.pane].shown_mut().panel.goto(line, col),
+            Some(&(line, col)) => {
+                if let Some(editor) = self.shown_editor_mut() {
+                    editor.goto(line, col);
+                }
+            }
             None => self.status = Some("No problems in this file.".to_string()),
         }
     }
@@ -211,11 +218,10 @@ impl App {
         let Some((pane, index)) = self.tab_for(&named) else {
             return false;
         };
-        let Some(path) = self.panes[pane].tabs[index]
-            .panel
-            .path()
-            .map(Path::to_path_buf)
-        else {
+        let Some(editor) = self.panes[pane].tabs[index].editor() else {
+            return false;
+        };
+        let Some(path) = editor.path().map(Path::to_path_buf) else {
             return false;
         };
 
@@ -229,7 +235,7 @@ impl App {
         }
 
         let encoding = self.lsp.encoding(server);
-        let buffer = self.panes[pane].tabs[index].panel.buffer();
+        let buffer = editor.buffer();
         let converted: Vec<typ_core::Diagnostic> = published
             .diagnostics
             .iter()
@@ -258,14 +264,16 @@ impl App {
         // superseded before they are answered.
         self.lsp.cancel(kind);
 
-        let tab = &self.panes[self.pane].shown();
-        let Some(path) = tab.panel.path().map(|p| p.to_path_buf()) else {
+        let Some((path, editor)) = self
+            .shown_editor()
+            .and_then(|editor| Some((editor.path()?.to_path_buf(), editor)))
+        else {
             self.status = Some(crate::lsp::NoAnswer::NoServer.message().to_string());
             return;
         };
-        let cursor = tab.panel.cursor();
-        let char_index = tab.panel.buffer().char_index(cursor);
-        let rope = tab.panel.buffer().snapshot();
+        let cursor = editor.cursor();
+        let char_index = editor.buffer().char_index(cursor);
+        let rope = editor.buffer().snapshot();
 
         match self.lsp.ask(kind, &path, char_index, &rope, retries) {
             Ok(()) => self.lsp.stamp_last(cursor),
@@ -312,8 +320,9 @@ impl App {
 
         // **Stale.** The question was about a position the cursor has left, and
         // a jump to where the user used to be is a jump nobody asked for.
-        let moved = self.panes[self.pane].shown().panel.path() != Some(&pending.asked_at.0)
-            || self.panes[self.pane].shown().panel.cursor() != pending.asked_at.1;
+        let moved = self.shown_editor().is_none_or(|editor| {
+            editor.path() != Some(&pending.asked_at.0) || editor.cursor() != pending.asked_at.1
+        });
         if moved {
             return false;
         }
@@ -362,20 +371,22 @@ impl App {
         // server that named it: the two conversions of invariant 4, in the
         // order `to_diagnostic` uses them.
         let encoding = self.lsp.encoding(server);
-        let buffer = self.panes[self.pane].shown().panel.buffer();
+        let Some(editor) = self.shown_editor_mut() else {
+            return true;
+        };
+        let buffer = editor.buffer();
         let char_index = typ_lsp::from_lsp(encoding, buffer.rope().slice(..), position);
         let target = buffer.position(char_index);
-        self.panes[self.pane]
-            .shown_mut()
-            .panel
-            .select_range(typ_buffer::Selection::caret(target));
+        editor.select_range(typ_buffer::Selection::caret(target));
         true
     }
 
     /// The active buffer was written to disk.
     pub(super) fn notify_saved(&mut self) {
-        let tab = &self.panes[self.pane].shown();
-        let (Some(path), rope) = (tab.panel.path(), tab.panel.buffer().snapshot()) else {
+        let Some(editor) = self.shown_editor() else {
+            return;
+        };
+        let (Some(path), rope) = (editor.path(), editor.buffer().snapshot()) else {
             return;
         };
         let path = path.to_path_buf();

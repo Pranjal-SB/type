@@ -26,6 +26,14 @@ fn app(name: &str) -> App {
     // before the directory is gone. Every file is rewritten below anyway.
     let dir: PathBuf = std::env::temp_dir().join("typ-app-actions").join(name);
     std::fs::create_dir_all(&dir).unwrap();
+    // `open_settings` reads `config.toml` from here, never from a real one.
+    // SAFETY: every test in this binary sets the same value.
+    unsafe {
+        std::env::set_var(
+            "TYP_CONFIG_DIR",
+            std::env::temp_dir().join("typ-app-actions-config"),
+        )
+    };
     let mut app = App::new(&dir).unwrap();
     for i in 0..TABS {
         let path = dir.join(format!("f{i}.rs"));
@@ -235,6 +243,11 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             run(app, a);
             let bar = app.menu_bar().expect("no menu bar");
             assert_eq!(bar, (typ_core::Group::Edit, None));
+        },
+        // A tab for the settings, on `config.toml` in the config directory.
+        Action::OpenSettings => |app, a| {
+            run(app, a);
+            assert_eq!(app.editor_title(), "Settings");
         },
         Action::OpenMenu => |app, a| {
             run(app, a);
