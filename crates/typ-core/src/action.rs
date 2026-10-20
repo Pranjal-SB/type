@@ -138,6 +138,15 @@ pub enum Action {
     /// The next layout preset (interface §7): Focus folds the dock, Standard
     /// opens it. Panes are never touched.
     CycleLayout,
+    /// Warp labels (interface §5): every mouse target on screen gets a
+    /// two-letter label, and typing one clicks it.
+    Warp,
+    /// The context menu (interface §8 4b): the actions for what is under the
+    /// cursor, in a float.
+    ContextMenu,
+    /// The menu bar (interface §8 4a): the action groups on the top row,
+    /// each dropping its actions down.
+    MenuBar,
     Copy,
     Cut,
     Paste,
@@ -437,6 +446,9 @@ impl Action {
         Action::ToggleLeftDock,
         Action::Zoom,
         Action::CycleLayout,
+        Action::Warp,
+        Action::ContextMenu,
+        Action::MenuBar,
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -534,6 +546,9 @@ impl Action {
             Action::ToggleLeftDock => "toggle_left_dock",
             Action::Zoom => "zoom",
             Action::CycleLayout => "cycle_layout",
+            Action::Warp => "warp",
+            Action::ContextMenu => "context_menu",
+            Action::MenuBar => "menu_bar",
             Action::FocusPane(n) => FOCUS_PANE_NAMES
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -652,6 +667,9 @@ impl Action {
             Action::ToggleLeftDock => "open, focus or fold the left dock",
             Action::Zoom => "zoom the focused region",
             Action::CycleLayout => "switch the layout preset",
+            Action::Warp => "jump to anything on screen",
+            Action::ContextMenu => "open the context menu",
+            Action::MenuBar => "show the menu bar",
             Action::FocusPane(n) => FOCUS_PANE_DESCRIPTIONS
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -719,7 +737,8 @@ impl Action {
             | Action::FocusPrevious
             | Action::ToggleLeftDock
             | Action::Zoom
-            | Action::CycleLayout => Group::Panels,
+            | Action::CycleLayout
+            | Action::Warp => Group::Panels,
             Action::SplitRight
             | Action::SplitDown
             | Action::ClosePane
@@ -730,7 +749,11 @@ impl Action {
             | Action::Hover
             | Action::NextProblem
             | Action::RestartLanguageServers => Group::Code,
-            Action::Quit | Action::OpenCommandPalette | Action::OpenMenu => Group::App,
+            Action::Quit
+            | Action::OpenCommandPalette
+            | Action::OpenMenu
+            | Action::ContextMenu
+            | Action::MenuBar => Group::App,
         }
     }
 }

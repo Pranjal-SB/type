@@ -90,6 +90,18 @@ impl App {
             return self.handle_prompt_chord(chord);
         }
 
+        if self.warp.is_some() {
+            return self.handle_warp_chord(&chord);
+        }
+
+        if self.context.is_some() {
+            return self.handle_context_chord(&chord);
+        }
+
+        if self.bar.is_some() {
+            return self.handle_bar_chord(&chord);
+        }
+
         if self.menu.is_some() {
             return self.handle_menu_chord(chord);
         }
@@ -240,6 +252,9 @@ impl App {
             Action::ToggleLeftDock => self.toggle_left_dock(),
             Action::Zoom => self.toggle_zoom(),
             Action::CycleLayout => self.cycle_layout(),
+            Action::Warp => self.open_warp(),
+            Action::ContextMenu => self.open_context_menu(),
+            Action::MenuBar => self.open_menu_bar(),
             Action::RestartLanguageServers => {
                 let started = self.lsp.restart_all();
                 self.status = Some(match started {

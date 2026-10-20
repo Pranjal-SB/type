@@ -3,6 +3,7 @@ pub mod backend;
 pub mod capability;
 pub mod config;
 pub mod dock;
+pub mod float_menu;
 pub mod layout;
 pub mod log;
 pub mod lsp;

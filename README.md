@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.4.2, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.4.3, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -70,7 +70,10 @@ layout, the file and nothing else, with the dock folded to its rule; `Ctrl+K L` 
 status bar switches to Standard, where the tree stays open, and `layout = "standard"` makes that
 the start. Below 100 columns Standard folds its dock until the terminal grows again, unless you
 picked the layout yourself, and quitting on a project remembers its panes, tabs and cursors for
-the next start on it.
+the next start on it. Anything you can click has a key and anything you can press can be clicked:
+`Ctrl+K J` puts a two-letter label on every target on screen and typing one clicks it, a
+right-click or `Shift+F10` opens the actions for what is under it, and `F10` shows a menu bar of
+every action group. A test fails the build when an action is missing either path.
 
 Every shipped theme is checked against a contrast rubric at truecolor **and again after
 degradation**, which is the half nobody else checks: quantising moves every colour by a
@@ -118,7 +121,7 @@ and counted on the status bar, `F12` jumps to a definition and `Alt+H` explains 
 the cursor. rust-analyzer and taplo are configured without a config file; a server that is not
 installed is silent and the editor is the editor it was without one.
 
-No splits yet, those are v0.4.0, and no completion. See the roadmap. Full history in
+No completion yet. See the roadmap. Full history in
 [CHANGELOG.md](CHANGELOG.md).
 
 Every editing primitive is a named action and every key binding is a table row, which is why the
@@ -209,6 +212,8 @@ has it as "show the ctrl+k menu".
 | `Ctrl+K D` | Go to the definition (also `F12`) |
 | `Ctrl+K H` | Describe what is under the cursor (also `Alt+H`) |
 | `Ctrl+K R` | Restart the language servers |
+| `Ctrl+K J` | Warp labels (below) |
+| `Ctrl+K .` | The context menu (also `Shift+F10`, and the menu key where the terminal reports it) |
 
 **Panes**
 
@@ -245,6 +250,16 @@ remembers its panes, ratios, tabs, cursors, dock and preset, and the next start 
 back; a file that has gone since is skipped and named. `typ <file>` reads and writes no session,
 so `git commit` never opens into yesterday's layout. Sessions live in the state directory
 (`%LOCALAPPDATA%\typ\sessions`, `$XDG_STATE_HOME/typ/sessions` or `~/.local/state/typ/sessions`).
+
+**Menus and warp**
+
+| Key | Mouse | Action |
+|---|---|---|
+| `Ctrl+K J`, then a label | click | Every target on screen gets a label, its region's letter (`s` side, `t` tabs, `b` bar, `f` a float) then its place: `t2` is the second tab. Typing a label clicks it; `Esc` cancels |
+| `Shift+F10`, `Ctrl+K .` | right-click | The actions for what is under it, with their keys: a tab's, the text's, a tree row's, a pane's. A right-click on a tab or tree row makes it current first. Type to filter, arrows and `Enter`, or click a row |
+| `F10` | click a group's name | The menu bar over the top row: `←` `→` between groups, `↓` or `Enter` drops one down, `Esc` steps back |
+
+While a menu has the keys, the left of the status bar says which they are.
 
 **Tree**
 
@@ -288,7 +303,7 @@ the selection touches, and the selection survives so you can press it again.
 
 | Key | Also | Mouse | Action |
 |---|---|---|---|
-| `Ctrl+C` | `Ctrl+Insert` | right-click a selection | Copy |
+| `Ctrl+C` | `Ctrl+Insert` | right-click, then copy | Copy |
 | `Ctrl+X` | `Shift+Delete` | — | Cut |
 | `Ctrl+V` | `Shift+Insert` | middle-click | Paste |
 
@@ -302,7 +317,7 @@ at rather than the one you are logged into. Multi-cursor copy joins the selectio
 newlines, and pasting that many lines back into that many cursors gives one line to each.
 
 Mouse: click to position the cursor, drag to select, click twice in the same place to select
-the word, `Alt`+click to stack another cursor, right-click a selection to copy it, middle-click
+the word, `Alt`+click to stack another cursor, right-click for the actions on what is under it, middle-click
 to paste, click a selected tree entry to open or toggle it, wheel to scroll whichever panel the
 pointer is over.
 
@@ -414,7 +429,8 @@ for now.
 | v0.3.3 | M3.3 | Shell, slice 2: the `Ctrl+K` menu, sequence bindings, a focus stack | shipped |
 | v0.4.0 | M4 | Panes: rules not boxes, the layout tree, splits, pane focus and resize, one workspace watcher | shipped |
 | v0.4.1 | M4.1 | Docks: the left dock, `Ctrl+B` and folding, dock resize, zoom, `F6` over every region and the status bar, a deeper focus stack | shipped |
-| v0.4.2 | M4.2 | Layouts: Focus and Standard presets, adapt to width, sessions, status segments that drop by width | **current** |
+| v0.4.2 | M4.2 | Layouts: Focus and Standard presets, adapt to width, sessions, status segments that drop by width | shipped |
+| v0.4.3 | M4.3 | Menus and warp: warp labels, the context menu, the menu bar, a keyboard and mouse parity test | **current** |
 | v0.5.0 | M5 | Terminal panel and git integration | |
 | v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |
 

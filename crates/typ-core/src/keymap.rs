@@ -332,6 +332,16 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("ctrl+k z", Action::Zoom),
     // Layout, `ctrl+k l` (interface §7).
     ("ctrl+k l", Action::CycleLayout),
+    // Warp labels, `ctrl+k j` (interface §5: `ctrl+k j d1`).
+    ("ctrl+k j", Action::Warp),
+    // The context menu (interface §5): `shift+f10`, the menu key (read only
+    // where the terminal reports it), `ctrl+k .`.
+    ("shift+f10", Action::ContextMenu),
+    ("menu", Action::ContextMenu),
+    ("ctrl+k .", Action::ContextMenu),
+    // The menu bar (interface §8 4a). `f10` only: a bare `alt` never reaches a
+    // terminal application.
+    ("f10", Action::MenuBar),
     ("ctrl+k 1", Action::FocusPane(1)),
     ("ctrl+k 2", Action::FocusPane(2)),
     ("ctrl+k 3", Action::FocusPane(3)),

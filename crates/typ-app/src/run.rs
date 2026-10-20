@@ -449,11 +449,31 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                     return finish(app, events, changed);
                 }
 
+                // Warp labels are modal: a press puts them away and is not
+                // also a click on what they were labelling.
+                if app.warp_labels().is_some() {
+                    if matches!(m.kind, MouseEventKind::Down(_)) {
+                        app.clear_transient();
+                    }
+                    return finish(app, events, changed);
+                }
+
+                // The context menu, for the same reason.
+                if app.route_context_mouse(m, area)? || app.route_bar_mouse(m, area)? {
+                    return finish(app, events, changed);
+                }
+
                 // The menu is next, for the same reason: a press that ran a
                 // row, or cancelled the menu, is not also a click on a panel.
                 if app.pending_prefix().is_some() {
                     app.route_menu_mouse(m, area)?;
                     return finish(app, events, changed);
+                }
+
+                // A right press opens the context menu for what it landed on.
+                if matches!(m.kind, MouseEventKind::Down(MouseButton::Right)) {
+                    app.open_context_at(m.column, m.row, area);
+                    return finish(app, events, true);
                 }
 
                 // The folded dock's column is one target: a press opens it.

@@ -3,6 +3,39 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.4.3] - 2026-10-20 (M4.3 Menus and warp, shell slice 4 shipped)
+
+Interface §0.1 made checkable: anything you can click has a key, anything you can press can be
+clicked, and the build fails when an action is missing either. From `docs/design/interface.md`
+§5 and §8. That finishes slice 4.
+
+### Added
+- **Warp labels.** `Ctrl+K J` puts a two-letter label on every target on screen, the region's
+  letter (`s` side, `t` tabs, `b` bar, `f` a float) then its place in screen order, over a
+  stepped-back body. Typing a label clicks that target, through the same path a mouse takes;
+  `Esc` cancels and a label that names nothing says so. The editor's text has no labels yet.
+- **The context menu.** `Shift+F10`, `Ctrl+K .`, the menu key where the terminal reports it, or a
+  right-click open the actions for what is under it in a float, by group and with their keys: a
+  tab's, the text's, a tree row's, a pane's. A right-click on a background tab or a tree row makes
+  it current first, so "close the tab" closes the one you clicked. Type to filter, arrows and
+  `Enter`, `Esc`, or click.
+- **The menu bar.** `F10` lists every action group over the top row; `←` `→` move, `↓` or `Enter`
+  drops a group's actions down with their keys, `Esc` steps back. A click on a group opens it, on
+  a row runs it, anywhere else closes it. Hidden, it takes no row, and shown it reflows nothing.
+- **A parity test.** Every action needs a keyboard path and a mouse path or the build says which
+  is missing.
+
+### Changed
+- **Right-click is the context menu everywhere.** On a selection it used to copy; copy is now the
+  menu's row, or `Ctrl+C`.
+- **The `Ctrl+K` menu's `esc cancels` is on the status bar**, which kept the menu inside 80x24
+  with two more rows in it. While any menu has the keys, the left of the status bar says which.
+
+### Not in this release
+- Disabled rows: nothing knows yet whether an action can run, so every row runs and one with
+  nothing to act on says so, as from the palette. `Alt`+letter for the menu bar: a bare `Alt`
+  never reaches a terminal application.
+
 ## [0.4.2] - 2026-10-20 (M4.2 Layouts, shell slice 3 shipped)
 
 Layout presets, a layout that follows the terminal's width, and sessions, from
@@ -672,7 +705,8 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.3
 [0.4.2]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.2
 [0.4.1]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.0
