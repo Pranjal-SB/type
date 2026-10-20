@@ -150,6 +150,9 @@ pub enum Action {
     /// The settings tab (interface §8 4c): every setting in `config.toml`,
     /// searched and changed in place.
     OpenSettings,
+    /// The keybindings tab (interface §8 4d): every binding in the keymap,
+    /// searched, and rebound by pressing the key.
+    OpenKeybindings,
     Copy,
     Cut,
     Paste,
@@ -453,6 +456,7 @@ impl Action {
         Action::ContextMenu,
         Action::MenuBar,
         Action::OpenSettings,
+        Action::OpenKeybindings,
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -554,6 +558,7 @@ impl Action {
             Action::ContextMenu => "context_menu",
             Action::MenuBar => "menu_bar",
             Action::OpenSettings => "open_settings",
+            Action::OpenKeybindings => "open_keybindings",
             Action::FocusPane(n) => FOCUS_PANE_NAMES
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -676,6 +681,7 @@ impl Action {
             Action::ContextMenu => "open the context menu",
             Action::MenuBar => "show the menu bar",
             Action::OpenSettings => "open the settings",
+            Action::OpenKeybindings => "open the keybindings",
             Action::FocusPane(n) => FOCUS_PANE_DESCRIPTIONS
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -760,7 +766,8 @@ impl Action {
             | Action::OpenMenu
             | Action::ContextMenu
             | Action::MenuBar
-            | Action::OpenSettings => Group::App,
+            | Action::OpenSettings
+            | Action::OpenKeybindings => Group::App,
         }
     }
 }

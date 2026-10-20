@@ -1,4 +1,5 @@
-//! Writing one setting into `config.toml`, keeping every other byte.
+//! Writing one setting into `config.toml`, or one binding into `keys.toml`,
+//! keeping every other byte.
 //!
 //! Through `toml_edit` rather than `toml`: `toml` parses and serialises but
 //! drops comments, and a settings change that deletes the user's notes is a
@@ -107,4 +108,25 @@ fn save(path: &Path, text: &str) -> std::io::Result<()> {
     let temp = path.with_extension("toml.tmp");
     std::fs::write(&temp, text)?;
     std::fs::rename(&temp, path)
+}
+
+/// Bind `chord` to the action named `action` in `keys.toml`: `Some("")`
+/// unbinds it, as an empty action in that file already means, and `None` takes
+/// the row out so the default comes back.
+///
+/// The row is found by its canonical chord, so a file that spells it
+/// `Shift+Ctrl+E` has that row changed rather than a second one added beside
+/// it, which would leave which of the two wins to the table's sort order.
+pub fn write_binding(path: &Path, chord: &str, action: Option<&str>) -> Result<(), String> {
+    let source = super::read_config(path)?.unwrap_or_default();
+    let spelled = source
+        .parse::<toml_edit::DocumentMut>()
+        .ok()
+        .and_then(|document| {
+            document.iter().map(|(key, _)| key.to_string()).find(|key| {
+                typ_core::key::canonical_sequence(key).is_ok_and(|canonical| canonical == chord)
+            })
+        });
+    let key = spelled.as_deref().unwrap_or(chord);
+    write_setting(path, key, action.map(toml_edit::Value::from))
 }

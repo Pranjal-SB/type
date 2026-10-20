@@ -112,6 +112,12 @@ impl App {
             return Ok(());
         }
 
+        // A panel recording a key takes it raw, before the keymap runs it.
+        if self.panel_has_keys() && self.focused().captures_keys() {
+            let events = self.focused_mut().handle_key(chord);
+            return self.apply(events);
+        }
+
         // The status bar takes its arrows, `enter` and `esc` itself.
         if self.focus == Focus::Status && self.handle_status_chord(&chord)? {
             return Ok(());
@@ -261,6 +267,12 @@ impl App {
                     self.status = Some("No config directory to keep settings in.".to_string());
                 }
             },
+            Action::OpenKeybindings => match crate::config::config_path() {
+                Some(path) => self.open_view(crate::keybindings::KEYBINDINGS, &path),
+                None => {
+                    self.status = Some("No config directory to keep keys in.".to_string());
+                }
+            },
             Action::RestartLanguageServers => {
                 let started = self.lsp.restart_all();
                 self.status = Some(match started {
@@ -349,6 +361,7 @@ impl App {
             }
         }
         self.apply_settings_change();
+        self.apply_keys_change();
         Ok(())
     }
 }

@@ -74,13 +74,22 @@ pub fn depth_from(colorterm: Option<&str>, term: Option<&str>, wt_session: Optio
 /// shift bit, so `ctrl+shift+f` arrives as `ctrl+f` or not at all; and
 /// `Ctrl+Tab` is a bare Tab. Arrows, the page keys and function keys carry
 /// their modifiers in xterm's CSI form and need nothing. `controls.md` §1.
-fn needs_protocol(chord: &str) -> bool {
+pub(crate) fn needs_protocol(chord: &str) -> bool {
     chord.split(' ').any(|step| {
         step == "ctrl+tab"
             || step
                 .strip_prefix("ctrl+shift+")
                 .is_some_and(|key| key.chars().count() == 1)
     })
+}
+
+/// Whether a chord is one the terminal itself owns: in the legacy encoding
+/// `ctrl+i`, `ctrl+m`, `ctrl+[` and `ctrl+h` are the very bytes of tab, enter,
+/// esc and backspace, so the editor never sees them as chords.
+pub(crate) fn tty_owned(chord: &str) -> bool {
+    chord
+        .split(' ')
+        .any(|step| matches!(step, "ctrl+i" | "ctrl+m" | "ctrl+[" | "ctrl+h"))
 }
 
 /// A warning for configured bindings this terminal cannot send, if any.

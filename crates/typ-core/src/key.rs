@@ -56,7 +56,7 @@ const NAMED_KEYS: &[&str] = &[
 /// Two steps at most. Nothing needs three, and the menu a prefix opens has one
 /// level. A spelling that is only whitespace is the space key, as it was before
 /// sequences existed.
-pub(crate) fn canonical_sequence(spelling: &str) -> Result<String, String> {
+pub fn canonical_sequence(spelling: &str) -> Result<String, String> {
     let steps: Vec<&str> = spelling.split_whitespace().collect();
     match steps.as_slice() {
         [] => canonical_chord(spelling),

@@ -3,6 +3,36 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.4.5] - 2026-10-21 (M4.5 Keybindings, shell slice 5 shipped)
+
+The keybindings surface from `docs/design/interface.md` §8 4d and §8b, as a tab beside the
+settings, writing `keys.toml` with its comments kept.
+
+### Added
+- **The keybindings tab.** `Ctrl+K K`, or `>keybindings` in the palette. Every binding, and every
+  action with none, grouped under the menu's rules: what it does, the key as the status bar spells
+  it, the layer and whether the row is yours or shipped. Typing filters by action or key;
+  `:modified`, `:conflict`, `:unbound` and `:kitty` filter as their names say, and `Ctrl+R` then a
+  key filters to what that key does.
+- **Recording a key.** `Enter` on a row, or a click on its key, opens a float that shows the keys
+  as you press them (a prefix such as `Ctrl+K` waits for one more), says whether every terminal
+  sends the chord, it needs the kitty protocol, or the terminal owns it (`Ctrl+I`, `M`, `[`, `H`),
+  and names what the chord runs now. `Enter` replaces: the row's old chord is unbound and whatever
+  the new one ran loses it. `Esc` writes nothing. `Delete` unbinds, `r` resets the action to its
+  shipped keys, `Ctrl+Z` undoes, `Ctrl+O` opens the file; the footer clicks all of them.
+- **Live.** A change reloads the keymap the editor runs on, so the `Ctrl+K` menu, the idle hint
+  and the palette move with it at once.
+- **The keyboard view.** `Ctrl+T` in the tab draws the same bindings on a keyboard under a strip
+  of `ctrl`, `ctrl+shift`, `alt`, `ctrl+k ▸` and the F-keys. Bound keys say what they run, free
+  keys are outlined, terminal-owned keys are taken, kitty-only keys are marked.
+- `config::write_binding` changes one row of `keys.toml` and keeps every other byte, however the
+  file spells the chord.
+
+### Not in this release
+- Panel layers (`controls.md` §3), so every binding is global and "keep both in different
+  layers" waits for a second layer. Giving a free key on the keyboard view an action, which is
+  done from that action's row.
+
 ## [0.4.4] - 2026-10-20 (M4.4 Settings, half of shell slice 5)
 
 The settings surface from `docs/design/interface.md` §8 4c and §8b, as a tab in the editor area,
@@ -737,7 +767,8 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.4...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.5
 [0.4.4]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.4
 [0.4.3]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.3
 [0.4.2]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.2
