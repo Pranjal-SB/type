@@ -248,14 +248,11 @@ fn an_idle_wakeup_costs_nothing_against_a_frame() {
     );
 }
 
-#[test]
-#[ignore = "wall-clock budget; run with --release --ignored --nocapture"]
-fn a_four_pane_frame_stays_inside_a_frame() {
-    // Four panes in a 2x2, each a different 50k-line file deep in, so every
-    // pane pays for the lines above its viewport the way one editor does. One
-    // file per pane because the same file cannot be open twice (M4 decision 1).
-    let _guard = exclusive();
-    let dir = std::env::temp_dir().join("typ-app-perf").join("four-panes");
+/// Four panes in a 2x2, each a different 50k-line file deep in, so every
+/// pane pays for the lines above its viewport the way one editor does. One
+/// file per pane because the same file cannot be open twice (M4 decision 1).
+fn four_pane_app(name: &str) -> App {
+    let dir = std::env::temp_dir().join("typ-app-perf").join(name);
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let line = "    let editor = Editor::new(); // a representative line of code
@@ -290,6 +287,14 @@ fn a_four_pane_frame_stays_inside_a_frame() {
     open(&mut app, &files[2]);
     assert_eq!(app.pane_count(), 4);
 
+    app
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored --nocapture"]
+fn a_four_pane_frame_stays_inside_a_frame() {
+    let _guard = exclusive();
+    let mut app = four_pane_app("four-panes");
     let mut terminal = Terminal::new(TestBackend::new(AREA.width, AREA.height)).unwrap();
     draw(&mut app, &mut terminal); // warm
 
@@ -308,6 +313,43 @@ fn a_four_pane_frame_stays_inside_a_frame() {
     assert!(
         best.as_micros() < BUDGET_US,
         "a four-pane frame costs {best:?}, over the {BUDGET_US} µs frame budget"
+    );
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored --nocapture"]
+fn a_four_pane_frame_under_warp_labels_stays_inside_a_frame() {
+    // The same four panes with `ctrl+k j` up: every target labelled, the body
+    // under the scrim. Putting the labels up walks `targets()` once; the frame
+    // is what repeats, so the frame is what is measured, opening reported.
+    let _guard = exclusive();
+    let mut app = four_pane_app("four-panes-warp");
+    let mut terminal = Terminal::new(TestBackend::new(AREA.width, AREA.height)).unwrap();
+    draw(&mut app, &mut terminal); // warm, and the geometry the labels read
+    app.set_screen(AREA);
+
+    let start = Instant::now();
+    app.apply_named_action(typ_core::Action::Warp).unwrap();
+    let opening = start.elapsed();
+    let labels = app.warp_labels().map_or(0, <[_]>::len);
+    assert!(labels >= 8, "only {labels} labels on four panes");
+
+    let frames = 20;
+    let mut best = std::time::Duration::MAX;
+    for _ in 0..5 {
+        let start = Instant::now();
+        for _ in 0..frames {
+            app.mark_dirty();
+            draw(&mut app, &mut terminal);
+        }
+        best = best.min(start.elapsed() / frames);
+    }
+
+    println!("warp labels up ({labels}): {opening:?}");
+    println!("four-pane frame under warp labels: {best:?}");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "a frame under warp labels costs {best:?}, over the {BUDGET_US} µs frame budget"
     );
 }
 
