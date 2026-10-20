@@ -218,6 +218,12 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             run(app, a);
             assert!(app.dock_open(), "standard did not open it");
         },
+        // Labels over the last frame's targets: the tabs at least.
+        Action::Warp => |app, a| {
+            run(app, a);
+            let labels = app.warp_labels().expect("no labels went up");
+            assert!(labels.iter().any(|(label, _)| label == "t1"), "{labels:?}");
+        },
         Action::OpenMenu => |app, a| {
             run(app, a);
             assert_eq!(app.pending_prefix(), Some("ctrl+k"));

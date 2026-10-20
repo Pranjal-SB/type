@@ -138,6 +138,9 @@ pub enum Action {
     /// The next layout preset (interface §7): Focus folds the dock, Standard
     /// opens it. Panes are never touched.
     CycleLayout,
+    /// Warp labels (interface §5): every mouse target on screen gets a
+    /// two-letter label, and typing one clicks it.
+    Warp,
     Copy,
     Cut,
     Paste,
@@ -437,6 +440,7 @@ impl Action {
         Action::ToggleLeftDock,
         Action::Zoom,
         Action::CycleLayout,
+        Action::Warp,
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -534,6 +538,7 @@ impl Action {
             Action::ToggleLeftDock => "toggle_left_dock",
             Action::Zoom => "zoom",
             Action::CycleLayout => "cycle_layout",
+            Action::Warp => "warp",
             Action::FocusPane(n) => FOCUS_PANE_NAMES
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -652,6 +657,7 @@ impl Action {
             Action::ToggleLeftDock => "open, focus or fold the left dock",
             Action::Zoom => "zoom the focused region",
             Action::CycleLayout => "switch the layout preset",
+            Action::Warp => "jump to anything on screen",
             Action::FocusPane(n) => FOCUS_PANE_DESCRIPTIONS
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -719,7 +725,8 @@ impl Action {
             | Action::FocusPrevious
             | Action::ToggleLeftDock
             | Action::Zoom
-            | Action::CycleLayout => Group::Panels,
+            | Action::CycleLayout
+            | Action::Warp => Group::Panels,
             Action::SplitRight
             | Action::SplitDown
             | Action::ClosePane

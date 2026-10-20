@@ -170,7 +170,7 @@ fn ctrl_k_docks_a_menu_above_the_status_bar() {
         find(&buf, "f  search the project").unwrap_or_else(|| panic!("{}", screen(&buf)));
     assert!(find(&buf, "find").is_some(), "no group heading");
     // The menu's last row is the one directly above the status bar.
-    assert!(line(&buf, 22).contains("esc cancels"), "{}", screen(&buf));
+    assert!(line(&buf, 23).contains("esc cancels"), "{}", screen(&buf));
     assert!(row < 22);
     for x in [0, 40, 79] {
         assert_eq!(buf[(x, 22)].bg, theme.chrome_bg, "menu cell {x},22");
@@ -294,7 +294,7 @@ fn a_tall_menu_is_capped_at_a_third_and_the_arrows_reach_the_rest() {
     let text = screen(&buf);
     // A third of 24 rows, and the body keeps the rest.
     assert!(app.areas(AREA).1.bottom() >= 24 - 1 - 8, "{text}");
-    assert!(line(&buf, 22).contains("more"), "{text}");
+    assert!(line(&buf, 23).contains("more"), "{text}");
     assert!(!text.contains("switch to tab 3"), "{text}");
 
     // Every row comes on screen as the highlight walks down to it.

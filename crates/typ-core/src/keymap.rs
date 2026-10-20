@@ -332,6 +332,8 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("ctrl+k z", Action::Zoom),
     // Layout, `ctrl+k l` (interface §7).
     ("ctrl+k l", Action::CycleLayout),
+    // Warp labels, `ctrl+k j` (interface §5: `ctrl+k j d1`).
+    ("ctrl+k j", Action::Warp),
     ("ctrl+k 1", Action::FocusPane(1)),
     ("ctrl+k 2", Action::FocusPane(2)),
     ("ctrl+k 3", Action::FocusPane(3)),

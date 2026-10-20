@@ -449,6 +449,15 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                     return finish(app, events, changed);
                 }
 
+                // Warp labels are modal: a press puts them away and is not
+                // also a click on what they were labelling.
+                if app.warp_labels().is_some() {
+                    if matches!(m.kind, MouseEventKind::Down(_)) {
+                        app.clear_transient();
+                    }
+                    return finish(app, events, changed);
+                }
+
                 // The menu is next, for the same reason: a press that ran a
                 // row, or cancelled the menu, is not also a click on a panel.
                 if app.pending_prefix().is_some() {

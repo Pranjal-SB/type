@@ -63,6 +63,7 @@ impl App {
         // together — opening the picker clears the transient state the hover is
         // part of — but the order says which would win if they were.
         self.render_hover(frame, editor_area);
+        self.render_warp(frame.area(), frame.buffer_mut());
 
         // The overlay draws last, over the body — after the status bar too, so a
         // tall picker on a short terminal covers the bar rather than being
@@ -94,7 +95,8 @@ impl App {
         }
 
         // The keyboard is the menu's while it is up, so no panel shows a caret.
-        if self.menu.is_some() {
+        // The same for the warp labels.
+        if self.menu.is_some() || self.warp.is_some() {
             return;
         }
 

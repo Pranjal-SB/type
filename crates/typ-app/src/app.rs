@@ -20,6 +20,8 @@ mod status_bar;
 mod tabs;
 /// Every mouse target on screen, for warp labels and the context menu.
 pub mod targets;
+/// Warp labels over the targets.
+mod warp;
 
 use anyhow::Result;
 use typ_buffer::SearchQuery;
@@ -202,6 +204,8 @@ pub struct App {
     /// Not transient in the `clear_transient` sense: it lasts its two seconds
     /// through whatever keys come next, and goes with the first event after.
     teaching: Option<(String, std::time::Instant)>,
+    /// Warp labels, while they are up. They take the keyboard.
+    warp: Option<warp::Warp>,
 }
 
 /// The workspace watch, from the render thread's side.
@@ -425,6 +429,7 @@ impl App {
             hover: None,
             menu: None,
             teaching: None,
+            warp: None,
         })
     }
 
@@ -481,6 +486,9 @@ impl App {
 
     /// Whatever needs saying on the left of the bar, if anything does.
     fn status_message(&self) -> Option<String> {
+        if let Some(hint) = self.warp_hint() {
+            return Some(hint);
+        }
         // The prompt outranks any message: while it is open it is the only
         // thing the user is looking at.
         // A message beside it is about the prompt (a rejected answer) and
@@ -498,6 +506,15 @@ impl App {
         }
         if let Some(message) = &self.status {
             return Some(message.clone());
+        }
+        if let Some(menu) = &self.menu {
+            let area = self.split_body(self.screen).1;
+            let hidden = area.map_or(0, |area| menu.hidden(area));
+            let footer = format!("{}  \u{b7}  {}", menu.prefix(), crate::menu::FOOTER);
+            return Some(match hidden {
+                0 => footer,
+                n => format!("{footer}  \u{b7}  \u{2026} {n} more"),
+            });
         }
         self.teaching.as_ref().map(|(line, _)| line.clone())
     }
@@ -573,6 +590,7 @@ impl App {
         // A click or a paste abandons a half-typed sequence rather than
         // leaving its second key to land on whatever comes next.
         self.menu = None;
+        self.warp = None;
     }
 
     /// Quit, unless a panel has something to confirm first.

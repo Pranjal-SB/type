@@ -18,7 +18,9 @@ const MARGIN: u16 = 1;
 const GAP: u16 = 3;
 /// Between a row's key and what it does.
 const KEY_GAP: u16 = 2;
-/// The last row of the menu.
+/// What the status bar says while the menu is up. On the bar rather than a
+/// last row of the menu: at 80x24 the menu has a third of the frame, and the
+/// row the footer took was the one the groups needed once warp joined them.
 pub const FOOTER: &str = "esc cancels";
 
 pub struct Menu {
@@ -96,13 +98,18 @@ impl Menu {
 
     /// How many rows the menu takes at the bottom of a frame this size.
     ///
-    /// The tallest band of columns plus the footer, capped at a third of the
-    /// frame. Past that it scrolls: on 80x24 a taller menu would leave the
-    /// file behind it a sliver.
+    /// The tallest band of columns, capped at a third of the frame. Past
+    /// that it scrolls: on 80x24 a taller menu would leave the file behind it
+    /// a sliver.
     pub fn height(&self, width: u16, frame_height: u16) -> u16 {
-        let cap = (frame_height / 3).max(2);
-        let (_, lines) = layout(&self.rows, width, cap - 1);
-        lines.saturating_add(1).min(cap)
+        let cap = (frame_height / 3).max(1);
+        let (_, lines) = layout(&self.rows, width, cap);
+        lines.min(cap)
+    }
+
+    /// How many rows are scrolled out of `area`.
+    pub fn hidden(&self, area: Rect) -> usize {
+        self.rows.len() - self.row_rects(area).len()
     }
 
     /// The row under a cell of `area`, if one is.
@@ -116,7 +123,7 @@ impl Menu {
     /// Every row on screen in `area` and the cells it takes: what a click
     /// can land on, and so what a warp label can.
     pub fn row_rects(&self, area: Rect) -> Vec<(usize, Rect)> {
-        let visible = area.height.saturating_sub(1);
+        let visible = area.height;
         let (placed, _) = layout(&self.rows, area.width, visible);
         let first = self.first_line(&placed, visible);
         placed
@@ -141,13 +148,11 @@ impl Menu {
             return;
         }
 
-        let visible = area.height - 1;
+        let visible = area.height;
         let (placed, _) = layout(&self.rows, area.width, visible);
         let first = self.first_line(&placed, visible);
-        let mut hidden = 0;
         for p in &placed {
             if p.line < first || p.line >= first + visible {
-                hidden += usize::from(matches!(p.item, Item::Row(_)));
                 continue;
             }
             let (x, y) = (area.x + p.x, area.y + p.line - first);
@@ -174,14 +179,6 @@ impl Menu {
                 }
             }
         }
-
-        let footer = match hidden {
-            0 => FOOTER.to_string(),
-            n => format!("{FOOTER}  \u{2026} {n} more"),
-        };
-        let quiet = ground.fg(theme.status_bar_inactive_fg);
-        let y = area.bottom() - 1;
-        buf.set_stringn(area.x + MARGIN, y, footer, area.width.into(), quiet);
     }
 
     /// The first content line on screen: the top, unless the highlight is
