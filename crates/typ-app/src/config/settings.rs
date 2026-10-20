@@ -62,24 +62,6 @@ impl Default for Settings {
     }
 }
 
-fn parse_whitespace(value: &str) -> Option<Whitespace> {
-    match value {
-        "none" => Some(Whitespace::None),
-        "trailing" => Some(Whitespace::Trailing),
-        "selection" => Some(Whitespace::Selection),
-        "all" => Some(Whitespace::All),
-        _ => None,
-    }
-}
-
-fn parse_depth(value: &str) -> Option<Depth> {
-    match value {
-        "truecolor" | "24bit" => Some(Depth::TrueColor),
-        "256" | "ansi256" => Some(Depth::Ansi256),
-        _ => None,
-    }
-}
-
 /// Read `config.toml`, keeping whatever parsed and reporting whatever did not.
 ///
 /// **Not all-or-nothing, unlike a keymap or a theme.** Those two are rejected
@@ -106,49 +88,16 @@ pub fn load_settings(path: Option<&Path>) -> (Settings, Option<String>) {
 
     let mut complaints: Vec<String> = Vec::new();
 
+    // Every key through its row in the table, so a setting cannot be parsed
+    // here and be missing from the settings tab, or the other way round.
     for (key, value) in &table {
-        match key.as_str() {
-            "theme" => match value.as_str() {
-                Some(name) => settings.theme = name.to_string(),
-                None => complaints.push("theme must be a name in quotes".to_string()),
-            },
-            "color_depth" => match value.as_str().and_then(parse_depth) {
-                Some(depth) => settings.color_depth = Some(depth),
-                None => complaints.push(format!(
-                    "color_depth {value} is not \"truecolor\" or \"256\""
-                )),
-            },
-            // Zero is a width nothing can insert, so it is rejected rather
-            // than clamped: a setting that appears to take effect and does
-            // not is worse than one that says it was ignored.
-            "indent_width" => match value.as_integer().filter(|n| (1..=16).contains(n)) {
-                Some(width) => settings.indent_width = Some(width as usize),
-                None => complaints.push(format!(
-                    "indent_width {value} is not a whole number of columns from 1 to 16"
-                )),
-            },
-            "whitespace" => match value.as_str().and_then(parse_whitespace) {
-                Some(which) => settings.whitespace = which,
-                None => complaints.push(format!(
-                    "whitespace {value} is not \"none\", \"trailing\", \"selection\" or \"all\""
-                )),
-            },
-            "layout" => match value.as_str().and_then(crate::dock::Preset::from_name) {
-                Some(preset) => settings.layout = preset,
-                None => complaints.push(format!("layout {value} is not \"focus\" or \"standard\"")),
-            },
-            "adapt" => match value.as_bool() {
-                Some(adapt) => settings.adapt = adapt,
-                None => complaints.push(format!("adapt {value} is not true or false")),
-            },
-            "session" => match value.as_bool() {
-                Some(session) => settings.session = session,
-                None => complaints.push(format!("session {value} is not true or false")),
-            },
-            // Handled below, as a whole: an array of tables is not one value
-            // with one answer, and each entry stands or falls on its own.
-            "language" => {}
-            other => complaints.push(format!("{other} is not a setting this editor has")),
+        match super::schema::row(key) {
+            Some(row) => {
+                if let Err(complaint) = (row.parse)(value, &mut settings) {
+                    complaints.push(complaint);
+                }
+            }
+            None => complaints.push(format!("{key} is not a setting this editor has")),
         }
     }
 

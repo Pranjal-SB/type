@@ -15,6 +15,7 @@
 use std::path::PathBuf;
 
 pub mod keys;
+pub mod schema;
 pub mod settings;
 pub mod theme;
 
