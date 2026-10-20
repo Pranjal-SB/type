@@ -5,10 +5,11 @@
 //! new action shows up here without a second list. Layout is one function,
 //! `layout`, that render, hit-testing and `App::targets` all go through.
 
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
-use typ_core::{Action, Group, Keymap, RenderContext};
+use typ_core::{Action, Group, KeyChord, Keymap, RenderContext};
 
 /// The float's exit label.
 const EXIT: &str = "esc";
@@ -29,6 +30,16 @@ pub struct FloatMenu {
 struct Entry {
     action: Action,
     key: String,
+}
+
+/// What a key did to a float.
+pub enum Outcome {
+    /// It moved or filtered; the float stays.
+    Stay,
+    /// `esc`, or `enter` with nothing to run.
+    Close,
+    /// `enter` on a row.
+    Run(Action),
 }
 
 enum Line {
@@ -55,6 +66,7 @@ pub fn actions_for(groups: &[Group]) -> Vec<Action> {
                     | Action::Delete { .. }
                     | Action::InsertNewline
                     | Action::ContextMenu
+                    | Action::MenuBar
                     | Action::OpenMenu
                     | Action::OpenCommandPalette
             ) && a.numbered().is_none()
@@ -99,11 +111,6 @@ impl FloatMenu {
         self.actions().get(self.selected).copied()
     }
 
-    /// Highlight a shown row, as a click on it does.
-    pub fn select(&mut self, index: usize) {
-        self.selected = index;
-    }
-
     /// Move the highlight, stopping at either end.
     pub fn move_selection(&mut self, delta: isize) {
         let last = self.shown().len().saturating_sub(1);
@@ -119,6 +126,26 @@ impl FloatMenu {
     pub fn backspace(&mut self) {
         self.filter.pop();
         self.selected = 0;
+    }
+
+    /// A key while the float has the keyboard: typing filters, arrows move,
+    /// `enter` runs, `esc` closes. Anything else is ignored rather than let
+    /// through to what is behind.
+    pub fn key(&mut self, chord: &KeyChord) -> Outcome {
+        let plain = !chord
+            .raw
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
+        match chord.raw.code {
+            KeyCode::Esc => return Outcome::Close,
+            KeyCode::Enter => return self.selected().map_or(Outcome::Close, Outcome::Run),
+            KeyCode::Up => self.move_selection(-1),
+            KeyCode::Down => self.move_selection(1),
+            KeyCode::Backspace => self.backspace(),
+            KeyCode::Char(c) if plain => self.type_char(c),
+            _ => {}
+        }
+        Outcome::Stay
     }
 
     fn shown(&self) -> Vec<usize> {
@@ -203,6 +230,12 @@ impl FloatMenu {
             .into_iter()
             .find(|(_, rect)| rect.contains((column, row).into()))
             .map(|(place, _)| place)
+    }
+
+    /// A left press at a cell: the row there, highlighted and returned.
+    pub fn click(&mut self, body: Rect, column: u16, row: u16) -> Option<Action> {
+        self.selected = self.hit(body, column, row)?;
+        self.selected()
     }
 
     pub fn render(&self, body: Rect, buf: &mut Buffer, ctx: &RenderContext) {

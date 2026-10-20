@@ -41,6 +41,8 @@ pub enum TargetKind {
     /// A row of the open float menu (the context menu, or the menu bar's
     /// dropdown), by its place among the rows it shows.
     FloatRow(usize),
+    /// A group's name on the menu bar, by its place in `Group::ALL`.
+    BarGroup(usize),
 }
 
 impl TargetKind {
@@ -54,7 +56,7 @@ impl TargetKind {
             | TargetKind::DockFolded
             | TargetKind::TreeRow(_) => 's',
             TargetKind::Segment(_) => 'b',
-            TargetKind::MenuRow(_) | TargetKind::FloatRow(_) => 'f',
+            TargetKind::MenuRow(_) | TargetKind::FloatRow(_) | TargetKind::BarGroup(_) => 'f',
         }
     }
 }
@@ -84,7 +86,30 @@ impl Target {
 impl App {
     /// Every target in `frame`, region by region and in screen order inside
     /// each: the dock, the tab rows, the status bar, then the menu.
+    ///
+    /// While the context menu or the menu bar is up, only theirs: a press
+    /// anywhere else closes them and reaches nothing under them, so nothing
+    /// under them is a target.
     pub fn targets(&self, frame: Rect) -> Vec<Target> {
+        let float_rows = |rows: Vec<(usize, Rect)>| {
+            rows.into_iter().map(|(index, rect)| {
+                Target::at(rect, (rect.x, rect.y), TargetKind::FloatRow(index))
+            })
+        };
+        if let Some(menu) = &self.context {
+            let (body, _) = crate::layout::split_frame(frame);
+            return float_rows(menu.row_rects(body)).collect();
+        }
+        if let Some(bar) = &self.bar {
+            let mut out: Vec<Target> = crate::app::menu_bar::cells(frame)
+                .into_iter()
+                .map(|(index, rect)| {
+                    Target::at(rect, (rect.x + 1, rect.y), TargetKind::BarGroup(index))
+                })
+                .collect();
+            out.extend(float_rows(bar.dropdown_rows(frame)));
+            return out;
+        }
         let mut out = self.dock_targets(frame);
         out.extend(self.pane_targets(frame));
         out.extend(self.status_targets(frame));
@@ -92,12 +117,6 @@ impl App {
         if let (Some(menu), Some(area)) = (&self.menu, menu_area) {
             out.extend(menu.row_rects(area).into_iter().map(|(index, rect)| {
                 Target::at(rect, (rect.x, rect.y), TargetKind::MenuRow(index))
-            }));
-        }
-        if let Some(menu) = &self.context {
-            let (body, _) = crate::layout::split_frame(frame);
-            out.extend(menu.row_rects(body).into_iter().map(|(index, rect)| {
-                Target::at(rect, (rect.x, rect.y), TargetKind::FloatRow(index))
             }));
         }
         out

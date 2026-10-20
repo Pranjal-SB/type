@@ -8,14 +8,14 @@
 //! tab" closes the one clicked.
 
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use typ_core::{Action, Group, KeyChord, Panel, RenderContext};
 
 use super::{App, Focus};
 use crate::app::targets::TargetKind;
-use crate::float_menu::FloatMenu;
+use crate::float_menu::{FloatMenu, Outcome};
 
 /// What text gets.
 const TEXT: &[Group] = &[Group::Edit, Group::Selection, Group::Find, Group::Code];
@@ -83,9 +83,12 @@ impl App {
             Some(TargetKind::DockHeading | TargetKind::DockZoom | TargetKind::DockFolded) => {
                 &[Group::Panels]
             }
-            Some(TargetKind::Segment(_) | TargetKind::MenuRow(_) | TargetKind::FloatRow(_)) => {
-                return;
-            }
+            Some(
+                TargetKind::Segment(_)
+                | TargetKind::MenuRow(_)
+                | TargetKind::FloatRow(_)
+                | TargetKind::BarGroup(_),
+            ) => return,
             None => {
                 let editor = self.editor_region(frame);
                 let Some(pane) = self
@@ -110,33 +113,17 @@ impl App {
         self.mark_dirty();
     }
 
-    /// A key while the menu is up: typing filters, arrows move, `enter`
-    /// runs, `esc` closes. Anything else is ignored rather than let through
-    /// to what is behind.
+    /// A key while the menu is up: `FloatMenu::key` says what it did.
     pub(super) fn handle_context_chord(&mut self, chord: &KeyChord) -> Result<()> {
         let Some(mut menu) = self.context.take() else {
             return Ok(());
         };
         self.mark_dirty();
-        let plain = !chord
-            .raw
-            .modifiers
-            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
-        match chord.raw.code {
-            KeyCode::Esc => return Ok(()),
-            KeyCode::Enter => {
-                return match menu.selected() {
-                    Some(action) => self.apply_named_action(action),
-                    None => Ok(()),
-                };
-            }
-            KeyCode::Up => menu.move_selection(-1),
-            KeyCode::Down => menu.move_selection(1),
-            KeyCode::Backspace => menu.backspace(),
-            KeyCode::Char(c) if plain => menu.type_char(c),
-            _ => {}
+        match menu.key(chord) {
+            Outcome::Stay => self.context = Some(menu),
+            Outcome::Close => {}
+            Outcome::Run(action) => self.apply_named_action(action)?,
         }
-        self.context = Some(menu);
         Ok(())
     }
 
@@ -156,12 +143,9 @@ impl App {
         self.mark_dirty();
         let (body, _) = crate::layout::split_frame(frame);
         if event.kind == MouseEventKind::Down(MouseButton::Left)
-            && let Some(place) = menu.hit(body, event.column, event.row)
+            && let Some(action) = menu.click(body, event.column, event.row)
         {
-            menu.select(place);
-            if let Some(action) = menu.selected() {
-                self.apply_named_action(action)?;
-            }
+            self.apply_named_action(action)?;
         }
         Ok(true)
     }
@@ -170,7 +154,13 @@ impl App {
         let Some(menu) = &self.context else {
             return;
         };
-        let ctx = RenderContext {
+        let (body, _) = crate::layout::split_frame(frame);
+        menu.render(body, buf, &self.float_context(frame));
+    }
+
+    /// What a float that has the keyboard renders with.
+    pub(super) fn float_context(&self, frame: Rect) -> RenderContext<'_> {
+        RenderContext {
             theme: &self.theme,
             syntax: &self.syntax_theme,
             diagnostics: &[],
@@ -179,8 +169,6 @@ impl App {
             panel_index: 3,
             terminal_width: frame.width,
             terminal_height: frame.height,
-        };
-        let (body, _) = crate::layout::split_frame(frame);
-        menu.render(body, buf, &ctx);
+        }
     }
 }

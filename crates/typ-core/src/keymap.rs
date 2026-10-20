@@ -339,6 +339,9 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("shift+f10", Action::ContextMenu),
     ("menu", Action::ContextMenu),
     ("ctrl+k .", Action::ContextMenu),
+    // The menu bar (interface §8 4a). `f10` only: a bare `alt` never reaches a
+    // terminal application.
+    ("f10", Action::MenuBar),
     ("ctrl+k 1", Action::FocusPane(1)),
     ("ctrl+k 2", Action::FocusPane(2)),
     ("ctrl+k 3", Action::FocusPane(3)),

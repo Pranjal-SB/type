@@ -144,6 +144,9 @@ pub enum Action {
     /// The context menu (interface §8 4b): the actions for what is under the
     /// cursor, in a float.
     ContextMenu,
+    /// The menu bar (interface §8 4a): the action groups on the top row,
+    /// each dropping its actions down.
+    MenuBar,
     Copy,
     Cut,
     Paste,
@@ -445,6 +448,7 @@ impl Action {
         Action::CycleLayout,
         Action::Warp,
         Action::ContextMenu,
+        Action::MenuBar,
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -544,6 +548,7 @@ impl Action {
             Action::CycleLayout => "cycle_layout",
             Action::Warp => "warp",
             Action::ContextMenu => "context_menu",
+            Action::MenuBar => "menu_bar",
             Action::FocusPane(n) => FOCUS_PANE_NAMES
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -664,6 +669,7 @@ impl Action {
             Action::CycleLayout => "switch the layout preset",
             Action::Warp => "jump to anything on screen",
             Action::ContextMenu => "open the context menu",
+            Action::MenuBar => "show the menu bar",
             Action::FocusPane(n) => FOCUS_PANE_DESCRIPTIONS
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -743,9 +749,11 @@ impl Action {
             | Action::Hover
             | Action::NextProblem
             | Action::RestartLanguageServers => Group::Code,
-            Action::Quit | Action::OpenCommandPalette | Action::OpenMenu | Action::ContextMenu => {
-                Group::App
-            }
+            Action::Quit
+            | Action::OpenCommandPalette
+            | Action::OpenMenu
+            | Action::ContextMenu
+            | Action::MenuBar => Group::App,
         }
     }
 }

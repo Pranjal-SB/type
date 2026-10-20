@@ -459,7 +459,7 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                 }
 
                 // The context menu, for the same reason.
-                if app.route_context_mouse(m, area)? {
+                if app.route_context_mouse(m, area)? || app.route_bar_mouse(m, area)? {
                     return finish(app, events, changed);
                 }
 

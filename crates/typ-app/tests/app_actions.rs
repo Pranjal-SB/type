@@ -230,6 +230,12 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             let rows = app.context_rows().expect("no context menu");
             assert!(rows.contains(&Action::Copy), "{rows:?}");
         },
+        // The groups on the top row, nothing dropped down yet.
+        Action::MenuBar => |app, a| {
+            run(app, a);
+            let bar = app.menu_bar().expect("no menu bar");
+            assert_eq!(bar, (typ_core::Group::Edit, None));
+        },
         Action::OpenMenu => |app, a| {
             run(app, a);
             assert_eq!(app.pending_prefix(), Some("ctrl+k"));

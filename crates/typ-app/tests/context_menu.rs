@@ -134,6 +134,11 @@ fn shift_f10_in_the_editor_lists_edit_and_code_rows() {
     let shown = rows(&app);
     assert!(shown.contains(&Action::Copy), "{shown:?}");
     assert!(shown.contains(&Action::GotoDefinition), "{shown:?}");
+    assert!(
+        app.status_left().contains("type to filter"),
+        "{}",
+        app.status_left()
+    );
     assert!(!shown.contains(&Action::CloseTab), "{shown:?}");
     // Moving the caret is typing, not something anyone right-clicks for.
     assert!(
@@ -223,8 +228,13 @@ fn right_click_in_the_text_lists_the_text_rows() {
 #[test]
 fn a_click_elsewhere_closes_it_and_clicks_nothing() {
     let mut app = app("elsewhere");
-    press(&mut app, KeyCode::F(10), KeyModifiers::SHIFT);
     let tab = target(&app, TargetKind::Tab { pane: 0, tab: 0 });
+    press(&mut app, KeyCode::F(10), KeyModifiers::SHIFT);
+    assert!(
+        app.targets(FRAME)
+            .iter()
+            .all(|t| matches!(t.kind, TargetKind::FloatRow(_)))
+    );
     mouse(&mut app, MouseButton::Left, tab.point);
     assert!(app.context_rows().is_none());
     assert_eq!(app.active_tab(), 2, "the closing click also switched tabs");

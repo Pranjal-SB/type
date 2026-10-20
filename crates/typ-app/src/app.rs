@@ -7,6 +7,8 @@ mod dispatch;
 mod docking;
 mod door;
 pub(crate) mod focus;
+/// The menu bar.
+mod menu_bar;
 pub(crate) mod panes;
 mod picker;
 mod render;
@@ -210,6 +212,8 @@ pub struct App {
     warp: Option<warp::Warp>,
     /// The context menu, while it is up. It takes the keyboard.
     context: Option<crate::float_menu::FloatMenu>,
+    /// The menu bar, while it is up. It takes the keyboard.
+    bar: Option<menu_bar::MenuBar>,
 }
 
 /// The workspace watch, from the render thread's side.
@@ -435,6 +439,7 @@ impl App {
             teaching: None,
             warp: None,
             context: None,
+            bar: None,
         })
     }
 
@@ -493,6 +498,10 @@ impl App {
     fn status_message(&self) -> Option<String> {
         if let Some(hint) = self.warp_hint() {
             return Some(hint);
+        }
+        // While a float is open, the left half shows its keys (interface §8).
+        if let Some(hint) = self.float_hint() {
+            return Some(hint.to_string());
         }
         // The prompt outranks any message: while it is open it is the only
         // thing the user is looking at.
@@ -597,6 +606,7 @@ impl App {
         self.menu = None;
         self.warp = None;
         self.context = None;
+        self.bar = None;
     }
 
     /// Quit, unless a panel has something to confirm first.
