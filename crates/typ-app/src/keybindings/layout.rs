@@ -44,6 +44,11 @@ pub(super) enum Target {
     /// The float's two buttons.
     Replace,
     Cancel,
+    /// The search row's switch between the list and the keyboard.
+    Toggle,
+    /// A chip of the keyboard's strip, and a key on it.
+    Strip(usize),
+    BoardKey(usize, usize),
 }
 
 /// The float's size.
@@ -68,6 +73,9 @@ impl KeysView {
     /// then a line a row.
     fn lines(&self) -> Vec<Item> {
         let mut out = Vec::new();
+        if self.board.is_some() {
+            return out;
+        }
         let mut group = None;
         for row in self.visible() {
             let label = row.1.group().label();
@@ -88,6 +96,15 @@ impl KeysView {
             ("ctrl+r find", Target::Capture),
             ("ctrl+o keys.toml", Target::OpenRaw),
         ]
+    }
+
+    /// The search row's switch, saying where it goes.
+    fn toggle_text(board: bool) -> &'static str {
+        if board {
+            "ctrl+t list"
+        } else {
+            "ctrl+t keyboard"
+        }
     }
 
     /// Where the key column starts on a row line.
@@ -142,6 +159,13 @@ impl KeysView {
                 let width = KEY_WIDTH.min(rect.right().saturating_sub(x));
                 targets.push((Rect::new(x, rect.y, width, 1), Target::Key(binding.clone())));
             }
+        }
+        let toggle = Self::toggle_text(self.board.is_some());
+        let width = toggle.len() as u16;
+        let x = area.right().saturating_sub(width + 1).max(area.x);
+        targets.push((Rect::new(x, area.y, width, search.height), Target::Toggle));
+        if let Some(board) = self.board {
+            targets.extend(Self::board_targets(area, board));
         }
         let float = self.recording.as_ref().map(|_| Self::float_area(area));
         if let Some(float) = float {
@@ -201,7 +225,9 @@ impl KeysView {
         self.keep_selection_in_view(Self::list_area(area).height as usize);
         let geometry = self.geometry(area);
 
-        if self.capturing {
+        if self.board.is_some() {
+            self.draw_board(area, &geometry.targets, buf, ctx);
+        } else if self.capturing {
             search_row(geometry.search, buf, ctx, true, "", CAPTURE_HINT);
         } else {
             let has_keys = self.selected.is_none();
@@ -231,6 +257,11 @@ impl KeysView {
             .map(|(rect, _)| *rect)
             .collect();
         draw_footer(buf, ctx, &texts, &placed);
+        if let Some((rect, _)) = geometry.targets.iter().find(|(_, t)| *t == Target::Toggle) {
+            let style = Style::default().fg(theme.line_number_fg).bg(theme.bg);
+            let text = Self::toggle_text(self.board.is_some());
+            buf.set_stringn(rect.x, rect.y, text, rect.width as usize, style);
+        }
         if let (Some(float), Some(recording)) = (geometry.float, &self.recording) {
             typ_core::chrome::scrim(buf, area, theme.scrim);
             self.draw_float(float, buf, recording, ctx);

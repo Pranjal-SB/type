@@ -5,12 +5,14 @@
 //! `OpenWith` on the `keys.toml` it reads, builds the keymap from it the way
 //! `main` does, and talks to the app only in `PanelEvent`s (invariant 5).
 //! `layout.rs` is its one geometry, for the drawing and the clicks alike;
-//! `record.rs` records a key and writes it.
+//! `record.rs` records a key and writes it; `keyboard.rs` is the same
+//! bindings on a drawn keyboard.
 //!
 //! One layer exists, global, so the layer column says so on every row and a
 //! conflict is a user row that took a chord the defaults gave to something
 //! else (`controls.md` §3's panel layers are not built).
 
+mod keyboard;
 mod layout;
 mod record;
 
@@ -23,6 +25,7 @@ use ratatui::layout::Rect;
 use typ_core::{Action, Group, HandlerId, KeyChord, Keymap, Panel, PanelEvent, RenderContext};
 
 use crate::config::load_keymap;
+use keyboard::Board;
 use layout::{Item, Target};
 use record::Recording;
 
@@ -53,6 +56,8 @@ enum Key {
     Reset,
     Undo,
     OpenRaw,
+    /// `ctrl+t`: the keyboard view.
+    Board,
 }
 
 const KEYS: &[(&str, Key)] = &[
@@ -69,6 +74,7 @@ const KEYS: &[(&str, Key)] = &[
     ("r", Key::Reset),
     ("ctrl+z", Key::Undo),
     ("ctrl+o", Key::OpenRaw),
+    ("ctrl+t", Key::Board),
 ];
 
 pub struct KeysView {
@@ -94,6 +100,8 @@ pub struct KeysView {
     undo: Vec<Option<String>>,
     /// A change the app has not taken yet.
     changed: bool,
+    /// The keyboard view, while it is up instead of the list.
+    board: Option<Board>,
 }
 
 impl KeysView {
@@ -111,6 +119,7 @@ impl KeysView {
             recording: None,
             undo: Vec::new(),
             changed: false,
+            board: None,
         };
         view.reload();
         view
@@ -300,6 +309,7 @@ impl KeysView {
             Key::Reset => return self.reset(),
             Key::Undo => return self.undo(),
             Key::OpenRaw => return self.open_raw(),
+            Key::Board => return self.toggle_board(),
         }
         vec![PanelEvent::NeedsRedraw]
     }
@@ -331,6 +341,8 @@ impl KeysView {
                 Target::Reset => self.reset(),
                 Target::Undo => self.undo(),
                 Target::OpenRaw => self.open_raw(),
+                Target::Toggle => self.toggle_board(),
+                Target::Strip(_) | Target::BoardKey(..) => self.board_click(&target),
                 Target::Replace | Target::Cancel => Vec::new(),
             };
         }
@@ -370,6 +382,9 @@ impl Panel for KeysView {
         if self.capturing {
             self.captured(&chord);
             return vec![PanelEvent::NeedsRedraw];
+        }
+        if self.board.is_some() {
+            return self.board_key(&chord);
         }
         let plain = match chord.raw.code {
             KeyCode::Char(c)
@@ -415,7 +430,7 @@ impl Panel for KeysView {
     }
 
     fn cursor_position(&self, panel_area: Rect) -> Option<(u16, u16)> {
-        if self.selected.is_some() || self.recording.is_some() {
+        if self.selected.is_some() || self.recording.is_some() || self.board.is_some() {
             return None;
         }
         let search = self.geometry(panel_area).search;
