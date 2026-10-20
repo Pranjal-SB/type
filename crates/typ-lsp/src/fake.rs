@@ -69,6 +69,11 @@ struct Flags {
     /// Ask the client to create the progress token first, which is a *request*
     /// and hangs the server if nobody answers it.
     progress_create: bool,
+    /// Leave `completionProvider` out of the capabilities.
+    no_completion: bool,
+    /// Hold each completion answer until the next `didChange` arrives, so it
+    /// describes a document the client has already moved past.
+    complete_late: bool,
     garbage: bool,
     exit_now: bool,
     sleep: bool,
@@ -104,6 +109,8 @@ impl Flags {
             no_definition: has("--no-definition"),
             progress: has("--progress") || has("--progress-create"),
             progress_create: has("--progress-create"),
+            no_completion: has("--no-completion"),
+            complete_late: has("--complete-late"),
             garbage: has("--garbage"),
             exit_now: has("--exit-now"),
             sleep: has("--sleep"),
@@ -123,6 +130,9 @@ fn capabilities(flags: &Flags) -> serde_json::Value {
         "definitionProvider": true,
         "hoverProvider": true,
     });
+    if !flags.no_completion {
+        caps["completionProvider"] = serde_json::json!({ "triggerCharacters": ["."] });
+    }
     if flags.pull {
         caps["diagnosticProvider"] = serde_json::json!({
             "identifier": "fake-native",
@@ -164,6 +174,17 @@ fn progress_burst(out: &mut impl Write) {
         "fetching",
         serde_json::json!({ "kind": "begin", "title": "Fetching" }),
     );
+}
+
+/// What `textDocument/completion` answers: two functions, one with docs.
+fn completion() -> serde_json::Value {
+    serde_json::json!({
+        "isIncomplete": false,
+        "items": [
+            { "label": "foo", "kind": 3, "detail": "fn foo()", "documentation": "Does foo." },
+            { "label": "format", "kind": 3, "detail": "fn format(s: &str)" },
+        ],
+    })
 }
 
 /// A URI naming `name` in the same directory as `uri`.
@@ -281,6 +302,8 @@ pub fn run() {
     let mut open_uri = String::new();
     let mut version = 0i64;
     let mut refusals = 0usize;
+    // A completion answer waiting for the next `didChange`.
+    let mut held: Option<lsp_server::RequestId> = None;
 
     while let Ok(Some(message)) = Message::read(&mut input) {
         seen += 1;
@@ -313,6 +336,10 @@ pub fn run() {
                     })
                     .write(&mut out);
                     let _ = out.flush();
+                    continue;
+                }
+                if method == "textDocument/completion" && flags.complete_late {
+                    held = Some(id);
                     continue;
                 }
                 let result = match method.as_str() {
@@ -350,6 +377,7 @@ pub fn run() {
                             },
                         })
                     }
+                    "textDocument/completion" => completion(),
                     "textDocument/hover" if flags.hover_empty => serde_json::Value::Null,
                     "textDocument/hover" if flags.hover_plain => serde_json::json!({
                         "contents": "plain words",
@@ -372,6 +400,16 @@ pub fn run() {
             Message::Notification(Notification { method, params }) => {
                 if method == "exit" {
                     return;
+                }
+                if method == "textDocument/didChange"
+                    && let Some(id) = held.take()
+                {
+                    let _ = Message::Response(Response {
+                        id,
+                        response_result: Ok(completion()),
+                    })
+                    .write(&mut out);
+                    let _ = out.flush();
                 }
                 if let Some(doc) = params.get("textDocument") {
                     if let Some(uri) = doc.get("uri").and_then(|u| u.as_str()) {

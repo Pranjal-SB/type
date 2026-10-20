@@ -1,6 +1,7 @@
 use std::path::Path;
 
 mod background;
+mod complete;
 /// The context menu.
 mod context;
 mod dispatch;
@@ -221,6 +222,8 @@ pub struct App {
     context: Option<crate::float_menu::FloatMenu>,
     /// The menu bar, while it is up. It takes the keyboard.
     bar: Option<menu_bar::MenuBar>,
+    /// The completion list, and whether a key has asked for one.
+    completing: complete::Completing,
 }
 
 /// The workspace watch, from the render thread's side.
@@ -533,6 +536,7 @@ impl App {
             index_requested: false,
             lsp: crate::lsp::Lsp::new(root),
             hover: None,
+            completing: complete::Completing::default(),
             menu: None,
             teaching: None,
             warp: None,

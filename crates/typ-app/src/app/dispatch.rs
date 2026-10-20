@@ -175,6 +175,9 @@ impl App {
             && !is_chorded
             && let Some(events) = self.focused_mut().apply_action(Action::InsertChar(c))
         {
+            if self.focus == Focus::Editor {
+                self.completion_typed(c);
+            }
             return self.apply(events);
         }
 

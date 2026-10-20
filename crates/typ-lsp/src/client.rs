@@ -453,6 +453,16 @@ fn initialize_params(root: &Path) -> serde_json::Value {
                 },
                 "definition": { "dynamicRegistration": false },
                 "hover": { "contentFormat": ["markdown", "plaintext"] },
+                // **No snippets.** TYPE has no tab stops to put `$1` in, so a
+                // server that sent one would have it typed literally. Said
+                // here so rust-analyzer sends plain text instead of guessing.
+                "completion": {
+                    "completionItem": {
+                        "snippetSupport": false,
+                        "documentationFormat": ["markdown", "plaintext"],
+                    },
+                    "contextSupport": true,
+                },
             },
             "window": { "workDoneProgress": true },
         },

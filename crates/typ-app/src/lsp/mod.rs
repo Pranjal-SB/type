@@ -32,7 +32,7 @@ mod reply;
 mod requests;
 
 pub use config::ServerConfig;
-pub(crate) use reply::{definition_target, hover_text, to_diagnostic};
+pub(crate) use reply::{completion_items, definition_target, hover_text, to_diagnostic};
 pub(crate) use requests::{Ask, CONTENT_MODIFIED, MAX_RETRIES, NoAnswer, Pending};
 
 /// One running server, and everything decided about it.
@@ -405,6 +405,25 @@ impl Lsp {
     fn language_id(&self, id: ServerId) -> Option<String> {
         let server = self.servers.get(id.0 as usize)?;
         Some(self.configs.get(server.config)?.language_id.clone())
+    }
+
+    /// The characters a document's server asks to be asked on, as a
+    /// capability's `triggerCharacters` names them. Empty without a server.
+    pub(crate) fn triggers(&self, path: &Path, capability: &str) -> Vec<char> {
+        let Some(doc) = self.docs.get(path) else {
+            return Vec::new();
+        };
+        self.servers
+            .get(doc.server.0 as usize)
+            .and_then(|s| s.client.as_ref())
+            .and_then(|c| c.capabilities())
+            .and_then(|caps| caps.get(capability)?.get("triggerCharacters")?.as_array())
+            .map_or_else(Vec::new, |chars| {
+                chars
+                    .iter()
+                    .filter_map(|c| c.as_str()?.chars().next())
+                    .collect()
+            })
     }
 
     fn client(&mut self, id: ServerId) -> Option<&mut Client> {

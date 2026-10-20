@@ -25,6 +25,12 @@ pub(crate) struct Pending {
     pub asked_at: (PathBuf, typ_buffer::Position),
     /// How many times this question has already been asked and cancelled.
     pub retries: u8,
+    /// The document version the server held when it was asked.
+    ///
+    /// What a completion answer is checked against: the caret moves with
+    /// every key typed, so where it was says nothing, and the version says
+    /// exactly whether the server was looking at the text on screen.
+    pub version: i32,
 }
 
 /// Ask again this many times before giving up on a cancelled request.
@@ -43,6 +49,7 @@ pub(crate) const CONTENT_MODIFIED: i32 = -32801;
 pub(crate) enum Ask {
     Definition,
     Hover,
+    Completion,
 }
 
 impl Lsp {
@@ -58,19 +65,17 @@ impl Lsp {
         char_index: usize,
         rope: &Rope,
         retries: u8,
+        context: Option<serde_json::Value>,
     ) -> Result<(), NoAnswer> {
         let Some(doc) = self.docs.get(path) else {
             return Err(self.why_not_open(path));
         };
-        let (id, uri) = (doc.server, doc.uri.clone());
+        let (id, uri, version) = (doc.server, doc.uri.clone(), doc.version);
         let encoding = self.encoding(id);
-        let capability = match kind {
-            Ask::Definition => "definitionProvider",
-            Ask::Hover => "hoverProvider",
-        };
-        let method = match kind {
-            Ask::Definition => "textDocument/definition",
-            Ask::Hover => "textDocument/hover",
+        let (capability, method) = match kind {
+            Ask::Definition => ("definitionProvider", "textDocument/definition"),
+            Ask::Hover => ("hoverProvider", "textDocument/hover"),
+            Ask::Completion => ("completionProvider", "textDocument/completion"),
         };
 
         let Some(client) = self.client(id) else {
@@ -84,13 +89,14 @@ impl Lsp {
         }
 
         let position = typ_lsp::to_lsp(encoding, rope.slice(..), char_index);
-        let request = client.request(
-            method,
-            serde_json::json!({
-                "textDocument": { "uri": uri },
-                "position": { "line": position.line, "character": position.character },
-            }),
-        );
+        let mut params = serde_json::json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": position.line, "character": position.character },
+        });
+        if let Some(context) = context {
+            params["context"] = context;
+        }
+        let request = client.request(method, params);
         self.tally(method, true);
         self.pending.push(Pending {
             id: request,
@@ -98,6 +104,7 @@ impl Lsp {
             kind,
             asked_at: (path.to_path_buf(), typ_buffer::Position::default()),
             retries,
+            version,
         });
         Ok(())
     }
@@ -130,6 +137,11 @@ impl Lsp {
         if let Some(last) = self.pending.last_mut() {
             last.asked_at.1 = at;
         }
+    }
+
+    /// Whether a question of this kind is waiting for its answer.
+    pub(crate) fn in_flight(&self, kind: Ask) -> bool {
+        self.pending.iter().any(|p| p.kind == kind)
     }
 
     /// Abandon any question of this kind that is still unanswered.
@@ -202,6 +214,7 @@ impl NoAnswer {
             NoAnswer::Refused => "The language server refused this workspace.",
             NoAnswer::Empty(Ask::Definition) => "No definition found.",
             NoAnswer::Empty(Ask::Hover) => "No hover information here.",
+            NoAnswer::Empty(Ask::Completion) => "No completions here.",
         }
     }
 }
@@ -219,6 +232,7 @@ mod tests {
             kind,
             asked_at: (PathBuf::from("a.rs"), typ_buffer::Position::default()),
             retries: 0,
+            version: 0,
         }
     }
 

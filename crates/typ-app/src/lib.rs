@@ -1,6 +1,7 @@
 pub mod app;
 pub mod backend;
 pub mod capability;
+pub mod completion;
 pub mod config;
 pub mod dock;
 pub mod float_menu;

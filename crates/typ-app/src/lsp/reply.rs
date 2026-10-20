@@ -155,3 +155,79 @@ fn flatten_markdown(text: &str) -> String {
     }
     out.trim().to_string()
 }
+
+/// The items of a `textDocument/completion` answer, in the server's order,
+/// and whether it said the list is incomplete.
+///
+/// **Three shapes**: `CompletionItem[]`, `CompletionList` and null. The order
+/// is `sortText`, falling back to the label, which is the order the server
+/// meant the list read in before anything is typed.
+pub(crate) fn completion_items(result: &serde_json::Value) -> (Vec<crate::completion::Item>, bool) {
+    let (items, incomplete) = match result {
+        serde_json::Value::Array(items) => (items.as_slice(), false),
+        serde_json::Value::Object(_) => (
+            result
+                .get("items")
+                .and_then(|i| i.as_array())
+                .map_or(&[][..], Vec::as_slice),
+            result
+                .get("isIncomplete")
+                .and_then(|i| i.as_bool())
+                .unwrap_or(false),
+        ),
+        _ => (&[][..], false),
+    };
+    let mut keyed: Vec<(String, crate::completion::Item)> = items
+        .iter()
+        .filter_map(|item| {
+            let decoded = completion_item(item)?;
+            let sort = text_of(item, "sortText").unwrap_or_else(|| decoded.label.clone());
+            Some((sort, decoded))
+        })
+        .collect();
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    (
+        keyed.into_iter().map(|(_, item)| item).collect(),
+        incomplete,
+    )
+}
+
+fn text_of(value: &serde_json::Value, field: &str) -> Option<String> {
+    value.get(field)?.as_str().map(str::to_string)
+}
+
+/// One item, or `None` when it has no label to show.
+///
+/// The text it puts in is the `textEdit`'s, then `insertText`, then the label:
+/// the specification's own order. An `InsertReplaceEdit` is taken by its
+/// insert range, which is what typing over the rest of a word would keep.
+fn completion_item(item: &serde_json::Value) -> Option<crate::completion::Item> {
+    let label = text_of(item, "label")?;
+    let edit = item.get("textEdit");
+    let edit_text = edit.and_then(|e| text_of(e, "newText"));
+    let edit_start = edit
+        .and_then(|e| e.get("range").or_else(|| e.get("insert")))
+        .and_then(|range| range.get("start"))
+        .and_then(|start| {
+            Some(typ_lsp::lsp_types::Position {
+                line: start.get("line")?.as_u64()? as u32,
+                character: start.get("character")?.as_u64()? as u32,
+            })
+        });
+    let docs = item
+        .get("documentation")
+        .and_then(marked_string)
+        .map(|text| flatten_markdown(&text))
+        .filter(|text| !text.is_empty());
+    Some(crate::completion::Item {
+        filter: text_of(item, "filterText").unwrap_or_else(|| label.clone()),
+        text: edit_text
+            .or_else(|| text_of(item, "insertText"))
+            .unwrap_or_else(|| label.clone()),
+        kind: item.get("kind").and_then(|k| k.as_u64()),
+        detail: text_of(item, "detail"),
+        docs,
+        edit_start: edit_start.filter(|_| edit.is_some()),
+        label,
+    })
+}
