@@ -326,8 +326,12 @@ impl App {
                         editor.goto(line, col);
                     }
                 }
-                PanelEvent::OpenWith { path, .. } => {
-                    self.open_or_report(&path);
+                PanelEvent::OpenWith { handler, path } => {
+                    if handler == typ_registry::EDITOR {
+                        self.open_or_report(&path);
+                    } else {
+                        self.open_view(handler, &path);
+                    }
                 }
                 // Redraw happens every loop pass in the walking skeleton.
                 PanelEvent::NeedsRedraw => {}

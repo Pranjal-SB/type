@@ -27,6 +27,11 @@ impl App {
     /// remembered the answer are both gone. The guard moves to *closing* a tab,
     /// where the work is actually at risk.
     pub fn open_path(&mut self, path: &Path) -> Result<()> {
+        let handler = self.registry.handler_for(path);
+        if self.registry.view(handler).is_some() {
+            self.open_view(handler, path);
+            return Ok(());
+        }
         if let Some((pane, index)) = self.tab_for(path) {
             self.pane = pane;
             self.activate_tab(index);
@@ -110,6 +115,34 @@ impl App {
         self.watch_tab(self.pane, self.panes[self.pane].active);
         self.settle_active_tab();
         Ok(())
+    }
+
+    /// Open `path` in the view `handler` registered, or switch to it if it
+    /// is already open. A handler with no view says so on the status bar.
+    ///
+    /// A view joins the current pane beside whatever is there: an untitled
+    /// scratch buffer stays, since a view is not a file it was waiting for.
+    pub(crate) fn open_view(&mut self, handler: typ_core::HandlerId, path: &Path) {
+        if let Some((pane, index)) = self.find_tab(|tab| tab.is_view(handler, path)) {
+            self.pane = pane;
+            self.activate_tab(index);
+            self.set_focus(Focus::Editor);
+            return;
+        }
+        let Some(build) = self.registry.view(handler) else {
+            self.status = Some(format!(
+                "Could not open {}: no {} viewer is available yet",
+                path.display(),
+                handler.0
+            ));
+            return;
+        };
+        let tab = Tab::view(handler, path, build(path));
+        let pane = &mut self.panes[self.pane];
+        pane.tabs.push(tab);
+        pane.active = pane.tabs.len() - 1;
+        self.settle_active_tab();
+        self.mark_dirty();
     }
 
     /// Make the tab at `index` the visible one.

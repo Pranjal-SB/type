@@ -40,7 +40,7 @@ impl App {
                     .panel()
                     .cursor_position(content)
                     .unwrap_or((content.x, content.y));
-                self.show_context(TEXT, anchor);
+                self.show_context(self.text_groups(), anchor);
             }
             Focus::Tree => {
                 let selected = TargetKind::TreeRow(self.tree.selected_index());
@@ -99,10 +99,20 @@ impl App {
                     return;
                 };
                 self.make_current(pane.index);
-                TEXT
+                self.text_groups()
             }
         };
         self.show_context(groups, at);
+    }
+
+    /// What the inside of a pane gets: the editing groups over text, the
+    /// tab's own actions over a view, which has no text to edit.
+    fn text_groups(&self) -> &'static [Group] {
+        if self.shown_editor().is_some() {
+            TEXT
+        } else {
+            &[Group::Tabs]
+        }
     }
 
     fn show_context(&mut self, groups: &[Group], anchor: (u16, u16)) {

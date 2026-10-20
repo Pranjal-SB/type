@@ -311,20 +311,42 @@ struct Tab {
     changed_on_disk: bool,
 }
 
-/// What a tab holds.
+/// What a tab holds: a file in the editor, or a view the registry built.
 ///
-/// Only an editor so far. Every path that needs a buffer (save, the servers,
-/// parsing, the watch, the session, a search) asks for one through
-/// [`Tab::editor`] and has its answer for a tab that has none, so a second
-/// kind of tab arrives without a path to find.
+/// Every path that needs a buffer (save, the servers, parsing, the watch, the
+/// session, a search) asks for one through [`Tab::editor`] and skips a view.
+///
+/// The editor is not boxed though it is the large variant: there are as many
+/// of these as there are tabs, and the editor is the one every keystroke
+/// reaches.
+#[allow(clippy::large_enum_variant)]
 enum TabContent {
     Editor(EditorPanel),
+    /// A panel that is not the editor, opened through `OpenWith`. The handler
+    /// and path are what it was opened as, so opening it again finds it.
+    View {
+        handler: typ_core::HandlerId,
+        path: std::path::PathBuf,
+        panel: Box<dyn Panel>,
+    },
 }
 
 impl Tab {
     fn new(panel: EditorPanel) -> Self {
+        Self::holding(TabContent::Editor(panel))
+    }
+
+    fn view(handler: typ_core::HandlerId, path: &Path, panel: Box<dyn Panel>) -> Self {
+        Self::holding(TabContent::View {
+            handler,
+            path: path.to_path_buf(),
+            panel,
+        })
+    }
+
+    fn holding(content: TabContent) -> Self {
         Tab {
-            content: TabContent::Editor(panel),
+            content,
             parsed_revision: None,
             awaited_generation: None,
             last_used: 0,
@@ -337,25 +359,34 @@ impl Tab {
     fn editor(&self) -> Option<&EditorPanel> {
         match &self.content {
             TabContent::Editor(editor) => Some(editor),
+            TabContent::View { .. } => None,
         }
     }
 
     fn editor_mut(&mut self) -> Option<&mut EditorPanel> {
         match &mut self.content {
             TabContent::Editor(editor) => Some(editor),
+            TabContent::View { .. } => None,
         }
+    }
+
+    /// A view tab, when this is the view `handler` opened on `path`.
+    fn is_view(&self, handler: typ_core::HandlerId, path: &Path) -> bool {
+        matches!(&self.content, TabContent::View { handler: h, path: p, .. } if *h == handler && p == path)
     }
 
     /// Whatever the tab holds, as the panel it draws and routes keys to.
     fn panel(&self) -> &dyn Panel {
         match &self.content {
             TabContent::Editor(editor) => editor,
+            TabContent::View { panel, .. } => panel.as_ref(),
         }
     }
 
     fn panel_mut(&mut self) -> &mut dyn Panel {
         match &mut self.content {
             TabContent::Editor(editor) => editor,
+            TabContent::View { panel, .. } => panel.as_mut(),
         }
     }
 
@@ -368,6 +399,7 @@ impl Tab {
     fn name(&self) -> String {
         match &self.content {
             TabContent::Editor(editor) => editor.file_name(),
+            TabContent::View { panel, .. } => panel.title(),
         }
     }
 }
@@ -599,7 +631,7 @@ impl App {
     /// a change of source rather than a rewrite of content.
     pub fn status_segments(&self) -> Vec<Segment> {
         let Some(editor) = self.shown_editor() else {
-            return Vec::new();
+            return self.view_segments();
         };
         let cursor = editor.cursor();
         let path = editor.path();
@@ -621,6 +653,37 @@ impl App {
             zoomed: self.zoomed().is_some(),
             layout: self.preset.name(),
         })
+    }
+
+    /// A view's segments: its name, and what the bar says about the layout
+    /// and the servers. A view has no cursor, line ending or indent to report.
+    fn view_segments(&self) -> Vec<Segment> {
+        use crate::status::SegmentId;
+        let name = self.panes[self.pane].shown().name();
+        segments(&StatusFacts {
+            file_name: &name,
+            modified: false,
+            file_type: None,
+            line_ending: "",
+            indent_width: 0,
+            selection_count: 1,
+            line: 0,
+            col: 0,
+            total_lines: 1,
+            errors: 0,
+            warnings: 0,
+            progress: &self.lsp.progress(),
+            zoomed: self.zoomed().is_some(),
+            layout: self.preset.name(),
+        })
+        .into_iter()
+        .filter(|segment| {
+            matches!(
+                segment.id,
+                SegmentId::Zoom | SegmentId::FileName | SegmentId::Progress | SegmentId::Layout
+            )
+        })
+        .collect()
     }
 
     /// How many diagnostics of one severity the open file has.
