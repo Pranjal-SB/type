@@ -97,7 +97,7 @@ fn click(app: &mut App, (column, row): (u16, u16), area: Rect) {
 }
 
 #[test]
-fn ctrl_k_comma_opens_the_settings_tab_on_the_config_directorys_file() {
+fn ctrl_k_comma_opens_the_settings_tab_on_the_config_file() {
     let (dir, _) = fixture("by-key", "");
     // SAFETY: the only test in this binary that reads the variable, and every
     // other one passes its path explicitly.
