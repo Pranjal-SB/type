@@ -2163,7 +2163,7 @@ dependencies = [
 
 [[package]]
 name = "typ-app"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -2186,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "typ-buffer"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "anyhow",
  "clipboard-win",
@@ -2199,7 +2199,7 @@ dependencies = [
 
 [[package]]
 name = "typ-core"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -2214,7 +2214,7 @@ dependencies = [
 
 [[package]]
 name = "typ-editor"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "anyhow",
  "mimalloc",
@@ -2224,7 +2224,7 @@ dependencies = [
 
 [[package]]
 name = "typ-find"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "grep-matcher",
  "grep-regex",
@@ -2236,7 +2236,7 @@ dependencies = [
 
 [[package]]
 name = "typ-lsp"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "gen-lsp-types",
  "libc",
@@ -2249,7 +2249,7 @@ dependencies = [
 
 [[package]]
 name = "typ-panel-editor"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -2264,7 +2264,7 @@ dependencies = [
 
 [[package]]
 name = "typ-panel-tree"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -2274,7 +2274,7 @@ dependencies = [
 
 [[package]]
 name = "typ-picker"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -2286,14 +2286,14 @@ dependencies = [
 
 [[package]]
 name = "typ-registry"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "typ-core",
 ]
 
 [[package]]
 name = "typ-syntax"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "ropey",
  "tree-house",

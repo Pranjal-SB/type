@@ -477,3 +477,97 @@ fn opening_the_keybindings_tab_stays_inside_a_frame() {
         "opening the keybindings tab costs {best:?}, over the {BUDGET_US} µs frame budget"
     );
 }
+
+/// `count` items a word starting `ed` matches, with kinds and details as a
+/// real server sends them.
+fn completion_items(count: usize) -> Vec<typ_app::completion::Item> {
+    (0..count)
+        .map(|i| typ_app::completion::Item {
+            label: format!("edit_{i}"),
+            kind: Some(3),
+            detail: Some(format!("fn edit_{i}(&mut self)")),
+            docs: Some("Edits the thing.".to_string()),
+            filter: format!("edit_{i}"),
+            text: format!("edit_{i}"),
+            edit_start: None,
+        })
+        .collect()
+}
+
+/// The 50k-line app with the caret after `ed` at the end of line 0, and a
+/// completion list of `count` items up over it.
+fn completing_app(name: &str, count: usize) -> App {
+    let mut app = big_app(name);
+    let end = app.editor().buffer().line_grapheme_count(0);
+    app.editor_mut().goto(0, end);
+    for c in [' ', 'e', 'd'] {
+        let key = AppEvent::Input(Event::Key(KeyEvent::new(
+            KeyCode::Char(c),
+            KeyModifiers::NONE,
+        )));
+        step_batch(&mut app, vec![key], AREA).unwrap();
+    }
+    app.show_completion_for_test(completion_items(count));
+    assert_eq!(app.completion_labels().map(|l| l.len()), Some(count));
+    app
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored --nocapture"]
+fn typing_under_a_completion_list_stays_inside_a_keystroke() {
+    // `InsertChar` with 250 items up: each key edits, refilters the list by
+    // the picker's ranking, and paints. `i` then backspace, so the word and
+    // the list stay the same size from one round to the next.
+    let _guard = exclusive();
+    let mut app = completing_app("completion-keys", 250);
+    let mut terminal = Terminal::new(TestBackend::new(AREA.width, AREA.height)).unwrap();
+    draw(&mut app, &mut terminal); // warm
+    let key = |code| AppEvent::Input(Event::Key(KeyEvent::new(code, KeyModifiers::NONE)));
+
+    let rounds = 20u32;
+    let mut best = std::time::Duration::MAX;
+    for _ in 0..5 {
+        let start = Instant::now();
+        for _ in 0..rounds {
+            for code in [KeyCode::Char('i'), KeyCode::Backspace] {
+                step_batch(&mut app, vec![key(code)], AREA).unwrap();
+                draw(&mut app, &mut terminal);
+            }
+        }
+        best = best.min(start.elapsed() / (rounds * 2));
+    }
+    assert!(app.completion_labels().is_some(), "the list closed");
+
+    println!("keystroke under a 250-item completion list: {best:?}");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "a keystroke under the list costs {best:?}, over the {BUDGET_US} µs budget"
+    );
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored --nocapture"]
+fn a_frame_with_ghost_text_stays_inside_a_frame() {
+    let _guard = exclusive();
+    let mut app = completing_app("completion-ghost", 250);
+    assert!(app.ghost_text().is_some(), "no ghost to draw");
+    let mut terminal = Terminal::new(TestBackend::new(AREA.width, AREA.height)).unwrap();
+    draw(&mut app, &mut terminal); // warm
+
+    let frames = 20;
+    let mut best = std::time::Duration::MAX;
+    for _ in 0..5 {
+        let start = Instant::now();
+        for _ in 0..frames {
+            app.mark_dirty();
+            draw(&mut app, &mut terminal);
+        }
+        best = best.min(start.elapsed() / frames);
+    }
+
+    println!("frame with ghost text and the list: {best:?}");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "a frame with ghost text costs {best:?}, over the {BUDGET_US} µs frame budget"
+    );
+}

@@ -3,6 +3,42 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.4.6] - 2026-10-21 (M4.6 Completion, half of shell slice 6)
+
+The completion and signature help surfaces from `docs/design/interface.md` §8 2c.
+
+### Added
+- **Completion.** Typing a word, or one of the server's trigger characters, asks the server
+  once at the end of the batch, after the change it describes has been sent; never more than one
+  question is in flight, and an answer for an older version of the file is dropped and the word
+  asked about again. The list floats one row under the word with each item's kind and detail,
+  narrows as you type by the picker's ranking without asking again (unless the server said its
+  list was incomplete), and closes when nothing matches or the caret leaves the word. `Tab`,
+  `Enter` or a click accepts, `↑` `↓` choose, `Esc` or a click elsewhere closes, and the status
+  bar says so while it is up. Its rows are warp targets.
+- **Ghost text.** The chosen item's rest after what you typed, in the receded colour, pushing the
+  rest of the line along rather than covering it.
+- **A docs column** beside the list at 100 columns and wider: the item's detail and docs.
+- **Accepting is one undo**, through `accept_completion`, a named action: the server's `textEdit`
+  is placed by its own position encoding, so a CJK word lands over itself, and every caret gets
+  the word.
+- **Signature help.** `(` and `,`, or whatever the server names, show the call's signature in an
+  unfocused float above the caret with the active parameter in the accent. `)`, `Esc` or the
+  caret leaving the call put it away. It never takes a key.
+
+### Changed
+- `lsp/mod.rs` split three ways: asking (`requests.rs`), reading answers (`reply.rs`) and
+  progress (`progress.rs`) beside keeping servers and documents in step.
+
+### Performance
+- A keystroke with a 250-item list up, 50k-line file, release, best of five: 669 µs against
+  389 µs for the same keystroke on v0.4.5 with no list. A frame with ghost text and the list:
+  554 µs against 395 µs.
+
+### Not in this release
+- Snippets (TYPE declares `snippetSupport: false`), `completionItem/resolve`, a key to ask for
+  completion by hand, and matched letters highlighted in the list.
+
 ## [0.4.5] - 2026-10-21 (M4.5 Keybindings, shell slice 5 shipped)
 
 The keybindings surface from `docs/design/interface.md` §8 4d and §8b, as a tab beside the
@@ -767,7 +803,8 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.5...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.6...HEAD
+[0.4.6]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.6
 [0.4.5]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.5
 [0.4.4]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.4
 [0.4.3]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.3
