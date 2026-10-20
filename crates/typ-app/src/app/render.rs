@@ -54,17 +54,21 @@ impl App {
             .find(|area| area.index == self.pane)
             .map_or(Rect::default(), |area| area.content);
 
-        self.render_status(status_area, frame.buffer_mut());
-        if let (Some(menu), Some(area)) = (&self.menu, menu_area) {
-            menu.render(area, frame.buffer_mut(), &self.theme);
-        }
-
         // Over the body, under the picker. A hover and the overlay are never up
         // together — opening the picker clears the transient state the hover is
         // part of — but the order says which would win if they were.
         self.render_hover(frame, editor_area);
         self.render_context(frame.area(), frame.buffer_mut());
         self.render_bar(frame.area(), frame.buffer_mut());
+
+        // After the floats: a float near the bottom paints its gutter ring one
+        // row past its box, which is the status bar's row, and wiped the keys
+        // the bar was showing for that very float.
+        self.render_status(status_area, frame.buffer_mut());
+        if let (Some(menu), Some(area)) = (&self.menu, menu_area) {
+            menu.render(area, frame.buffer_mut(), &self.theme);
+        }
+        // Last of all but the picker: warp labels sit on status segments too.
         self.render_warp(frame.area(), frame.buffer_mut());
 
         // The overlay draws last, over the body — after the status bar too, so a

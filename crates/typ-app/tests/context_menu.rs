@@ -282,3 +282,17 @@ fn right_click_on_a_selection_opens_the_menu_and_keeps_the_selection() {
     assert!(rows(&app).contains(&Action::Copy));
     assert_eq!(app.editor().selections().primary(), selected);
 }
+
+#[test]
+fn the_menu_s_key_hint_drops_whole_parts_on_a_narrow_bar() {
+    let mut app = app("hint-fit");
+    press(&mut app, KeyCode::F(10), KeyModifiers::SHIFT);
+    let buffer = draw(&mut app);
+    let bar: String = (0..FRAME.width)
+        .map(|x| buffer[(x, FRAME.height - 1)].symbol().to_string())
+        .collect();
+    let left = bar.split("   ").next().unwrap_or("").trim_end();
+    let parts = ["type to filter", "enter runs", "esc closes"];
+    let whole = (1..=parts.len()).any(|n| left == parts[..n].join("  \u{b7}  "));
+    assert!(whole, "the hint was cut mid-part: {bar:?}");
+}

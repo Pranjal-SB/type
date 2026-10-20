@@ -42,6 +42,12 @@ impl App {
         let width = area.width as usize;
         let room = width.saturating_sub(right_width + 2);
         let left = match self.status_message() {
+            // A float's keys are a hint in parts, and drop as the idle hint
+            // does: "type to f" says nothing a whole part would not.
+            Some(message) if message.contains(HINT_GAP) => {
+                let parts: Vec<String> = message.split(HINT_GAP).map(str::to_string).collect();
+                fit_parts(&parts, room)
+            }
             Some(message) => clip_to_cells(&message, room),
             None => fit_parts(&super::hint_parts(&self.keymap), room),
         };
