@@ -361,6 +361,7 @@ impl App {
             }
         }
         self.apply_settings_change();
+        self.apply_keys_change();
         Ok(())
     }
 }

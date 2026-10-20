@@ -8,6 +8,7 @@
 
 use super::App;
 use crate::config::Settings;
+use crate::keybindings::KeysView;
 use crate::settings::SettingsView;
 
 impl App {
@@ -35,6 +36,20 @@ impl App {
             return;
         };
         self.apply_setting(key, &settings, dir.as_deref());
+    }
+
+    /// Take the keymap the keybindings tab on screen wrote, if it wrote one.
+    /// One keymap, so the `ctrl+k` menu, the hint and the palette, which all
+    /// read it, move with the bindings.
+    pub(super) fn apply_keys_change(&mut self) {
+        let panel = self.panes[self.pane].shown_mut().panel_mut();
+        let Some(view) = panel.as_any_mut().downcast_mut::<KeysView>() else {
+            return;
+        };
+        if let Some(keymap) = view.take_changed() {
+            self.keymap = keymap;
+            self.mark_dirty();
+        }
     }
 
     fn apply_setting(&mut self, key: &str, settings: &Settings, dir: Option<&std::path::Path>) {

@@ -4,13 +4,15 @@
 //! A view in the registry's sense, as the settings tab is: it opens through
 //! `OpenWith` on the `keys.toml` it reads, builds the keymap from it the way
 //! `main` does, and talks to the app only in `PanelEvent`s (invariant 5).
-//! `layout.rs` is its one geometry, for the drawing and the clicks alike.
+//! `layout.rs` is its one geometry, for the drawing and the clicks alike;
+//! `record.rs` records a key and writes it.
 //!
 //! One layer exists, global, so the layer column says so on every row and a
 //! conflict is a user row that took a chord the defaults gave to something
 //! else (`controls.md` §3's panel layers are not built).
 
 mod layout;
+mod record;
 
 use std::any::Any;
 use std::path::{Path, PathBuf};
@@ -22,6 +24,7 @@ use typ_core::{Action, Group, HandlerId, KeyChord, Keymap, Panel, PanelEvent, Re
 
 use crate::config::load_keymap;
 use layout::{Item, Target};
+use record::Recording;
 
 /// The handler the keybindings tab registers under.
 pub const KEYBINDINGS: HandlerId = HandlerId("keybindings");
@@ -46,6 +49,10 @@ enum Key {
     Enter,
     /// `ctrl+r`: the next key pressed is the query.
     Capture,
+    Unbind,
+    Reset,
+    Undo,
+    OpenRaw,
 }
 
 const KEYS: &[(&str, Key)] = &[
@@ -58,6 +65,10 @@ const KEYS: &[(&str, Key)] = &[
     ("esc", Key::Escape),
     ("enter", Key::Enter),
     ("ctrl+r", Key::Capture),
+    ("delete", Key::Unbind),
+    ("r", Key::Reset),
+    ("ctrl+z", Key::Undo),
+    ("ctrl+o", Key::OpenRaw),
 ];
 
 pub struct KeysView {
@@ -77,6 +88,12 @@ pub struct KeysView {
     area: Rect,
     /// `ctrl+r` was pressed: the next key is searched for, not run.
     capturing: bool,
+    /// The float that records a key, while it is up.
+    recording: Option<Recording>,
+    /// The file before each change, newest last.
+    undo: Vec<Option<String>>,
+    /// A change the app has not taken yet.
+    changed: bool,
 }
 
 impl KeysView {
@@ -91,6 +108,9 @@ impl KeysView {
             top: 0,
             area: Rect::default(),
             capturing: false,
+            recording: None,
+            undo: Vec::new(),
+            changed: false,
         };
         view.reload();
         view
@@ -259,7 +279,11 @@ impl KeysView {
             Key::Up => self.step(false),
             Key::Down => self.step(true),
             Key::Zone if self.selected.is_some() => self.selected = None,
-            Key::Zone | Key::Enter => self.selected = self.visible().first().cloned(),
+            Key::Enter => match self.selected.clone() {
+                Some(row) => return self.record(row),
+                None => self.selected = self.visible().first().cloned(),
+            },
+            Key::Zone => self.selected = self.visible().first().cloned(),
             Key::Backspace => {
                 self.query.pop();
                 self.selected = None;
@@ -272,6 +296,10 @@ impl KeysView {
             }
             Key::Escape => return Vec::new(),
             Key::Capture => self.capturing = true,
+            Key::Unbind => return self.unbind(),
+            Key::Reset => return self.reset(),
+            Key::Undo => return self.undo(),
+            Key::OpenRaw => return self.open_raw(),
         }
         vec![PanelEvent::NeedsRedraw]
     }
@@ -279,9 +307,31 @@ impl KeysView {
     fn click(&mut self, column: u16, row: u16) -> Vec<PanelEvent> {
         let geometry = self.geometry(self.area);
         let at = (column, row).into();
-        if let Some((_, target)) = geometry.targets.iter().find(|(rect, _)| rect.contains(at)) {
+        let target = geometry
+            .targets
+            .iter()
+            .find(|(rect, _)| rect.contains(at))
+            .map(|(_, target)| target.clone());
+        // The float is modal: a click outside its two buttons does nothing.
+        if self.recording.is_some() {
             return match target {
+                Some(Target::Replace) => self.replace(),
+                Some(Target::Cancel) => {
+                    self.recording = None;
+                    vec![PanelEvent::NeedsRedraw]
+                }
+                _ => Vec::new(),
+            };
+        }
+        if let Some(target) = target {
+            return match target {
+                Target::Key(row) => self.record(row),
                 Target::Capture => self.key(Key::Capture),
+                Target::Unbind => self.unbind(),
+                Target::Reset => self.reset(),
+                Target::Undo => self.undo(),
+                Target::OpenRaw => self.open_raw(),
+                Target::Replace | Target::Cancel => Vec::new(),
             };
         }
         if geometry.search.contains(at) {
@@ -310,10 +360,13 @@ impl Panel for KeysView {
     }
 
     fn captures_keys(&self) -> bool {
-        self.capturing
+        self.capturing || self.recording.is_some()
     }
 
     fn handle_key(&mut self, chord: KeyChord) -> Vec<PanelEvent> {
+        if self.recording.is_some() {
+            return self.recording_key(&chord);
+        }
         if self.capturing {
             self.captured(&chord);
             return vec![PanelEvent::NeedsRedraw];
@@ -334,6 +387,11 @@ impl Panel for KeysView {
             .find(|(name, _)| *name == chord.canonical)
             .map(|(_, key)| *key);
         match (key, plain) {
+            // On the search row a letter is the query, `r` too.
+            (Some(Key::Reset), Some(c)) if self.selected.is_none() => {
+                self.type_char(c);
+                vec![PanelEvent::NeedsRedraw]
+            }
             (Some(key), _) => self.key(key),
             (None, Some(c)) => {
                 self.type_char(c);
@@ -357,7 +415,7 @@ impl Panel for KeysView {
     }
 
     fn cursor_position(&self, panel_area: Rect) -> Option<(u16, u16)> {
-        if self.selected.is_some() {
+        if self.selected.is_some() || self.recording.is_some() {
             return None;
         }
         let search = self.geometry(panel_area).search;

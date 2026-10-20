@@ -83,6 +83,15 @@ pub(crate) fn needs_protocol(chord: &str) -> bool {
     })
 }
 
+/// Whether a chord is one the terminal itself owns: in the legacy encoding
+/// `ctrl+i`, `ctrl+m`, `ctrl+[` and `ctrl+h` are the very bytes of tab, enter,
+/// esc and backspace, so the editor never sees them as chords.
+pub(crate) fn tty_owned(chord: &str) -> bool {
+    chord
+        .split(' ')
+        .any(|step| matches!(step, "ctrl+i" | "ctrl+m" | "ctrl+[" | "ctrl+h"))
+}
+
 /// A warning for configured bindings this terminal cannot send, if any.
 ///
 /// **Configured means the user's rows**, the ones `keys.toml` added or changed.

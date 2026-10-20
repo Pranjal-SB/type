@@ -8,6 +8,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use typ_core::RenderContext;
 
+use super::record::Recording;
 use super::{Binding, KeysView};
 use crate::settings::{draw_footer, footer_places, search_row};
 
@@ -30,17 +31,36 @@ pub(super) enum Item {
 }
 
 /// Something a click does more than select a row with.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Target {
-    /// The footer's `ctrl+r`.
+    /// A row's key: record over it.
+    Key(Binding),
+    /// The footer's.
+    Unbind,
+    Reset,
+    Undo,
     Capture,
+    OpenRaw,
+    /// The float's two buttons.
+    Replace,
+    Cancel,
 }
+
+/// The float's size.
+const FLOAT_WIDTH: u16 = 64;
+const FLOAT_HEIGHT: u16 = 7;
+/// Its buttons, and the gap between them.
+const REPLACE: &str = "enter replace";
+const CANCEL: &str = "esc cancel";
+const BUTTON_GAP: u16 = 5;
 
 pub(super) struct Geometry {
     pub search: Rect,
     /// Every list line on screen, after the scroll.
     pub items: Vec<(Rect, Item)>,
     pub targets: Vec<(Rect, Target)>,
+    /// The recording float, while it is up.
+    pub float: Option<Rect>,
 }
 
 impl KeysView {
@@ -60,8 +80,32 @@ impl KeysView {
         out
     }
 
-    fn footer_parts() -> [(&'static str, Target); 1] {
-        [("ctrl+r find by key", Target::Capture)]
+    fn footer_parts() -> [(&'static str, Target); 5] {
+        [
+            ("del unbind", Target::Unbind),
+            ("r reset", Target::Reset),
+            ("ctrl+z undo", Target::Undo),
+            ("ctrl+r find", Target::Capture),
+            ("ctrl+o keys.toml", Target::OpenRaw),
+        ]
+    }
+
+    /// Where the key column starts on a row line.
+    fn key_x(line: Rect) -> u16 {
+        let columns = KEY_WIDTH + FLAG_WIDTH + LAYER_WIDTH + SOURCE_WIDTH;
+        line.right().saturating_sub(columns).max(line.x + 3)
+    }
+
+    /// The float, centred in the tab.
+    fn float_area(area: Rect) -> Rect {
+        let width = FLOAT_WIDTH.min(area.width.saturating_sub(4));
+        let height = FLOAT_HEIGHT.min(area.height);
+        Rect::new(
+            area.x + (area.width - width) / 2,
+            area.y + (area.height - height) / 2,
+            width,
+            height,
+        )
     }
 
     /// Below the search row and a blank line, above the footer.
@@ -77,7 +121,7 @@ impl KeysView {
     pub(super) fn geometry(&self, area: Rect) -> Geometry {
         let search = Rect::new(area.x, area.y, area.width, area.height.min(1));
         let list = Self::list_area(area);
-        let items = self
+        let items: Vec<(Rect, Item)> = self
             .lines()
             .into_iter()
             .skip(self.top)
@@ -87,15 +131,32 @@ impl KeysView {
             .collect();
         let parts = Self::footer_parts();
         let texts: Vec<&str> = parts.iter().map(|(text, _)| *text).collect();
-        let targets = footer_places(area, &texts)
+        let mut targets: Vec<(Rect, Target)> = footer_places(area, &texts)
             .into_iter()
             .zip(parts)
             .map(|(rect, (_, target))| (rect, target))
             .collect();
+        for (rect, item) in &items {
+            if let Item::Row(binding) = item {
+                let x = Self::key_x(*rect);
+                let width = KEY_WIDTH.min(rect.right().saturating_sub(x));
+                targets.push((Rect::new(x, rect.y, width, 1), Target::Key(binding.clone())));
+            }
+        }
+        let float = self.recording.as_ref().map(|_| Self::float_area(area));
+        if let Some(float) = float {
+            let y = float.bottom().saturating_sub(2);
+            let x = float.x + 3;
+            let replace = REPLACE.len() as u16;
+            targets.push((Rect::new(x, y, replace, 1), Target::Replace));
+            let cancel = Rect::new(x + replace + BUTTON_GAP, y, CANCEL.len() as u16, 1);
+            targets.push((cancel, Target::Cancel));
+        }
         Geometry {
             search,
             items,
             targets,
+            float,
         }
     }
 
@@ -163,8 +224,77 @@ impl KeysView {
         }
         let parts = Self::footer_parts();
         let texts: Vec<&str> = parts.iter().map(|(text, _)| *text).collect();
-        let placed: Vec<Rect> = geometry.targets.iter().map(|(rect, _)| *rect).collect();
+        let placed: Vec<Rect> = geometry
+            .targets
+            .iter()
+            .filter(|(_, t)| parts.iter().any(|(_, p)| p == t))
+            .map(|(rect, _)| *rect)
+            .collect();
         draw_footer(buf, ctx, &texts, &placed);
+        if let (Some(float), Some(recording)) = (geometry.float, &self.recording) {
+            typ_core::chrome::scrim(buf, area, theme.scrim);
+            self.draw_float(float, buf, recording, ctx);
+        }
+    }
+
+    /// The recording float: what is being rebound, the keycaps, the
+    /// capability and conflict lines, and the two buttons.
+    fn draw_float(&self, area: Rect, buf: &mut Buffer, recording: &Recording, ctx: &RenderContext) {
+        let theme = ctx.theme;
+        typ_core::chrome::float(area, buf, "record a key", "esc", ctx);
+        let inner = typ_core::chrome::inner(area);
+        let room = inner.width.saturating_sub(4) as usize;
+        let plain = Style::default().fg(theme.fg).bg(theme.chrome_bg);
+        let quiet = Style::default()
+            .fg(theme.line_number_fg)
+            .bg(theme.chrome_bg);
+        let x = inner.x + 2;
+        let action = recording.row.1;
+        buf.set_stringn(
+            x,
+            inner.y,
+            format!("for: {}", action.description()),
+            room,
+            quiet,
+        );
+
+        let caps: Vec<String> = recording
+            .steps
+            .iter()
+            .map(|step| format!("[{}]", crate::app::spelled(step)))
+            .collect();
+        let mut keys = if caps.is_empty() {
+            "press the key".to_string()
+        } else {
+            caps.join(" ")
+        };
+        if recording.waiting {
+            keys.push_str(" \u{2026}");
+        }
+        buf.set_stringn(
+            x,
+            inner.y + 1,
+            keys,
+            room,
+            plain.add_modifier(Modifier::BOLD),
+        );
+        if let Some(chord) = recording.chord() {
+            buf.set_stringn(x, inner.y + 2, Self::capability(&chord), room, quiet);
+            let conflict = self.conflict_line(&chord, action);
+            let style = if conflict.starts_with('\u{25b2}') {
+                Style::default()
+                    .fg(theme.diagnostic_warning)
+                    .bg(theme.chrome_bg)
+            } else {
+                quiet
+            };
+            buf.set_stringn(x, inner.y + 3, conflict, room, style);
+        }
+        let buttons = Rect::new(x, area.bottom().saturating_sub(2), inner.width, 1);
+        buf.set_stringn(buttons.x, buttons.y, REPLACE, room, plain);
+        let cancel = buttons.x + REPLACE.len() as u16 + BUTTON_GAP;
+        buf.set_stringn(cancel - 3, buttons.y, "\u{b7}", 1, quiet);
+        buf.set_stringn(cancel, buttons.y, CANCEL, room, plain);
     }
 
     /// One row: marker, description, then key, flag, layer and source in
@@ -203,8 +333,7 @@ impl KeysView {
             );
         }
 
-        let columns = KEY_WIDTH + FLAG_WIDTH + LAYER_WIDTH + SOURCE_WIDTH;
-        let right = rect.right().saturating_sub(columns).max(rect.x + 3);
+        let right = Self::key_x(rect);
         let room = right.saturating_sub(rect.x + 4) as usize;
         let description = if selected {
             plain.add_modifier(Modifier::BOLD)
