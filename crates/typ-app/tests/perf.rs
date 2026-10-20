@@ -436,3 +436,44 @@ fn opening_the_settings_tab_stays_inside_a_frame() {
         "opening the settings tab costs {best:?}, over the {BUDGET_US} µs frame budget"
     );
 }
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored --nocapture"]
+fn opening_the_keybindings_tab_stays_inside_a_frame() {
+    // As the settings tab: open on a commented `keys.toml` and paint. The open
+    // reads the file and builds the keymap from it, the frame lists every
+    // binding and every unbound action.
+    let _guard = exclusive();
+    let mut app = big_app("keys-open");
+    let keys = std::env::temp_dir()
+        .join("typ-app-perf")
+        .join("keys-open")
+        .join("keys.toml");
+    std::fs::write(
+        &keys,
+        "# mine\n\"ctrl+k s\" = \"save\" # under the door\n\"ctrl+s\" = \"\"\n\"ctrl+d\" = \"quit\"\n",
+    )
+    .unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(AREA.width, AREA.height)).unwrap();
+    draw(&mut app, &mut terminal); // warm
+    let open = typ_core::PanelEvent::OpenWith {
+        handler: typ_app::keybindings::KEYBINDINGS,
+        path: keys,
+    };
+
+    let mut best = std::time::Duration::MAX;
+    for _ in 0..5 {
+        let start = Instant::now();
+        app.apply(vec![open.clone()]).unwrap();
+        draw(&mut app, &mut terminal);
+        best = best.min(start.elapsed());
+        assert_eq!(app.editor_title(), "Keybindings");
+        app.apply_named_action(typ_core::Action::CloseTab).unwrap();
+    }
+
+    println!("keybindings tab, open and first frame: {best:?}");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "opening the keybindings tab costs {best:?}, over the {BUDGET_US} µs frame budget"
+    );
+}

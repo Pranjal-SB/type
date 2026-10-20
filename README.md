@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.4.4, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.4.5, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -76,7 +76,10 @@ right-click or `Shift+F10` opens the actions for what is under it, and `F10` sho
 every action group. A test fails the build when an action is missing either path. `Ctrl+K ,`
 opens the settings as a tab: search them, change one with the arrows, `Space`, `Enter` or a
 click, and it is written to `config.toml` with your comments left where they were and applied
-as you change it.
+as you change it. `Ctrl+K K` does the same for the keys: every binding and every unbound action,
+and pressing `Enter` on one records the next key you press over it, says what that key does now
+and whether your terminal can send it, and writes `keys.toml`. The menu, the hint and the palette
+move with it at once.
 
 Every shipped theme is checked against a contrast rubric at truecolor **and again after
 degradation**, which is the half nobody else checks: quantising moves every colour by a
@@ -218,6 +221,7 @@ has it as "show the ctrl+k menu".
 | `Ctrl+K J` | Warp labels (below) |
 | `Ctrl+K .` | The context menu (also `Shift+F10`, and the menu key where the terminal reports it) |
 | `Ctrl+K ,` | Settings (below) |
+| `Ctrl+K K` | Keybindings (below) |
 
 **Panes**
 
@@ -279,6 +283,24 @@ While a menu has the keys, the left of the status bar says which they are.
 | `r` | click `r reset` | Back to the default |
 | `Ctrl+Z` | click `ctrl+z undo` | Undo the last change |
 | `Ctrl+O` | click `ctrl+o config.toml` | Open `config.toml` itself |
+
+**Keybindings**
+
+`Ctrl+K K` or `>keybindings` opens every binding in `keys.toml` as a tab, with the actions that
+have none. Typing filters by action or key; `:modified` keeps yours (`●`), `:conflict` a chord
+you took from another action (`▲`), `:unbound` the actions with no key, `:kitty` the chords that
+need the kitty keyboard protocol.
+
+| Key | Mouse | Action |
+|---|---|---|
+| `↑` `↓`, `Tab` | click a row | Move between the search row and the bindings |
+| `Ctrl+R`, then a key | click `ctrl+r find` | Filter to what that key does |
+| `Enter` | click the key | Record over it: press the new key (a prefix waits for one more), then `Enter` or click `enter replace`; `Esc` or `esc cancel` writes nothing |
+| `Delete` | click `del unbind` | Unbind it |
+| `r` | click `r reset` | The action's keys as shipped |
+| `Ctrl+Z` | click `ctrl+z undo` | Undo the last change |
+| `Ctrl+O` | click `ctrl+o keys.toml` | Open `keys.toml` itself |
+| `Ctrl+T` | click `ctrl+t keyboard` | The same bindings on a drawn keyboard: `Tab` or a click picks `ctrl`, `ctrl+shift`, `alt`, `ctrl+k ▸` or the F-keys, arrows or a click pick a key, `Enter` or a second click records over it |
 
 **Tree**
 
@@ -408,7 +430,7 @@ same name; everything else keeps its default.
 # chord = action
 "ctrl+e" = "move_line_end"
 # a sequence: a prefix, a space, one more key
-"ctrl+k k" = "delete_word_forward"
+"ctrl+k s" = "save"
 
 # an empty action unbinds a key
 "ctrl+l" = ""
@@ -450,8 +472,8 @@ for now.
 | v0.4.1 | M4.1 | Docks: the left dock, `Ctrl+B` and folding, dock resize, zoom, `F6` over every region and the status bar, a deeper focus stack | shipped |
 | v0.4.2 | M4.2 | Layouts: Focus and Standard presets, adapt to width, sessions, status segments that drop by width | shipped |
 | v0.4.3 | M4.3 | Menus and warp: warp labels, the context menu, the menu bar, a keyboard and mouse parity test | shipped |
-| v0.4.4 | M4.4 | Settings: the settings tab, edits written to `config.toml` with comments kept, applied live | **current** |
-| v0.4.5 | M4.5 | Keybindings: the same tab over `keys.toml`, recording a chord, conflicts | |
+| v0.4.4 | M4.4 | Settings: the settings tab, edits written to `config.toml` with comments kept, applied live | shipped |
+| v0.4.5 | M4.5 | Keybindings: the same tab over `keys.toml`, recording a chord, conflicts, a keyboard view | **current** |
 | v0.5.0 | M5 | Terminal panel and git integration | |
 | v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |
 
