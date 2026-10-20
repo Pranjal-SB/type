@@ -259,9 +259,6 @@ const DEFAULTS: &[(&str, Action)] = &[
     // VS Code and Zed both toggle the left dock on Ctrl+B, and a Ctrl+letter
     // is Universal tier. Nothing else here held it.
     ("ctrl+b", Action::ToggleLeftDock),
-    // VS Code and Zed both toggle the left dock on Ctrl+B, and a Ctrl+letter
-    // is Universal tier. Nothing else here held it.
-    ("ctrl+b", Action::ToggleLeftDock),
     ("ctrl+g", Action::GotoLine),
     ("ctrl+f", Action::SearchOpen),
     // Ctrl+P is where every GUI editor puts "go to file", and it was the one
@@ -342,6 +339,9 @@ const DEFAULTS: &[(&str, Action)] = &[
     // The menu bar (interface §8 4a). `f10` only: a bare `alt` never reaches a
     // terminal application.
     ("f10", Action::MenuBar),
+    // Settings, `ctrl+k ,`: VS Code's `ctrl+,` is a chord a terminal does
+    // not deliver, and the comma under the door keeps the same key.
+    ("ctrl+k ,", Action::OpenSettings),
     ("ctrl+k 1", Action::FocusPane(1)),
     ("ctrl+k 2", Action::FocusPane(2)),
     ("ctrl+k 3", Action::FocusPane(3)),

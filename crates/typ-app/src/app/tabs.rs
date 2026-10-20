@@ -396,6 +396,11 @@ impl App {
     }
 
     /// Whatever the active tab holds, as the panel that draws it.
+    pub fn shown_panel(&self) -> &dyn Panel {
+        self.panes[self.pane].shown().panel()
+    }
+
+    /// The same, to give it an event.
     pub fn shown_panel_mut(&mut self) -> &mut dyn Panel {
         self.panes[self.pane].shown_mut().panel_mut()
     }

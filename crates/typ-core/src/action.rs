@@ -147,6 +147,9 @@ pub enum Action {
     /// The menu bar (interface §8 4a): the action groups on the top row,
     /// each dropping its actions down.
     MenuBar,
+    /// The settings tab (interface §8 4c): every setting in `config.toml`,
+    /// searched and changed in place.
+    OpenSettings,
     Copy,
     Cut,
     Paste,
@@ -449,6 +452,7 @@ impl Action {
         Action::Warp,
         Action::ContextMenu,
         Action::MenuBar,
+        Action::OpenSettings,
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -549,6 +553,7 @@ impl Action {
             Action::Warp => "warp",
             Action::ContextMenu => "context_menu",
             Action::MenuBar => "menu_bar",
+            Action::OpenSettings => "open_settings",
             Action::FocusPane(n) => FOCUS_PANE_NAMES
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -670,6 +675,7 @@ impl Action {
             Action::Warp => "jump to anything on screen",
             Action::ContextMenu => "open the context menu",
             Action::MenuBar => "show the menu bar",
+            Action::OpenSettings => "open the settings",
             Action::FocusPane(n) => FOCUS_PANE_DESCRIPTIONS
                 .get((*n as usize).saturating_sub(1))
                 .copied()
@@ -753,7 +759,8 @@ impl Action {
             | Action::OpenCommandPalette
             | Action::OpenMenu
             | Action::ContextMenu
-            | Action::MenuBar => Group::App,
+            | Action::MenuBar
+            | Action::OpenSettings => Group::App,
         }
     }
 }

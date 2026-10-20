@@ -487,7 +487,11 @@ impl App {
             workspace: None,
             watches_started: 0,
             close_pane_pending: None,
-            registry: Registry::with_builtins(),
+            registry: {
+                let mut registry = Registry::with_builtins();
+                registry.register_view(crate::settings::SETTINGS, crate::settings::open);
+                registry
+            },
             keymap: Keymap::default_bindings(),
             theme: ThemeColors::default(),
             focus: Focus::Tree,

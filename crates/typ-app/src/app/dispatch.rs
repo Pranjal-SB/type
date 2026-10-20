@@ -255,6 +255,12 @@ impl App {
             Action::Warp => self.open_warp(),
             Action::ContextMenu => self.open_context_menu(),
             Action::MenuBar => self.open_menu_bar(),
+            Action::OpenSettings => match crate::config::settings_path() {
+                Some(path) => self.open_view(crate::settings::SETTINGS, &path),
+                None => {
+                    self.status = Some("No config directory to keep settings in.".to_string());
+                }
+            },
             Action::RestartLanguageServers => {
                 let started = self.lsp.restart_all();
                 self.status = Some(match started {
