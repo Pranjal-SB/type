@@ -193,6 +193,18 @@ impl App {
         }
     }
 
+    /// Whether a float that takes the keys is up. The list goes when one
+    /// opens: left standing, it drew under the context menu and its keys
+    /// were the menu's.
+    fn float_has_keys(&self) -> bool {
+        self.context.is_some()
+            || self.bar.is_some()
+            || self.warp.is_some()
+            || self.menu.is_some()
+            || self.picker.is_some()
+            || self.prompt.is_some()
+    }
+
     /// Where the word before the caret starts.
     fn word_start_here(&self) -> typ_buffer::Position {
         let Some(editor) = self.shown_editor() else {
@@ -209,7 +221,7 @@ impl App {
     /// What has been typed of the word, or `None` when the caret has left it.
     pub(super) fn completion_query(&self) -> Option<String> {
         let list = self.completing.list.as_ref()?;
-        if self.focus != Focus::Editor {
+        if self.focus != Focus::Editor || self.float_has_keys() {
             return None;
         }
         let editor = self.shown_editor()?;

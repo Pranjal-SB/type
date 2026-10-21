@@ -345,3 +345,66 @@ fn a_press_off_the_list_puts_it_away_and_still_reaches_the_text() {
     );
     assert_eq!(app.editor().line_text(2), "fo");
 }
+
+/// `a.rs` open with no server, the dock folded to its column at the left
+/// edge, and `fo` typed on the empty last line under a list put up by hand.
+fn listed_without_a_server(name: &str) -> App {
+    let dir = fixture(name);
+    let mut app = App::new(&dir).unwrap();
+    app.set_preset(typ_app::dock::Preset::Focus);
+    app.open_path(&dir.join("a.rs")).unwrap();
+    app.editor_mut().goto(2, 0);
+    type_text(&mut app, "fo");
+    let item = |label: &str| typ_app::completion::Item {
+        label: label.to_string(),
+        kind: Some(3),
+        detail: None,
+        docs: None,
+        filter: label.to_string(),
+        text: label.to_string(),
+        edit_start: None,
+    };
+    app.show_completion_for_test(vec![item("foo"), item("format")]);
+    assert!(app.completion_labels().is_some(), "no list to test");
+    app
+}
+
+#[test]
+fn a_list_near_column_zero_leaves_the_folded_dock_column_alone() {
+    let mut app = listed_without_a_server("left-edge");
+    let rows = draw(&mut app);
+    let pane_x = app.pane_rects(AREA)[0].x;
+    assert!(pane_x > 0, "the dock is not folded to a column");
+    for (y, row) in rows.iter().enumerate().take(usize::from(AREA.height - 1)) {
+        let first = row.chars().next().unwrap();
+        assert!(
+            !matches!(first, '\u{256d}' | '\u{2570}'),
+            "the list's border is in the dock's column at row {y}:\n{}",
+            rows.join("\n")
+        );
+    }
+    let rows_at: Vec<u16> = app
+        .targets(AREA)
+        .into_iter()
+        .filter(|t| matches!(t.kind, TargetKind::CompletionRow(_)))
+        .map(|t| t.rect.x)
+        .collect();
+    assert!(!rows_at.is_empty());
+    assert!(
+        rows_at.iter().all(|x| *x > pane_x),
+        "a row starts at or left of the pane's edge: {rows_at:?}"
+    );
+}
+
+#[test]
+fn opening_the_context_menu_puts_the_completion_list_away() {
+    let mut app = listed_without_a_server("context");
+    press(&mut app, KeyCode::F(10), KeyModifiers::SHIFT);
+    assert!(
+        app.context_rows().is_some(),
+        "the context menu did not open"
+    );
+    assert_eq!(app.completion_labels(), None, "the list stayed up under it");
+    let rows = draw(&mut app).join("\n");
+    assert!(!rows.contains("completion"), "{rows}");
+}

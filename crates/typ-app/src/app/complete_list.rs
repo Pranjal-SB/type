@@ -84,16 +84,18 @@ impl App {
     fn completion_areas(&self, frame: Rect) -> Option<(Areas, (u16, u16), u16)> {
         let list = self.completing.list.as_ref()?;
         let typed = self.completion_query()?;
-        let content = self.current_pane_area(self.editor_region(frame)).content;
+        let pane = self.current_pane_area(self.editor_region(frame));
         let caret = self.panes[self.pane]
             .shown()
             .panel()
-            .cursor_position(content)?;
+            .cursor_position(pane.content)?;
         let width = u16::try_from(typ_buffer::display_width(&typed)).unwrap_or(u16::MAX);
         let word_x = caret.0.saturating_sub(width);
-        let (body, _) = crate::layout::split_frame(frame);
+        let content = pane.content;
+        // The pane, not the body: clamped to the body's left edge, the list
+        // drew over the dock beside the pane.
         Some((
-            list.layout(body, frame.width, caret, word_x),
+            list.layout(pane.whole, frame.width, caret, word_x),
             caret,
             content.right(),
         ))
