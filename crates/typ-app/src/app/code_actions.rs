@@ -206,6 +206,9 @@ impl App {
             return;
         }
         self.list_fixes();
+        // A row lower than the mark or the caret: hung from the row itself,
+        // the float's clear ring blanked the very line the fixes are for.
+        let anchor = (anchor.0, anchor.1.saturating_add(1));
         self.context = FloatMenu::with_fixes(&titles, &[], &self.keymap, anchor);
         self.mark_dirty();
     }

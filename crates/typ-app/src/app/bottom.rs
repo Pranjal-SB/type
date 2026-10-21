@@ -39,6 +39,18 @@ impl App {
             .collect()
     }
 
+    /// Put `diagnostics` on the file on screen without a server, for the
+    /// frame and keystroke budgets.
+    pub fn show_problems_for_test(&mut self, diagnostics: Vec<typ_core::Diagnostic>) {
+        if let Some(path) = self
+            .shown_editor()
+            .and_then(|e| e.path())
+            .map(Path::to_path_buf)
+        {
+            self.lsp.push_for_test(&path, diagnostics);
+        }
+    }
+
     /// Every dock region in `frame`: the left dock's heading, list and rule,
     /// and the bottom dock's heading and panel. With the panes, they tile
     /// the body.

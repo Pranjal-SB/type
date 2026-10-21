@@ -46,7 +46,7 @@ its own and the core never depends on it.
 
 ## Status
 
-**v0.4.6, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
+**v0.4.7, pre-alpha.** Editing works and the editor looks the part: line numbers, current-line
 highlight, bracket matching, and multiple cursors with a visibly distinct primary. Search and
 replace, clipboard that works over SSH, Tab indent, `Ctrl+D`, goto-line, undo that takes back a
 run of typing in one press. It notices when a file changes on disk, reloads it when you have no
@@ -127,10 +127,13 @@ and counted on the status bar, `F12` jumps to a definition and `Alt+H` explains 
 the cursor. As you type a word the server's completions float under it, narrowed by what you
 type, with the first as grey text after the caret: `Tab` or `Enter` takes it, as one undo. Typing
 `(` or `,` in a call shows its signature above the caret with the argument you are on marked.
-rust-analyzer and taplo are configured without a config file; a server that is not installed is
-silent and the editor is the editor it was without one.
+Where the server offers a fix, `✦` marks the line: `Ctrl+.` or a click lists them, and one is
+applied as one undo. `F2` renames a symbol across every file the server knows it in, leaving each
+edited buffer unsaved. `Ctrl+J` opens the problems list under the panes, every diagnostic of every
+open file as an excerpt; `F8` walks it. rust-analyzer and taplo are configured without a config
+file; a server that is not installed is silent and the editor is the editor it was without one.
 
-No code actions or rename yet. See the roadmap. Full history in
+See the roadmap. Full history in
 [CHANGELOG.md](CHANGELOG.md).
 
 Every editing primitive is a named action and every key binding is a table row, which is why the
@@ -318,6 +321,19 @@ goes on `)` or `Esc`.
 | `↑` `↓` | | Choose another; the grey text follows |
 | `Esc` | click anywhere else | Put the list away |
 
+**Code actions, rename, problems**
+
+`Ctrl+.` needs the kitty keyboard protocol, so a click on `✦` and the context menu reach the same
+list everywhere.
+
+| Key | Mouse | Action |
+|---|---|---|
+| `Ctrl+.` | click `✦`, or right-click the text | List the code actions offered at the caret |
+| `F2` | `>rename` | Rename the symbol at the caret |
+| `Ctrl+J` | `>bottom dock`, click its rule | Open and focus the problems dock, focus it, fold it |
+| `Enter` | click a problem | Jump to it |
+| `F8` | | The next problem, across files |
+
 **Tree**
 
 | Key | Action |
@@ -490,8 +506,8 @@ for now.
 | v0.4.3 | M4.3 | Menus and warp: warp labels, the context menu, the menu bar, a keyboard and mouse parity test | shipped |
 | v0.4.4 | M4.4 | Settings: the settings tab, edits written to `config.toml` with comments kept, applied live | shipped |
 | v0.4.5 | M4.5 | Keybindings: the same tab over `keys.toml`, recording a chord, conflicts, a keyboard view | shipped |
-| v0.4.6 | M4.6 | Completion: the list under the word, ghost text, a docs column, signature help | **current** |
-| v0.4.7 | M4.7 | Code actions, rename, and the problems list in a bottom dock | |
+| v0.4.6 | M4.6 | Completion: the list under the word, ghost text, a docs column, signature help | shipped |
+| v0.4.7 | M4.7 | Code actions, rename, and the problems list in a bottom dock | **current** |
 | v0.5.0 | M5 | Terminal panel and git integration | |
 | v1.0.0 | M6 | OS-level file association, performance budgets enforced in CI | |
 

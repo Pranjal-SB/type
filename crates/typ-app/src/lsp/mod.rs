@@ -502,6 +502,19 @@ impl Lsp {
         }
     }
 
+    /// Diagnostics for `path` as though a server had published them, with no
+    /// server: the fixture of the bottom dock's budgets.
+    pub(crate) fn push_for_test(&mut self, path: &Path, diagnostics: Vec<Diagnostic>) {
+        let doc = self.docs.entry(path.to_path_buf()).or_insert(Doc {
+            server: ServerId(u32::MAX),
+            uri: String::new(),
+            version: 0,
+            synced: None,
+            pushed: Vec::new(),
+        });
+        doc.pushed = diagnostics;
+    }
+
     /// What is known about a document, for the frame that draws it.
     pub(crate) fn diagnostics(&self, path: &Path) -> &[Diagnostic] {
         self.docs.get(path).map_or(&[], |doc| &doc.pushed)
