@@ -39,6 +39,41 @@ impl EditorPanel {
         events
     }
 
+    /// Replace each `(start, end)` range with its text, as one undo step of
+    /// its own: a server's edit to this buffer (M4.7 decision 2).
+    ///
+    /// The ranges are in the text as it is now and must not overlap, as the
+    /// protocol requires of a server's edits. Applied last first, so each
+    /// range is still where it was said to be; two inserts at one place go in
+    /// the order given. Every selection is moved through the edits rather
+    /// than collapsed: the caret stays on the word it was on.
+    pub fn apply_edits(&mut self, mut edits: Vec<(Position, Position, String)>) {
+        if edits.is_empty() {
+            return;
+        }
+        edits.sort_by_key(|(start, end, _)| (*start, *end));
+        self.buffer.undo_boundary();
+        self.buffer
+            .begin_edit_group(EditKind::Other, &self.selections);
+        let mut spans = Vec::with_capacity(edits.len());
+        for (start, end, text) in edits.iter().rev() {
+            self.buffer.replace_range(*start, *end, text);
+            spans.push(EditSpan {
+                start: *start,
+                old_end: *end,
+                new_end: position_after(*start, text),
+            });
+        }
+        self.buffer.end_edit_group();
+        self.buffer.undo_boundary();
+        let moved = |at| typ_buffer::shift_through(at, &spans);
+        self.selections.map_in_place(|old| Selection {
+            anchor: moved(old.anchor),
+            head: moved(old.head),
+        });
+        self.goal_col = None;
+    }
+
     /// Move one selection according to a motion.
     ///
     /// `extend` decides whether the anchor follows. A plain move from a

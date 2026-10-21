@@ -31,6 +31,8 @@ mod tabs;
 pub mod targets;
 /// Warp labels over the targets.
 mod warp;
+/// A server's `WorkspaceEdit`, applied through the editor.
+mod workspace_edit;
 
 use anyhow::Result;
 use typ_buffer::SearchQuery;

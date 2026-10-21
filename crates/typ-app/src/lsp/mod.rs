@@ -27,11 +27,13 @@ use typ_core::Diagnostic;
 use typ_lsp::{Client, Encoding, Incoming, LspEvent, ServerId, SpawnError};
 
 pub mod config;
+mod edit;
 mod progress;
 mod reply;
 mod requests;
 
 pub use config::ServerConfig;
+pub(crate) use edit::{FileEdit, workspace_edit};
 pub(crate) use reply::{
     completion_items, definition_target, hover_text, signature_help, to_diagnostic,
 };
