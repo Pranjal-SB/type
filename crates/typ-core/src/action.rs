@@ -5,6 +5,8 @@
 //! opt-in vim layer. A primitive reachable only from a `handle_key` arm is
 //! invisible to all three, so no key handler may mutate a buffer directly.
 
+pub use crate::group::Group;
+
 /// Which way an operation runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Direction {
@@ -132,6 +134,9 @@ pub enum Action {
     /// The left dock, in three steps (interface §5): closed opens and focuses
     /// it, open without focus focuses it, focused folds it to its rule.
     ToggleLeftDock,
+    /// The bottom dock, in the left dock's three steps: closed opens and
+    /// focuses it, open without focus focuses it, focused folds it.
+    ToggleBottomDock,
     /// Give the focused region, the dock or a pane, the whole body; again
     /// puts the layout back as it was.
     Zoom,
@@ -246,51 +251,6 @@ const GO_TO_TAB_DESCRIPTIONS: [&str; 9] = [
     "switch to tab 8",
     "switch to tab 9",
 ];
-
-/// A column of the `ctrl+k` menu. Closed: a new group is a design decision,
-/// not something an action invents for itself.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Group {
-    Edit,
-    Selection,
-    Find,
-    Files,
-    Tabs,
-    Panels,
-    Panes,
-    Code,
-    App,
-}
-
-impl Group {
-    /// In the order the menu draws them.
-    pub const ALL: &'static [Group] = &[
-        Group::Edit,
-        Group::Selection,
-        Group::Find,
-        Group::Files,
-        Group::Tabs,
-        Group::Panels,
-        Group::Panes,
-        Group::Code,
-        Group::App,
-    ];
-
-    /// The column's heading.
-    pub fn label(self) -> &'static str {
-        match self {
-            Group::Edit => "edit",
-            Group::Selection => "selection",
-            Group::Find => "find",
-            Group::Files => "files",
-            Group::Tabs => "tabs",
-            Group::Panels => "panels",
-            Group::Panes => "panes",
-            Group::Code => "code",
-            Group::App => "app",
-        }
-    }
-}
 
 impl Action {
     /// Every action a config file may name, in a stable order.
@@ -459,6 +419,7 @@ impl Action {
         Action::FocusNeighbour(Edge::Bottom),
         Action::ResizePanes,
         Action::ToggleLeftDock,
+        Action::ToggleBottomDock,
         Action::Zoom,
         Action::CycleLayout,
         Action::Warp,
@@ -564,6 +525,7 @@ impl Action {
             Action::FocusNeighbour(Edge::Bottom) => "focus_pane_down",
             Action::ResizePanes => "resize_panes",
             Action::ToggleLeftDock => "toggle_left_dock",
+            Action::ToggleBottomDock => "toggle_bottom_dock",
             Action::Zoom => "zoom",
             Action::CycleLayout => "cycle_layout",
             Action::Warp => "warp",
@@ -690,6 +652,7 @@ impl Action {
             Action::FocusNeighbour(Edge::Bottom) => "focus the pane below",
             Action::ResizePanes => "resize panes",
             Action::ToggleLeftDock => "open, focus or fold the left dock",
+            Action::ToggleBottomDock => "open, focus or fold the bottom dock",
             Action::Zoom => "zoom the focused region",
             Action::CycleLayout => "switch the layout preset",
             Action::Warp => "jump to anything on screen",
@@ -766,6 +729,7 @@ impl Action {
             Action::FocusNext
             | Action::FocusPrevious
             | Action::ToggleLeftDock
+            | Action::ToggleBottomDock
             | Action::Zoom
             | Action::CycleLayout
             | Action::Warp => Group::Panels,

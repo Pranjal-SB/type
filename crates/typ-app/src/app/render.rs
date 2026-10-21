@@ -24,11 +24,12 @@ impl App {
     pub fn render(&mut self, frame: &mut ratatui::Frame) {
         let (_, status_area) = crate::layout::split_frame(frame.area());
         let (_, menu_area) = self.split_body(frame.area());
-        let regions = self.regions(frame.area());
+        let (regions, bottom) = self.body_regions(frame.area());
         let tree_area = regions.content;
         let (w, h) = (frame.area().width, frame.area().height);
 
         self.render_dock(&regions, frame.buffer_mut(), (w, h));
+        self.render_bottom(&bottom, frame.buffer_mut(), (w, h));
 
         self.screen = frame.area();
         let panes = self.pane_areas(regions.rest);
@@ -120,6 +121,7 @@ impl App {
         let focused_area = match self.focus {
             Focus::Tree => tree_area,
             Focus::Editor => editor_area,
+            Focus::BottomDock => bottom.content,
             Focus::Status => {
                 if let Some(at) = self.status_cursor(status_area) {
                     frame.set_cursor_position(at);
@@ -137,6 +139,7 @@ impl App {
             Focus::Tree => &self.tree,
             // The bar has no panel; see `focused_mut`.
             Focus::Editor | Focus::Status => self.panes[self.pane].shown().panel(),
+            Focus::BottomDock => self.bottom_panel.as_ref(),
         }
     }
 
@@ -161,16 +164,11 @@ impl App {
 
     /// The dock's regions and the panes' area in `frame`: the one place the
     /// body is divided, for render and every hit-test.
+    ///
+    /// `rest` is the panes' area, the bottom dock already taken from it; see
+    /// `body_regions` for the bottom dock's own.
     pub(crate) fn regions(&self, frame: Rect) -> crate::dock::DockAreas {
-        let body = self.split_body(frame).0;
-        match self.zoomed() {
-            Some(Zoom::Pane(_)) => crate::dock::DockAreas::hidden(body),
-            zoom => crate::dock::Dock {
-                zoomed: zoom == Some(Zoom::Dock),
-                ..self.dock
-            }
-            .areas(body),
-        }
+        self.body_regions(frame).0
     }
 
     /// One pane: the visible tab's text, then its tab row over the top, led by

@@ -4,6 +4,7 @@ pub mod chrome;
 pub mod colour;
 pub mod diagnostic;
 pub mod event;
+pub mod group;
 pub mod key;
 pub mod keymap;
 pub mod panel;

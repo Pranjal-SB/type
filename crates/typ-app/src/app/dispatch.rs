@@ -272,6 +272,7 @@ impl App {
             Action::FocusNeighbour(edge) => self.focus_neighbour(edge),
             Action::ResizePanes => self.resizing = true,
             Action::ToggleLeftDock => self.toggle_left_dock(),
+            Action::ToggleBottomDock => self.toggle_bottom_dock(),
             Action::Zoom => self.toggle_zoom(),
             Action::CycleLayout => self.cycle_layout(),
             Action::Warp => self.open_warp(),
@@ -349,6 +350,12 @@ impl App {
     pub fn apply(&mut self, events: Vec<PanelEvent>) -> Result<()> {
         for event in events {
             match event {
+                // The problems list: the caret goes where the problem is
+                // and the editor takes the keys, whether or not the file was
+                // open and wherever in it the caret was.
+                PanelEvent::OpenFile { path, at } if self.focus == Focus::BottomDock => {
+                    self.jump_to(&path, at);
+                }
                 PanelEvent::OpenFile { path, at } => {
                     let (line, col) = (at.line, at.col);
                     // **The event has carried `line` and `col` since M1 and

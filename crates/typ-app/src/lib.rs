@@ -11,6 +11,7 @@ pub mod log;
 pub mod lsp;
 pub mod menu;
 pub mod pane;
+pub mod problems;
 pub mod prompt;
 pub mod run;
 pub mod session;

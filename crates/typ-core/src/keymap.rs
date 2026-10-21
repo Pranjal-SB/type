@@ -259,6 +259,9 @@ const DEFAULTS: &[(&str, Action)] = &[
     // VS Code and Zed both toggle the left dock on Ctrl+B, and a Ctrl+letter
     // is Universal tier. Nothing else here held it.
     ("ctrl+b", Action::ToggleLeftDock),
+    // VS Code's panel toggle, and interface §5's. A Ctrl+letter is Universal
+    // tier, and nothing here held it.
+    ("ctrl+j", Action::ToggleBottomDock),
     ("ctrl+g", Action::GotoLine),
     ("ctrl+f", Action::SearchOpen),
     // Ctrl+P is where every GUI editor puts "go to file", and it was the one

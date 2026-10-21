@@ -348,6 +348,8 @@ fn route_scroll(app: &mut App, m: MouseEvent, delta: i32, area: Rect) -> Vec<Pan
     let (tree_area, editor_area) = app.areas(area);
     if m.column < tree_area.width {
         app.tree_mut().handle_scroll(delta, tree_area)
+    } else if let Some(events) = app.scroll_bottom_at(m, delta, area) {
+        events
     } else if let Some(events) = app.scroll_pane_at(m, delta, area) {
         events
     } else {
@@ -496,6 +498,11 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                     && app.press_dock_heading(m.column, m.row, area, now)
                 {
                     app.clear_transient();
+                    return finish(app, events, true);
+                }
+
+                // The bottom dock: its rule focuses and drags, its list jumps.
+                if app.route_bottom_mouse(m, area)? {
                     return finish(app, events, true);
                 }
 

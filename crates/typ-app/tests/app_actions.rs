@@ -219,6 +219,14 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             run(app, a);
             assert!(!app.status_right().contains("zoomed"));
         },
+        // Closed, so it opens and takes the keys; again from there folds it.
+        Action::ToggleBottomDock => |app, a| {
+            run(app, a);
+            assert!(app.bottom_dock_open());
+            assert_eq!(app.focus(), Focus::BottomDock);
+            run(app, a);
+            assert!(!app.bottom_dock_open());
+        },
         Action::CycleLayout => |app, a| {
             assert!(app.dock_open());
             run(app, a);

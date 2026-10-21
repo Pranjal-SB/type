@@ -51,7 +51,7 @@ impl App {
                     .map_or((frame.x, frame.y), |t| t.point);
                 self.show_context(&[Group::Files], anchor);
             }
-            Focus::Status => self.status = Some(NOTHING.to_string()),
+            Focus::Status | Focus::BottomDock => self.status = Some(NOTHING.to_string()),
         }
     }
 
@@ -88,7 +88,9 @@ impl App {
                 | TargetKind::MenuRow(_)
                 | TargetKind::FloatRow(_)
                 | TargetKind::BarGroup(_)
-                | TargetKind::CompletionRow(_),
+                | TargetKind::CompletionRow(_)
+                | TargetKind::ProblemRow(_)
+                | TargetKind::BottomHeading,
             ) => return,
             // A `✦` sits on the text, and gets the text's menu, which lists
             // its fixes first.

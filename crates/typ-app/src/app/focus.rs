@@ -15,6 +15,7 @@ pub(crate) enum Place {
     Dock,
     Pane(crate::pane::PaneId),
     Status,
+    BottomDock,
 }
 
 /// How far back `esc` remembers.
@@ -26,6 +27,7 @@ enum Region {
     Dock,
     /// An index into `App::panes`.
     Pane(usize),
+    BottomDock,
     Status,
 }
 
@@ -44,18 +46,23 @@ impl App {
             order.push(Region::Dock);
         }
         order.extend(self.reading_order().into_iter().map(Region::Pane));
+        if self.bottom.open {
+            order.push(Region::BottomDock);
+        }
         order.push(Region::Status);
 
         let here = match self.focus {
             Focus::Tree => Region::Dock,
             Focus::Editor => Region::Pane(self.pane),
             Focus::Status => Region::Status,
+            Focus::BottomDock => Region::BottomDock,
         };
         let at = order.iter().position(|r| *r == here).unwrap_or(0);
         let next = (at as isize + delta).rem_euclid(order.len() as isize);
         match order[next as usize] {
             Region::Dock => self.set_focus(Focus::Tree),
             Region::Pane(index) => self.make_current(index),
+            Region::BottomDock => self.set_focus(Focus::BottomDock),
             Region::Status => self.focus_status(),
         }
         self.mark_dirty();
@@ -73,6 +80,7 @@ impl App {
         }
         .areas(body)
         .rest;
+        let rest = self.bottom.bottom_areas(rest).rest;
         let mut rects = self.layout.rects(rest);
         rects.sort_by_key(|(_, rect)| (rect.y, rect.x));
         rects
@@ -87,6 +95,7 @@ impl App {
             Focus::Tree => Place::Dock,
             Focus::Editor => Place::Pane(self.panes[self.pane].id),
             Focus::Status => Place::Status,
+            Focus::BottomDock => Place::BottomDock,
         }
     }
 
@@ -142,6 +151,8 @@ impl App {
                 self.take_focus(Focus::Editor);
                 self.warn_if_changed_on_disk();
             }
+            Place::BottomDock if !self.bottom.open => return false,
+            Place::BottomDock => self.take_focus(Focus::BottomDock),
             Place::Status => {
                 self.take_focus(Focus::Status);
                 self.segment = crate::status::SegmentId::Position;

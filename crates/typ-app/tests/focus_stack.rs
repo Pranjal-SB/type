@@ -104,6 +104,7 @@ fn place(app: &App) -> String {
     match app.focus() {
         Focus::Tree => "dock".to_string(),
         Focus::Status => "status".to_string(),
+        Focus::BottomDock => "bottom".to_string(),
         Focus::Editor => app.editor_title(),
     }
 }

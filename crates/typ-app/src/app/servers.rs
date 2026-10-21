@@ -131,34 +131,6 @@ impl App {
         diagnostics_for(&self.lsp, self.panes[self.pane].shown())
     }
 
-    /// `f8`, or `enter` on the error count: the cursor to the first problem
-    /// after it in this file, wrapping to the first of all.
-    pub(super) fn next_problem(&mut self) {
-        let Some(cursor) = self.shown_editor().map(|editor| editor.cursor()) else {
-            self.status = Some("No problems in this tab.".to_string());
-            return;
-        };
-        let here = (cursor.line, cursor.col);
-        let starts: Vec<(usize, usize)> = self
-            .diagnostics()
-            .iter()
-            .map(|d| (d.range.0.line, d.range.0.col))
-            .collect();
-        let next = starts
-            .iter()
-            .filter(|start| **start > here)
-            .min()
-            .or_else(|| starts.iter().min());
-        match next {
-            Some(&(line, col)) => {
-                if let Some(editor) = self.shown_editor_mut() {
-                    editor.goto(line, col);
-                }
-            }
-            None => self.status = Some("No problems in this file.".to_string()),
-        }
-    }
-
     /// A server said something. Returns whether the screen changed.
     pub fn handle_lsp(&mut self, incoming: typ_lsp::Incoming) -> bool {
         let Some((server, event)) = self.lsp.handle(incoming) else {

@@ -1,6 +1,8 @@
 use std::path::Path;
 
 mod background;
+/// The bottom dock and the problems in it.
+mod bottom;
 /// Code actions: asking, the `✦` marks and choosing one.
 mod code_actions;
 mod complete;
@@ -59,12 +61,18 @@ pub enum Focus {
     /// The status bar, a segment at a time (interface §4). `App.pane` still
     /// names the pane its segments describe.
     Status,
+    /// The bottom dock's panel: problems.
+    BottomDock,
 }
 
 pub struct App {
     tree: TreePanel,
     /// Where the tree is, and in what posture.
     dock: crate::dock::Dock,
+    /// The bottom dock: folded or open, and how tall.
+    bottom: crate::dock::Dock,
+    /// The bottom dock's panel, problems, built by the registry as a view.
+    bottom_panel: Box<dyn Panel>,
     /// The layout preset in force, as the `▣` segment names it.
     preset: crate::dock::Preset,
     /// `adapt` from `config.toml`: a Standard layout folds on a narrow screen.
@@ -493,6 +501,10 @@ fn capitalised(word: &str) -> String {
 
 impl App {
     pub fn new(root: &Path) -> Result<Self> {
+        let mut registry = Registry::with_builtins();
+        registry.register_view(crate::settings::SETTINGS, crate::settings::open);
+        registry.register_view(crate::keybindings::KEYBINDINGS, crate::keybindings::open);
+        registry.register_view(crate::problems::PROBLEMS, crate::problems::open);
         Ok(Self {
             tree: TreePanel::new(root)?,
             dock: crate::dock::Dock::left(),
@@ -515,12 +527,11 @@ impl App {
             workspace: None,
             watches_started: 0,
             close_pane_pending: None,
-            registry: {
-                let mut registry = Registry::with_builtins();
-                registry.register_view(crate::settings::SETTINGS, crate::settings::open);
-                registry.register_view(crate::keybindings::KEYBINDINGS, crate::keybindings::open);
-                registry
-            },
+            bottom: crate::dock::Dock::bottom(),
+            bottom_panel: registry
+                .view(crate::problems::PROBLEMS)
+                .unwrap_or(crate::problems::open)(root),
+            registry,
             keymap: Keymap::default_bindings(),
             theme: ThemeColors::default(),
             focus: Focus::Tree,
@@ -800,6 +811,7 @@ impl App {
             Focus::Tree => self.tree.name(),
             Focus::Editor => self.panes[self.pane].shown().panel().name(),
             Focus::Status => "status bar",
+            Focus::BottomDock => self.bottom_panel.name(),
         }
     }
 
@@ -910,6 +922,7 @@ impl App {
             // The bar has no panel of its own; `dispatch` keeps keys from
             // reaching the one behind it.
             Focus::Editor | Focus::Status => self.panes[self.pane].shown_mut().panel_mut(),
+            Focus::BottomDock => self.bottom_panel.as_mut(),
         }
     }
 
