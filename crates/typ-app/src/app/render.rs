@@ -54,6 +54,8 @@ impl App {
             .find(|area| area.index == self.pane)
             .map_or(Rect::default(), |area| area.content);
 
+        self.render_code_action_marks(frame.area(), frame.buffer_mut());
+
         // Over the body, under the picker. A hover and the overlay are never up
         // together — opening the picker clears the transient state the hover is
         // part of — but the order says which would win if they were.

@@ -302,6 +302,10 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("f12", Action::GotoDefinition),
     // F8 is next problem in VS Code, and an F-key is Universal tier.
     ("f8", Action::NextProblem),
+    // VS Code's quick fix. Enhanced tier (`controls.md` §1): without the
+    // kitty protocol it never arrives, so a click on `✦` and the context
+    // menu list the same actions.
+    ("ctrl+.", Action::CodeActions),
     // **Deliberately not a chord anyone expects**, because the one everyone
     // expects is a prefix: VS Code puts hover on `Ctrl+K Ctrl+I`. `Ctrl+K H`
     // is the door's row for it; `Alt+H` is Universal, free, and rebindable,

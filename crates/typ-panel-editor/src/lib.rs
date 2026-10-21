@@ -436,7 +436,26 @@ impl EditorPanel {
     /// Routing all three through here is what stops a click landing
     /// `gutter_width` graphemes to the left of the pointer, which is a failure
     /// no test of the gutter's own output would catch.
-    fn text_area(&self, area: Rect) -> Rect {
+    /// The cell `pos` is drawn in, inside `panel_area`, if it is on screen.
+    /// What the caret and anything the app draws against the text, a `✦`
+    /// after a line, are placed by.
+    pub fn cell_of(&self, pos: Position, panel_area: Rect) -> Option<(u16, u16)> {
+        let inner = self.text_area(panel_area);
+        let row = pos.line.checked_sub(self.top_line)?;
+        if row >= inner.height as usize {
+            return None;
+        }
+        // Scrolled off the left edge is as invisible as scrolled off the right,
+        // so both answer None rather than clamping to an edge the position is
+        // not actually at.
+        let col = self.cursor_display_col(pos).checked_sub(self.left_col)?;
+        if col >= inner.width as usize {
+            return None;
+        }
+        Some((inner.x + col as u16, inner.y + row as u16))
+    }
+
+    pub fn text_area(&self, area: Rect) -> Rect {
         let gutter = (self.gutter_width() as u16).min(area.width);
         Rect {
             x: area.x + gutter,
@@ -779,20 +798,7 @@ impl Panel for EditorPanel {
     }
 
     fn cursor_position(&self, panel_area: Rect) -> Option<(u16, u16)> {
-        let inner = self.text_area(panel_area);
-        let cursor = self.cursor();
-        let row = cursor.line.checked_sub(self.top_line)?;
-        if row >= inner.height as usize {
-            return None;
-        }
-        // Scrolled off the left edge is as invisible as scrolled off the right,
-        // so both answer None rather than clamping to an edge the cursor is not
-        // actually at.
-        let col = self.cursor_display_col(cursor).checked_sub(self.left_col)?;
-        if col >= inner.width as usize {
-            return None;
-        }
-        Some((inner.x + col as u16, inner.y + row as u16))
+        self.cell_of(self.cursor(), panel_area)
     }
 
     /// The editor has no raw-key behavior left.

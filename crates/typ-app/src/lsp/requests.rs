@@ -51,6 +51,7 @@ pub(crate) enum Ask {
     Hover,
     Completion,
     Signature,
+    CodeAction,
 }
 
 impl Lsp {
@@ -68,6 +69,28 @@ impl Lsp {
         retries: u8,
         context: Option<serde_json::Value>,
     ) -> Result<(), NoAnswer> {
+        self.ask_with(kind, path, retries, |uri, encoding| {
+            let position = typ_lsp::to_lsp(encoding, rope.slice(..), char_index);
+            let mut params = serde_json::json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": position.line, "character": position.character },
+            });
+            if let Some(context) = context {
+                params["context"] = context;
+            }
+            params
+        })
+    }
+
+    /// Ask a question whose parameters are not a position: `params` builds
+    /// them from the document's URI and the server's encoding.
+    pub(crate) fn ask_with(
+        &mut self,
+        kind: Ask,
+        path: &Path,
+        retries: u8,
+        params: impl FnOnce(&str, typ_lsp::Encoding) -> serde_json::Value,
+    ) -> Result<(), NoAnswer> {
         let Some(doc) = self.docs.get(path) else {
             return Err(self.why_not_open(path));
         };
@@ -78,6 +101,7 @@ impl Lsp {
             Ask::Hover => ("hoverProvider", "textDocument/hover"),
             Ask::Completion => ("completionProvider", "textDocument/completion"),
             Ask::Signature => ("signatureHelpProvider", "textDocument/signatureHelp"),
+            Ask::CodeAction => ("codeActionProvider", "textDocument/codeAction"),
         };
 
         let Some(client) = self.client(id) else {
@@ -90,15 +114,7 @@ impl Lsp {
             return Err(NoAnswer::Unsupported);
         }
 
-        let position = typ_lsp::to_lsp(encoding, rope.slice(..), char_index);
-        let mut params = serde_json::json!({
-            "textDocument": { "uri": uri },
-            "position": { "line": position.line, "character": position.character },
-        });
-        if let Some(context) = context {
-            params["context"] = context;
-        }
-        let request = client.request(method, params);
+        let request = client.request(method, params(&uri, encoding));
         self.tally(method, true);
         self.pending.push(Pending {
             id: request,
@@ -218,6 +234,7 @@ impl NoAnswer {
             NoAnswer::Empty(Ask::Hover) => "No hover information here.",
             NoAnswer::Empty(Ask::Completion) => "No completions here.",
             NoAnswer::Empty(Ask::Signature) => "No signature here.",
+            NoAnswer::Empty(Ask::CodeAction) => "No code actions here.",
         }
     }
 }

@@ -102,6 +102,45 @@ pub(crate) fn definition_target(
     ))
 }
 
+/// One thing a server offered to do at the caret: an edit, a command for it
+/// to run, or both, the edit first.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CodeAction {
+    pub title: String,
+    pub edit: Option<serde_json::Value>,
+    /// A `Command`: its `command` and `arguments`.
+    pub command: Option<serde_json::Value>,
+}
+
+/// A `textDocument/codeAction` answer, in the order the server gave.
+///
+/// **Two shapes in one list.** A `CodeAction` carries its command as an
+/// object; a bare `Command` is the object, its `command` a string. One the
+/// server marked `disabled` is left out: TYPE has no receded row to show it
+/// in, and choosing it would do nothing.
+pub(crate) fn code_actions(result: &serde_json::Value) -> Vec<CodeAction> {
+    let Some(items) = result.as_array() else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter(|item| item.get("disabled").is_none())
+        .filter_map(|item| {
+            let title = item.get("title")?.as_str()?.to_string();
+            let command = match item.get("command") {
+                Some(serde_json::Value::String(_)) => Some(item.clone()),
+                Some(command @ serde_json::Value::Object(_)) => Some(command.clone()),
+                _ => None,
+            };
+            Some(CodeAction {
+                title,
+                edit: item.get("edit").cloned(),
+                command,
+            })
+        })
+        .collect()
+}
+
 /// The text of a `textDocument/hover` answer, as text.
 ///
 /// **Three shapes here too**, and the markup is flattened rather than rendered:

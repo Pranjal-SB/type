@@ -515,6 +515,13 @@ pub fn step_at(app: &mut App, event: AppEvent, area: Rect, now: Instant) -> Resu
                     return finish(app, events, true);
                 }
 
+                // A code action mark lists the code actions offered there.
+                if matches!(m.kind, MouseEventKind::Down(MouseButton::Left))
+                    && app.press_code_action_at(m.column, m.row, area)
+                {
+                    return finish(app, events, true);
+                }
+
                 // A press in a pane makes it the current one first, so the tab
                 // row and the text below route to the pane under the pointer.
                 // A press on the pane's number is that and nothing more.

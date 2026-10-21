@@ -168,6 +168,9 @@ pub enum Action {
     /// Put in the completion list's chosen item, replacing the word typed so
     /// far. `tab` or `enter` while the list is up, or a click on a row.
     AcceptCompletion,
+    /// List what the server offers to do at the caret: `ctrl+.`, or a click
+    /// on a `✦`.
+    CodeActions,
     /// Put the cursor on the next problem a server reported in this file,
     /// wrapping to the first.
     NextProblem,
@@ -468,6 +471,7 @@ impl Action {
         Action::GotoDefinition,
         Action::Hover,
         Action::AcceptCompletion,
+        Action::CodeActions,
         Action::NextProblem,
         Action::RestartLanguageServers,
         Action::OpenMenu,
@@ -570,6 +574,7 @@ impl Action {
             Action::GotoDefinition => "goto_definition",
             Action::Hover => "hover",
             Action::AcceptCompletion => "accept_completion",
+            Action::CodeActions => "code_actions",
             Action::NextProblem => "next_problem",
             Action::RestartLanguageServers => "restart_language_servers",
             Action::OpenMenu => "open_menu",
@@ -703,6 +708,7 @@ impl Action {
             Action::GotoDefinition => "go to the definition",
             Action::Hover => "describe the symbol here",
             Action::AcceptCompletion => "accept the completion",
+            Action::CodeActions => "show code actions",
             Action::NextProblem => "go to the next problem",
             Action::RestartLanguageServers => "restart language servers",
             Action::OpenMenu => "show the ctrl+k menu",
@@ -766,6 +772,7 @@ impl Action {
             Action::GotoDefinition
             | Action::Hover
             | Action::AcceptCompletion
+            | Action::CodeActions
             | Action::NextProblem
             | Action::RestartLanguageServers => Group::Code,
             Action::Quit

@@ -15,7 +15,7 @@ use typ_core::{Action, Group, KeyChord, RenderContext};
 
 use super::{App, Focus};
 use crate::app::targets::TargetKind;
-use crate::float_menu::{FloatMenu, Outcome};
+use crate::float_menu::{FloatMenu, Outcome, Pick};
 
 /// What text gets.
 const TEXT: &[Group] = &[Group::Edit, Group::Selection, Group::Find, Group::Code];
@@ -90,7 +90,9 @@ impl App {
                 | TargetKind::BarGroup(_)
                 | TargetKind::CompletionRow(_),
             ) => return,
-            None => {
+            // A `✦` sits on the text, and gets the text's menu, which lists
+            // its fixes first.
+            Some(TargetKind::CodeActionMark) | None => {
                 let editor = self.editor_region(frame);
                 let Some(pane) = self
                     .pane_areas(editor)
@@ -116,8 +118,14 @@ impl App {
         }
     }
 
+    /// Over text, the code actions offered at the caret lead the menu.
     fn show_context(&mut self, groups: &[Group], anchor: (u16, u16)) {
-        self.context = FloatMenu::new(groups, &self.keymap, anchor);
+        let fixes = match groups == TEXT {
+            true => self.fix_titles(),
+            false => Vec::new(),
+        };
+        self.list_fixes();
+        self.context = FloatMenu::with_fixes(&fixes, groups, &self.keymap, anchor);
         if self.context.is_none() {
             self.status = Some(NOTHING.to_string());
         }
@@ -133,7 +141,7 @@ impl App {
         match menu.key(chord) {
             Outcome::Stay => self.context = Some(menu),
             Outcome::Close => {}
-            Outcome::Run(action) => self.apply_named_action(action)?,
+            Outcome::Run(pick) => self.run_pick(pick)?,
         }
         Ok(())
     }
@@ -154,11 +162,22 @@ impl App {
         self.mark_dirty();
         let (body, _) = crate::layout::split_frame(frame);
         if event.kind == MouseEventKind::Down(MouseButton::Left)
-            && let Some(action) = menu.click(body, event.column, event.row)
+            && let Some(pick) = menu.click(body, event.column, event.row)
         {
-            self.apply_named_action(action)?;
+            self.run_pick(pick)?;
         }
         Ok(true)
+    }
+
+    /// A row chosen from a float: an action runs, a code action applies.
+    pub(super) fn run_pick(&mut self, pick: Pick) -> Result<()> {
+        match pick {
+            Pick::Action(action) => self.apply_named_action(action),
+            Pick::Fix(index) => {
+                self.choose_code_action(index);
+                Ok(())
+            }
+        }
     }
 
     pub(super) fn render_context(&self, frame: Rect, buf: &mut Buffer) {

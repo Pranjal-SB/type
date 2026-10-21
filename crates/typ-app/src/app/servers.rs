@@ -116,6 +116,7 @@ impl App {
         self.lsp.sync(&docs);
         self.settle_completion();
         self.settle_signature();
+        self.settle_code_actions();
     }
 
     /// What the servers have said about the buffer on screen.
@@ -173,6 +174,17 @@ impl App {
             // itself changes nothing on screen.
             typ_lsp::LspEvent::Notification { .. } => false,
             typ_lsp::LspEvent::Response { id, result } => self.handle_answer(server, id, result),
+            typ_lsp::LspEvent::ServerRequest { id, method, params }
+                if method == "workspace/applyEdit" =>
+            {
+                let encoding = self.lsp.encoding(server);
+                let empty = serde_json::Value::Null;
+                let edit = params.get("edit").unwrap_or(&empty);
+                let applied = self.apply_workspace_edit(edit, encoding);
+                self.lsp
+                    .respond(server, id, serde_json::json!({ "applied": applied }));
+                true
+            }
             typ_lsp::LspEvent::ServerRequest { .. } => false,
             // **Say why, in the server's own words.** A rustup shim for a
             // component that is not installed is on `PATH`, spawns fine, and
@@ -306,11 +318,15 @@ impl App {
                     self.complete_again();
                 } else if pending.kind == crate::lsp::Ask::Signature {
                     self.sign_again();
+                } else if pending.kind == crate::lsp::Ask::CodeAction {
+                    self.code_actions_again();
                 } else if pending.retries < crate::lsp::MAX_RETRIES {
                     self.ask_server_again(pending.kind, pending.retries + 1);
                 }
                 return false;
             }
+            // Asked on every caret move, so a refusal is not news.
+            Err(_) if pending.kind == crate::lsp::Ask::CodeAction => return false,
             // Said on the status bar like every neighbouring arm: `TYP_LOG` is
             // unset by default, so a log line alone is a key that did nothing.
             Err(error) => {
@@ -332,6 +348,9 @@ impl App {
         if pending.kind == crate::lsp::Ask::Signature {
             return self.signature_answered(pending, result);
         }
+        if pending.kind == crate::lsp::Ask::CodeAction {
+            return self.code_actions_answered(pending, result);
+        }
 
         // **Stale.** The question was about a position the cursor has left, and
         // a jump to where the user used to be is a jump nobody asked for.
@@ -344,7 +363,9 @@ impl App {
 
         match pending.kind {
             crate::lsp::Ask::Definition => self.jump_to_definition(pending.server, result),
-            crate::lsp::Ask::Completion | crate::lsp::Ask::Signature => false,
+            crate::lsp::Ask::Completion
+            | crate::lsp::Ask::Signature
+            | crate::lsp::Ask::CodeAction => false,
             crate::lsp::Ask::Hover => {
                 self.hover = crate::lsp::hover_text(&result);
                 if self.hover.is_none() {

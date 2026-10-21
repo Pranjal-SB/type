@@ -19,29 +19,29 @@ impl App {
         self.apply_workspace_edit(edit, Encoding::Utf16);
     }
 
-    /// Apply a `WorkspaceEdit`, saying on the bar what it did or why not.
-    /// Returns how many files it changed.
+    /// Apply a `WorkspaceEdit`, saying on the bar why not when it is not.
+    /// Returns whether every file it names was changed.
     pub(super) fn apply_workspace_edit(
         &mut self,
         edit: &serde_json::Value,
         encoding: Encoding,
-    ) -> usize {
+    ) -> bool {
         let files = match crate::lsp::workspace_edit(edit) {
             Ok(files) => files,
             Err(refusal) => {
                 self.status = Some(refusal.message().to_string());
-                return 0;
+                return false;
             }
         };
-        let mut changed = 0;
+        let mut applied = true;
         for file in files {
-            match self.edit_file(file, encoding) {
-                Ok(()) => changed += 1,
-                Err(message) => self.status = Some(message),
+            if let Err(message) = self.edit_file(file, encoding) {
+                self.status = Some(message);
+                applied = false;
             }
         }
         self.mark_dirty();
-        changed
+        applied
     }
 
     /// One file's edits, in its tab, opened in the background if need be.

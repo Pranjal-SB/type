@@ -259,11 +259,13 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             assert_eq!(app.pending_prefix(), Some("ctrl+k"));
         },
         // No server is configured, and each of these has to say so. With no
-        // list up, there is no completion to accept, and that is said too.
+        // list up, there is no completion to accept, and that is said too;
+        // nothing offered, no code actions to list.
         Action::GotoDefinition
         | Action::Hover
         | Action::RestartLanguageServers
-        | Action::AcceptCompletion => |app, a| {
+        | Action::AcceptCompletion
+        | Action::CodeActions => |app, a| {
             run(app, a);
             assert!(app.status().is_some(), "{} said nothing", a.name());
         },

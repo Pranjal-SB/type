@@ -1,6 +1,8 @@
 use std::path::Path;
 
 mod background;
+/// Code actions: asking, the `✦` marks and choosing one.
+mod code_actions;
 mod complete;
 mod complete_list;
 /// The context menu.
@@ -230,6 +232,8 @@ pub struct App {
     completing: complete::Completing,
     /// Signature help, and whether a key has asked for it.
     signing: signature::Signing,
+    /// Code actions offered at the caret, and what was last asked.
+    fixing: code_actions::Fixing,
 }
 
 /// The workspace watch, from the render thread's side.
@@ -544,6 +548,7 @@ impl App {
             hover: None,
             completing: complete::Completing::default(),
             signing: signature::Signing::default(),
+            fixing: code_actions::Fixing::default(),
             menu: None,
             teaching: None,
             warp: None,

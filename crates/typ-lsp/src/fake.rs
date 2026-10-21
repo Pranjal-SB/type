@@ -76,6 +76,8 @@ struct Flags {
     complete_late: bool,
     /// Leave `signatureHelpProvider` out of the capabilities.
     no_signature: bool,
+    /// Leave `codeActionProvider` out of the capabilities.
+    no_code_action: bool,
     /// Offer `日本語` as well, with a `textEdit` over the word before the
     /// position, counted in the encoding this server speaks.
     complete_edit: bool,
@@ -118,6 +120,7 @@ impl Flags {
             complete_late: has("--complete-late"),
             complete_edit: has("--complete-edit"),
             no_signature: has("--no-signature"),
+            no_code_action: has("--no-code-action"),
             garbage: has("--garbage"),
             exit_now: has("--exit-now"),
             sleep: has("--sleep"),
@@ -142,6 +145,10 @@ fn capabilities(flags: &Flags) -> serde_json::Value {
     }
     if !flags.no_signature {
         caps["signatureHelpProvider"] = serde_json::json!({ "triggerCharacters": ["(", ","] });
+    }
+    if !flags.no_code_action {
+        caps["codeActionProvider"] = serde_json::json!(true);
+        caps["executeCommandProvider"] = serde_json::json!({ "commands": [FIX_COMMAND] });
     }
     if flags.pull {
         caps["diagnosticProvider"] = serde_json::json!({
@@ -216,6 +223,43 @@ fn completion(flags: &Flags, text: &str, params: &serde_json::Value) -> serde_js
         }));
     }
     serde_json::json!({ "isIncomplete": false, "items": items })
+}
+
+/// The command the fake's second code action runs.
+const FIX_COMMAND: &str = "fake.fix";
+
+/// The id the fake gives `workspace/applyEdit`.
+const APPLY_ID: i32 = 8;
+
+/// The line the fake offers code actions on.
+const FIX_LINE: u64 = 2;
+
+/// An edit replacing the first three characters of `FIX_LINE` with `text`.
+fn fix_edit(uri: &str, text: &str) -> serde_json::Value {
+    serde_json::json!({ "changes": { uri: [{
+        "range": {
+            "start": { "line": FIX_LINE, "character": 0 },
+            "end": { "line": FIX_LINE, "character": 3 },
+        },
+        "newText": text,
+    }]}})
+}
+
+/// What `textDocument/codeAction` answers: on `FIX_LINE`, a quick fix with an
+/// edit and a bare command; anywhere else, nothing.
+fn code_actions(params: &serde_json::Value) -> serde_json::Value {
+    let line = params.pointer("/range/start/line").and_then(|l| l.as_u64());
+    if line != Some(FIX_LINE) {
+        return serde_json::json!([]);
+    }
+    let uri = params
+        .pointer("/textDocument/uri")
+        .and_then(|u| u.as_str())
+        .unwrap_or_default();
+    serde_json::json!([
+        { "title": "Replace with fix", "kind": "quickfix", "edit": fix_edit(uri, "fix") },
+        { "title": "Run the fake fix", "command": FIX_COMMAND, "arguments": [uri] },
+    ])
 }
 
 /// What `textDocument/signatureHelp` answers: one signature, its parameter
@@ -423,6 +467,20 @@ pub fn run() {
                     let _ = out.flush();
                     continue;
                 }
+                // The command asks the client to apply an edit, as a real
+                // server's refactoring does, before answering.
+                if method == "workspace/executeCommand" {
+                    let uri = params
+                        .pointer("/arguments/0")
+                        .and_then(|u| u.as_str())
+                        .unwrap_or_default();
+                    let _ = Message::Request(Request {
+                        id: APPLY_ID.into(),
+                        method: "workspace/applyEdit".into(),
+                        params: serde_json::json!({ "edit": fix_edit(uri, "ran") }),
+                    })
+                    .write(&mut out);
+                }
                 if method == "textDocument/completion" && flags.complete_late {
                     held = Some(id);
                     continue;
@@ -464,6 +522,7 @@ pub fn run() {
                     }
                     "textDocument/completion" => completion(&flags, &text, &params),
                     "textDocument/signatureHelp" => signature(&text, &params),
+                    "textDocument/codeAction" => code_actions(&params),
                     "textDocument/hover" if flags.hover_empty => serde_json::Value::Null,
                     "textDocument/hover" if flags.hover_plain => serde_json::json!({
                         "contents": "plain words",
