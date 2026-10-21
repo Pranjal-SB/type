@@ -1,6 +1,7 @@
 pub mod app;
 pub mod backend;
 pub mod capability;
+pub mod completion;
 pub mod config;
 pub mod dock;
 pub mod float_menu;
@@ -14,6 +15,7 @@ pub mod prompt;
 pub mod run;
 pub mod session;
 pub mod settings;
+pub mod signature;
 pub mod status;
 pub mod tabbar;
 

@@ -69,6 +69,16 @@ struct Flags {
     /// Ask the client to create the progress token first, which is a *request*
     /// and hangs the server if nobody answers it.
     progress_create: bool,
+    /// Leave `completionProvider` out of the capabilities.
+    no_completion: bool,
+    /// Hold each completion answer until the next `didChange` arrives, so it
+    /// describes a document the client has already moved past.
+    complete_late: bool,
+    /// Leave `signatureHelpProvider` out of the capabilities.
+    no_signature: bool,
+    /// Offer `日本語` as well, with a `textEdit` over the word before the
+    /// position, counted in the encoding this server speaks.
+    complete_edit: bool,
     garbage: bool,
     exit_now: bool,
     sleep: bool,
@@ -104,6 +114,10 @@ impl Flags {
             no_definition: has("--no-definition"),
             progress: has("--progress") || has("--progress-create"),
             progress_create: has("--progress-create"),
+            no_completion: has("--no-completion"),
+            complete_late: has("--complete-late"),
+            complete_edit: has("--complete-edit"),
+            no_signature: has("--no-signature"),
             garbage: has("--garbage"),
             exit_now: has("--exit-now"),
             sleep: has("--sleep"),
@@ -123,6 +137,12 @@ fn capabilities(flags: &Flags) -> serde_json::Value {
         "definitionProvider": true,
         "hoverProvider": true,
     });
+    if !flags.no_completion {
+        caps["completionProvider"] = serde_json::json!({ "triggerCharacters": ["."] });
+    }
+    if !flags.no_signature {
+        caps["signatureHelpProvider"] = serde_json::json!({ "triggerCharacters": ["(", ","] });
+    }
     if flags.pull {
         caps["diagnosticProvider"] = serde_json::json!({
             "identifier": "fake-native",
@@ -164,6 +184,90 @@ fn progress_burst(out: &mut impl Write) {
         "fetching",
         serde_json::json!({ "kind": "begin", "title": "Fetching" }),
     );
+}
+
+/// What `textDocument/completion` answers: two functions, one with docs, and
+/// under `--complete-edit` a CJK word placed by a `textEdit`.
+fn completion(flags: &Flags, text: &str, params: &serde_json::Value) -> serde_json::Value {
+    let mut items = vec![
+        serde_json::json!({ "label": "foo", "kind": 3, "detail": "fn foo()", "documentation": "Does foo." }),
+        serde_json::json!({ "label": "format", "kind": 3, "detail": "fn format(s: &str)" }),
+    ];
+    if flags.complete_edit {
+        let line = params
+            .pointer("/position/line")
+            .and_then(|l| l.as_u64())
+            .unwrap_or(0);
+        let at = params
+            .pointer("/position/character")
+            .and_then(|c| c.as_u64())
+            .unwrap_or(0);
+        let start = word_start(text, line as usize, at as usize, flags.utf8);
+        items.push(serde_json::json!({
+            "label": "日本語",
+            "kind": 6,
+            "textEdit": {
+                "range": {
+                    "start": { "line": line, "character": start },
+                    "end": { "line": line, "character": at },
+                },
+                "newText": "日本語",
+            },
+        }));
+    }
+    serde_json::json!({ "isIncomplete": false, "items": items })
+}
+
+/// What `textDocument/signatureHelp` answers: one signature, its parameter
+/// the number of commas since the last open paren before the position. Null
+/// outside any parens. The position is read as chars, which is exact for the
+/// ASCII the tests type. The second parameter's label is an offset pair, the
+/// other shape the protocol allows.
+fn signature(text: &str, params: &serde_json::Value) -> serde_json::Value {
+    let line = params
+        .pointer("/position/line")
+        .and_then(|l| l.as_u64())
+        .unwrap_or(0);
+    let at = params
+        .pointer("/position/character")
+        .and_then(|c| c.as_u64())
+        .unwrap_or(0);
+    let line = text.split('\n').nth(line as usize).unwrap_or("");
+    let before: String = line.chars().take(at as usize).collect();
+    let Some(open) = before.rfind('(') else {
+        return serde_json::Value::Null;
+    };
+    let active = before[open..].matches(',').count();
+    serde_json::json!({
+        "signatures": [{
+            "label": "fn f(a: i32, b: &str)",
+            "parameters": [{ "label": "a: i32" }, { "label": [13, 20] }],
+        }],
+        "activeSignature": 0,
+        "activeParameter": active,
+    })
+}
+
+/// Where the word ending at `at` on `line` starts, in UTF-8 bytes or UTF-16
+/// units: the server's own count, which is the thing under test.
+fn word_start(text: &str, line: usize, at: usize, utf8: bool) -> usize {
+    let line = text.split('\n').nth(line).unwrap_or("");
+    let width = |c: char| if utf8 { c.len_utf8() } else { c.len_utf16() };
+    let mut seen = 0;
+    let before: Vec<char> = line
+        .chars()
+        .take_while(|c| {
+            seen += width(*c);
+            seen <= at
+        })
+        .collect();
+    let word: usize = before
+        .iter()
+        .rev()
+        .take_while(|c| c.is_alphanumeric() || **c == '_')
+        .map(|c| width(*c))
+        .sum();
+    before.iter().map(|c| width(*c)).sum::<usize>() - word
 }
 
 /// A URI naming `name` in the same directory as `uri`.
@@ -281,6 +385,10 @@ pub fn run() {
     let mut open_uri = String::new();
     let mut version = 0i64;
     let mut refusals = 0usize;
+    // A completion answer waiting for the next `didChange`.
+    let mut held: Option<lsp_server::RequestId> = None;
+    // The document as last sent, which every sync kind here sends whole.
+    let mut text = String::new();
 
     while let Ok(Some(message)) = Message::read(&mut input) {
         seen += 1;
@@ -313,6 +421,10 @@ pub fn run() {
                     })
                     .write(&mut out);
                     let _ = out.flush();
+                    continue;
+                }
+                if method == "textDocument/completion" && flags.complete_late {
+                    held = Some(id);
                     continue;
                 }
                 let result = match method.as_str() {
@@ -350,6 +462,8 @@ pub fn run() {
                             },
                         })
                     }
+                    "textDocument/completion" => completion(&flags, &text, &params),
+                    "textDocument/signatureHelp" => signature(&text, &params),
                     "textDocument/hover" if flags.hover_empty => serde_json::Value::Null,
                     "textDocument/hover" if flags.hover_plain => serde_json::json!({
                         "contents": "plain words",
@@ -372,6 +486,23 @@ pub fn run() {
             Message::Notification(Notification { method, params }) => {
                 if method == "exit" {
                     return;
+                }
+                if let Some(sent) = params
+                    .pointer("/textDocument/text")
+                    .or_else(|| params.pointer("/contentChanges/0/text"))
+                    .and_then(|t| t.as_str())
+                {
+                    text = sent.to_string();
+                }
+                if method == "textDocument/didChange"
+                    && let Some(id) = held.take()
+                {
+                    let _ = Message::Response(Response {
+                        id,
+                        response_result: Ok(completion(&flags, &text, &serde_json::Value::Null)),
+                    })
+                    .write(&mut out);
+                    let _ = out.flush();
                 }
                 if let Some(doc) = params.get("textDocument") {
                     if let Some(uri) = doc.get("uri").and_then(|u| u.as_str()) {

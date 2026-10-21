@@ -165,6 +165,9 @@ pub enum Action {
     GotoDefinition,
     /// Show what the server knows about the thing under the cursor.
     Hover,
+    /// Put in the completion list's chosen item, replacing the word typed so
+    /// far. `tab` or `enter` while the list is up, or a click on a row.
+    AcceptCompletion,
     /// Put the cursor on the next problem a server reported in this file,
     /// wrapping to the first.
     NextProblem,
@@ -464,6 +467,7 @@ impl Action {
         Action::Outdent,
         Action::GotoDefinition,
         Action::Hover,
+        Action::AcceptCompletion,
         Action::NextProblem,
         Action::RestartLanguageServers,
         Action::OpenMenu,
@@ -565,6 +569,7 @@ impl Action {
                 .unwrap_or("focus_pane"),
             Action::GotoDefinition => "goto_definition",
             Action::Hover => "hover",
+            Action::AcceptCompletion => "accept_completion",
             Action::NextProblem => "next_problem",
             Action::RestartLanguageServers => "restart_language_servers",
             Action::OpenMenu => "open_menu",
@@ -697,6 +702,7 @@ impl Action {
             Action::Outdent => "outdent the selected lines",
             Action::GotoDefinition => "go to the definition",
             Action::Hover => "describe the symbol here",
+            Action::AcceptCompletion => "accept the completion",
             Action::NextProblem => "go to the next problem",
             Action::RestartLanguageServers => "restart language servers",
             Action::OpenMenu => "show the ctrl+k menu",
@@ -759,6 +765,7 @@ impl Action {
             | Action::ResizePanes => Group::Panes,
             Action::GotoDefinition
             | Action::Hover
+            | Action::AcceptCompletion
             | Action::NextProblem
             | Action::RestartLanguageServers => Group::Code,
             Action::Quit

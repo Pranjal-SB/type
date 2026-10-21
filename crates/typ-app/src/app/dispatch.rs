@@ -123,6 +123,18 @@ impl App {
             return Ok(());
         }
 
+        // The completion list takes `tab`, `enter`, the arrows and `esc`, and
+        // leaves every other key to the editor, which goes on typing.
+        if self.handle_completion_chord(&chord)? {
+            return Ok(());
+        }
+
+        // Signature help never takes a key: `esc` puts it away and goes on
+        // to do whatever else it does.
+        if chord.raw.code == KeyCode::Esc {
+            self.close_signature();
+        }
+
         let bound = match self.keymap.resolve(None, &chord) {
             typ_core::Resolved::Matched(action) => Some(action),
             // Nothing runs yet, so nothing transient is cleared: a close
@@ -175,6 +187,10 @@ impl App {
             && !is_chorded
             && let Some(events) = self.focused_mut().apply_action(Action::InsertChar(c))
         {
+            if self.focus == Focus::Editor {
+                self.completion_typed(c);
+                self.signature_typed(c);
+            }
             return self.apply(events);
         }
 
@@ -283,6 +299,7 @@ impl App {
             }
             Action::GotoDefinition => self.ask_server(crate::lsp::Ask::Definition),
             Action::Hover => self.ask_server(crate::lsp::Ask::Hover),
+            Action::AcceptCompletion => self.accept_completion(),
             Action::NextProblem => self.next_problem(),
             Action::Save => match self.shown_editor_mut().map(|editor| editor.save()) {
                 // A view writes what it changes as it changes it.

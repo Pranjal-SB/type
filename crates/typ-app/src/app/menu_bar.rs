@@ -68,7 +68,9 @@ impl App {
         if self.context.is_some() {
             return Some(FLOAT_KEYS);
         }
-        let bar = self.bar.as_ref()?;
+        let Some(bar) = self.bar.as_ref() else {
+            return self.completion_hint();
+        };
         Some(match bar.dropdown {
             Some(_) => DROPDOWN_KEYS,
             None => BAR_KEYS,
