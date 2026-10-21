@@ -17,6 +17,8 @@ mod live;
 mod menu_bar;
 pub(crate) mod panes;
 mod picker;
+/// Rename: `f2`, its prompt, and the server's answer.
+mod rename;
 mod render;
 /// Search, replace and goto-line. A child module rather than a sibling so it
 /// reaches `App`'s private fields without any of them widening to `pub(crate)`:
@@ -234,6 +236,8 @@ pub struct App {
     signing: signature::Signing,
     /// Code actions offered at the caret, and what was last asked.
     fixing: code_actions::Fixing,
+    /// Where a rename was started and the name it started from.
+    renaming: Option<rename::Renaming>,
 }
 
 /// The workspace watch, from the render thread's side.
@@ -549,6 +553,7 @@ impl App {
             completing: complete::Completing::default(),
             signing: signature::Signing::default(),
             fixing: code_actions::Fixing::default(),
+            renaming: None,
             menu: None,
             teaching: None,
             warp: None,

@@ -171,6 +171,9 @@ pub enum Action {
     /// List what the server offers to do at the caret: `ctrl+.`, or a click
     /// on a `✦`.
     CodeActions,
+    /// Rename the symbol at the caret everywhere the server knows it, after
+    /// asking for the new name on the status bar.
+    Rename,
     /// Put the cursor on the next problem a server reported in this file,
     /// wrapping to the first.
     NextProblem,
@@ -472,6 +475,7 @@ impl Action {
         Action::Hover,
         Action::AcceptCompletion,
         Action::CodeActions,
+        Action::Rename,
         Action::NextProblem,
         Action::RestartLanguageServers,
         Action::OpenMenu,
@@ -575,6 +579,7 @@ impl Action {
             Action::Hover => "hover",
             Action::AcceptCompletion => "accept_completion",
             Action::CodeActions => "code_actions",
+            Action::Rename => "rename",
             Action::NextProblem => "next_problem",
             Action::RestartLanguageServers => "restart_language_servers",
             Action::OpenMenu => "open_menu",
@@ -709,6 +714,7 @@ impl Action {
             Action::Hover => "describe the symbol here",
             Action::AcceptCompletion => "accept the completion",
             Action::CodeActions => "show code actions",
+            Action::Rename => "rename the symbol",
             Action::NextProblem => "go to the next problem",
             Action::RestartLanguageServers => "restart language servers",
             Action::OpenMenu => "show the ctrl+k menu",
@@ -773,6 +779,7 @@ impl Action {
             | Action::Hover
             | Action::AcceptCompletion
             | Action::CodeActions
+            | Action::Rename
             | Action::NextProblem
             | Action::RestartLanguageServers => Group::Code,
             Action::Quit

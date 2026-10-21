@@ -301,6 +301,7 @@ impl App {
             Action::Hover => self.ask_server(crate::lsp::Ask::Hover),
             Action::AcceptCompletion => self.accept_completion(),
             Action::CodeActions => self.open_code_actions(),
+            Action::Rename => self.start_rename(),
             Action::NextProblem => self.next_problem(),
             Action::Save => match self.shown_editor_mut().map(|editor| editor.save()) {
                 // A view writes what it changes as it changes it.

@@ -78,6 +78,10 @@ struct Flags {
     no_signature: bool,
     /// Leave `codeActionProvider` out of the capabilities.
     no_code_action: bool,
+    /// Offer `renameProvider` without `prepareProvider`.
+    no_prepare_rename: bool,
+    /// Answer `textDocument/prepareRename` with an error saying why not.
+    refuse_rename: bool,
     /// Offer `日本語` as well, with a `textEdit` over the word before the
     /// position, counted in the encoding this server speaks.
     complete_edit: bool,
@@ -121,6 +125,8 @@ impl Flags {
             complete_edit: has("--complete-edit"),
             no_signature: has("--no-signature"),
             no_code_action: has("--no-code-action"),
+            no_prepare_rename: has("--no-prepare-rename"),
+            refuse_rename: has("--refuse-rename"),
             garbage: has("--garbage"),
             exit_now: has("--exit-now"),
             sleep: has("--sleep"),
@@ -150,6 +156,10 @@ fn capabilities(flags: &Flags) -> serde_json::Value {
         caps["codeActionProvider"] = serde_json::json!(true);
         caps["executeCommandProvider"] = serde_json::json!({ "commands": [FIX_COMMAND] });
     }
+    caps["renameProvider"] = match flags.no_prepare_rename {
+        true => serde_json::json!(true),
+        false => serde_json::json!({ "prepareProvider": true }),
+    };
     if flags.pull {
         caps["diagnosticProvider"] = serde_json::json!({
             "identifier": "fake-native",
@@ -260,6 +270,121 @@ fn code_actions(params: &serde_json::Value) -> serde_json::Value {
         { "title": "Replace with fix", "kind": "quickfix", "edit": fix_edit(uri, "fix") },
         { "title": "Run the fake fix", "command": FIX_COMMAND, "arguments": [uri] },
     ])
+}
+
+/// The word at `character` on `line` of `text`, as its char range and text.
+/// Chars stand in for the encoding, which is exact for the ASCII the rename
+/// tests use.
+fn word_at(text: &str, line: u64, character: u64) -> Option<(usize, usize, String)> {
+    let chars: Vec<char> = text.split('\n').nth(line as usize)?.chars().collect();
+    let at = (character as usize).min(chars.len());
+    let is_word = |c: &char| c.is_alphanumeric() || *c == '_';
+    let start = at - chars[..at].iter().rev().take_while(|c| is_word(c)).count();
+    let end = at + chars[at..].iter().take_while(|c| is_word(c)).count();
+    (start < end).then(|| (start, end, chars[start..end].iter().collect()))
+}
+
+/// Every whole-word `word` in `text`, as edits to `new_name`.
+fn occurrences(text: &str, word: &str, new_name: &str) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    for (line, row) in text.split('\n').enumerate() {
+        let chars: Vec<char> = row.chars().collect();
+        let width = word.chars().count();
+        for start in 0..chars.len() {
+            let end = start + width;
+            let is_word = |i: usize| {
+                chars
+                    .get(i)
+                    .is_some_and(|c| c.is_alphanumeric() || *c == '_')
+            };
+            let here: String = chars[start..end.min(chars.len())].iter().collect();
+            if here == word && !(start > 0 && is_word(start - 1)) && !is_word(end) {
+                out.push(serde_json::json!({
+                    "range": {
+                        "start": { "line": line, "character": start },
+                        "end": { "line": line, "character": end },
+                    },
+                    "newText": new_name,
+                }));
+            }
+        }
+    }
+    out
+}
+
+/// What `textDocument/prepareRename` answers: the word at the position and
+/// its range, or null off a word.
+fn prepare_rename(text: &str, params: &serde_json::Value) -> serde_json::Value {
+    let line = params
+        .pointer("/position/line")
+        .and_then(|l| l.as_u64())
+        .unwrap_or(0);
+    let at = params
+        .pointer("/position/character")
+        .and_then(|c| c.as_u64())
+        .unwrap_or(0);
+    let Some((start, end, word)) = word_at(text, line, at) else {
+        return serde_json::Value::Null;
+    };
+    serde_json::json!({
+        "range": {
+            "start": { "line": line, "character": start },
+            "end": { "line": line, "character": end },
+        },
+        "placeholder": word,
+    })
+}
+
+/// What `textDocument/rename` answers: the word at the position renamed in
+/// the document, and in every other `.rs` file beside it, read from disk as
+/// a server reads files nobody has open.
+fn rename(text: &str, params: &serde_json::Value) -> serde_json::Value {
+    let line = params
+        .pointer("/position/line")
+        .and_then(|l| l.as_u64())
+        .unwrap_or(0);
+    let at = params
+        .pointer("/position/character")
+        .and_then(|c| c.as_u64())
+        .unwrap_or(0);
+    let new_name = params
+        .get("newName")
+        .and_then(|n| n.as_str())
+        .unwrap_or_default();
+    let uri = params
+        .pointer("/textDocument/uri")
+        .and_then(|u| u.as_str())
+        .unwrap_or_default();
+    let Some((_, _, word)) = word_at(text, line, at) else {
+        return serde_json::Value::Null;
+    };
+    let mut changes = serde_json::Map::new();
+    changes.insert(uri.to_string(), occurrences(text, &word, new_name).into());
+    let here = uri
+        .parse::<lsp_types::Uri>()
+        .ok()
+        .and_then(|u| crate::uri::uri_to_path(&u));
+    let siblings = here
+        .as_ref()
+        .and_then(|p| std::fs::read_dir(p.parent()?).ok())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "rs") && Some(p) != here.as_ref());
+    for path in siblings {
+        let (Ok(disk), Some(other)) = (
+            std::fs::read_to_string(&path),
+            crate::uri::path_to_uri(&path),
+        ) else {
+            continue;
+        };
+        let edits = occurrences(&disk, &word, new_name);
+        if !edits.is_empty() {
+            changes.insert(other.as_str().to_string(), edits.into());
+        }
+    }
+    serde_json::json!({ "changes": changes })
 }
 
 /// What `textDocument/signatureHelp` answers: one signature, its parameter
@@ -442,7 +567,9 @@ pub fn run() {
 
         match message {
             Message::Request(Request { id, method, params }) => {
-                let error = if method == "initialize" && flags.refuse_initialize {
+                let error = if method == "textDocument/prepareRename" && flags.refuse_rename {
+                    Some((-32803, "this symbol cannot be renamed"))
+                } else if method == "initialize" && flags.refuse_initialize {
                     Some((-32603, "this workspace is refused"))
                 } else if method != "textDocument/hover" {
                     None
@@ -523,6 +650,8 @@ pub fn run() {
                     "textDocument/completion" => completion(&flags, &text, &params),
                     "textDocument/signatureHelp" => signature(&text, &params),
                     "textDocument/codeAction" => code_actions(&params),
+                    "textDocument/prepareRename" => prepare_rename(&text, &params),
+                    "textDocument/rename" => rename(&text, &params),
                     "textDocument/hover" if flags.hover_empty => serde_json::Value::Null,
                     "textDocument/hover" if flags.hover_plain => serde_json::json!({
                         "contents": "plain words",

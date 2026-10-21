@@ -469,6 +469,9 @@ fn initialize_params(root: &Path) -> serde_json::Value {
                     },
                     "contextSupport": true,
                 },
+                // `prepareRename` first, so a symbol that cannot be renamed
+                // says so before a name is typed for it.
+                "rename": { "prepareSupport": true },
                 // Literals, so a server sends its fixes with their edits
                 // rather than as bare commands.
                 "codeAction": {

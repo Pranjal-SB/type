@@ -52,6 +52,8 @@ pub(crate) enum Ask {
     Completion,
     Signature,
     CodeAction,
+    PrepareRename,
+    Rename,
 }
 
 impl Lsp {
@@ -91,28 +93,16 @@ impl Lsp {
         retries: u8,
         params: impl FnOnce(&str, typ_lsp::Encoding) -> serde_json::Value,
     ) -> Result<(), NoAnswer> {
+        self.able(kind, path)?;
         let Some(doc) = self.docs.get(path) else {
             return Err(self.why_not_open(path));
         };
         let (id, uri, version) = (doc.server, doc.uri.clone(), doc.version);
         let encoding = self.encoding(id);
-        let (capability, method) = match kind {
-            Ask::Definition => ("definitionProvider", "textDocument/definition"),
-            Ask::Hover => ("hoverProvider", "textDocument/hover"),
-            Ask::Completion => ("completionProvider", "textDocument/completion"),
-            Ask::Signature => ("signatureHelpProvider", "textDocument/signatureHelp"),
-            Ask::CodeAction => ("codeActionProvider", "textDocument/codeAction"),
-        };
-
+        let method = method_of(kind).1;
         let Some(client) = self.client(id) else {
             return Err(NoAnswer::NoServer);
         };
-        if !client.is_initialized() {
-            return Err(NoAnswer::NotReady);
-        }
-        if !client.supports(capability) {
-            return Err(NoAnswer::Unsupported);
-        }
 
         let request = client.request(method, params(&uri, encoding));
         self.tally(method, true);
@@ -124,6 +114,28 @@ impl Lsp {
             retries,
             version,
         });
+        Ok(())
+    }
+
+    /// Whether `kind` could be asked about `path` now, and why not if not.
+    /// Asks nothing.
+    pub(crate) fn able(&self, kind: Ask, path: &Path) -> Result<(), NoAnswer> {
+        let Some(doc) = self.docs.get(path) else {
+            return Err(self.why_not_open(path));
+        };
+        let Some(client) = self
+            .servers
+            .get(doc.server.0 as usize)
+            .and_then(|s| s.client.as_deref())
+        else {
+            return Err(NoAnswer::NoServer);
+        };
+        if !client.is_initialized() {
+            return Err(NoAnswer::NotReady);
+        }
+        if !client.supports(method_of(kind).0) {
+            return Err(NoAnswer::Unsupported);
+        }
         Ok(())
     }
 
@@ -200,6 +212,19 @@ impl Lsp {
     }
 }
 
+/// The capability that offers `kind`, and the method that asks it.
+fn method_of(kind: Ask) -> (&'static str, &'static str) {
+    match kind {
+        Ask::Definition => ("definitionProvider", "textDocument/definition"),
+        Ask::Hover => ("hoverProvider", "textDocument/hover"),
+        Ask::Completion => ("completionProvider", "textDocument/completion"),
+        Ask::Signature => ("signatureHelpProvider", "textDocument/signatureHelp"),
+        Ask::CodeAction => ("codeActionProvider", "textDocument/codeAction"),
+        Ask::PrepareRename => ("renameProvider", "textDocument/prepareRename"),
+        Ask::Rename => ("renameProvider", "textDocument/rename"),
+    }
+}
+
 /// Why a question could not be asked.
 ///
 /// Data rather than an error: every one of these is an ordinary state that the
@@ -235,6 +260,8 @@ impl NoAnswer {
             NoAnswer::Empty(Ask::Completion) => "No completions here.",
             NoAnswer::Empty(Ask::Signature) => "No signature here.",
             NoAnswer::Empty(Ask::CodeAction) => "No code actions here.",
+            NoAnswer::Empty(Ask::PrepareRename) => "Nothing to rename here.",
+            NoAnswer::Empty(Ask::Rename) => "The language server renamed nothing.",
         }
     }
 }

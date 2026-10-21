@@ -265,7 +265,8 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
         | Action::Hover
         | Action::RestartLanguageServers
         | Action::AcceptCompletion
-        | Action::CodeActions => |app, a| {
+        | Action::CodeActions
+        | Action::Rename => |app, a| {
             run(app, a);
             assert!(app.status().is_some(), "{} said nothing", a.name());
         },

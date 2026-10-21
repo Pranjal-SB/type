@@ -412,20 +412,23 @@ impl Lsp {
         Some(self.configs.get(server.config)?.language_id.clone())
     }
 
+    /// What a document's server said about one capability, if it is running
+    /// and said anything.
+    pub(crate) fn capability(&self, path: &Path, capability: &str) -> Option<&serde_json::Value> {
+        let doc = self.docs.get(path)?;
+        self.servers
+            .get(doc.server.0 as usize)?
+            .client
+            .as_ref()?
+            .capabilities()?
+            .get(capability)
+    }
+
     /// The characters a document's server asks to be asked on, as a
     /// capability's `triggerCharacters` and `retriggerCharacters` name them.
     /// Empty without a server.
     pub(crate) fn triggers(&self, path: &Path, capability: &str) -> Vec<char> {
-        let Some(doc) = self.docs.get(path) else {
-            return Vec::new();
-        };
-        let Some(provider) = self
-            .servers
-            .get(doc.server.0 as usize)
-            .and_then(|s| s.client.as_ref())
-            .and_then(|c| c.capabilities())
-            .and_then(|caps| caps.get(capability))
-        else {
+        let Some(provider) = self.capability(path, capability) else {
             return Vec::new();
         };
         ["triggerCharacters", "retriggerCharacters"]

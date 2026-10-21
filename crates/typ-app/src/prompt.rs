@@ -13,6 +13,8 @@ pub enum PromptKind {
     Replace,
     /// A line number to jump to.
     GotoLine,
+    /// The new name for the symbol at the caret, seeded with the old one.
+    Rename,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +51,7 @@ impl Prompt {
             PromptKind::Search => "Search:",
             PromptKind::Replace => "Replace with:",
             PromptKind::GotoLine => "Go to line:",
+            PromptKind::Rename => "Rename to:",
         }
     }
 
