@@ -214,8 +214,9 @@ impl App {
             match self.focus {
                 Focus::Tree => self.dock.zoomed = self.dock.open,
                 Focus::Editor => self.zoomed_pane = Some(self.panes[self.pane].id),
-                // The bar is one row and has nothing to zoom to.
-                Focus::Status => {}
+                // The bar is one row and has nothing to zoom to; the bottom
+                // dock has no posture toggle yet.
+                Focus::Status | Focus::BottomDock => {}
             }
         }
         self.mark_dirty();

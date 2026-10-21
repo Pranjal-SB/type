@@ -427,6 +427,12 @@ fn initialize_params(root: &Path) -> serde_json::Value {
             "workspace": {
                 "didChangeWatchedFiles": { "dynamicRegistration": false },
                 "configuration": true,
+                // A command a code action runs asks for its edit this way.
+                "applyEdit": true,
+                // No `resourceOperations`: a server that would create, rename
+                // or delete a file is told TYPE will not, and an edit that
+                // does is refused whole (`lsp/edit.rs`).
+                "workspaceEdit": { "documentChanges": true },
             },
             "textDocument": {
                 "synchronization": {
@@ -462,6 +468,18 @@ fn initialize_params(root: &Path) -> serde_json::Value {
                         "documentationFormat": ["markdown", "plaintext"],
                     },
                     "contextSupport": true,
+                },
+                // `prepareRename` first, so a symbol that cannot be renamed
+                // says so before a name is typed for it.
+                "rename": { "prepareSupport": true },
+                // Literals, so a server sends its fixes with their edits
+                // rather than as bare commands.
+                "codeAction": {
+                    "codeActionLiteralSupport": {
+                        "codeActionKind": {
+                            "valueSet": ["", "quickfix", "refactor", "source"],
+                        },
+                    },
                 },
                 "signatureHelp": {
                     "signatureInformation": {

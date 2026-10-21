@@ -1,5 +1,6 @@
 //! A float of actions with their keys: the context menu (interface §8 4b),
-//! and the menu bar's dropdown.
+//! the menu bar's dropdown, and the code actions a server offers, which lead
+//! the context menu over text and are the whole float `ctrl+.` opens.
 //!
 //! A query over the action table by `Group`, as the `ctrl+k` menu is, so a
 //! new action shows up here without a second list. Layout is one function,
@@ -15,11 +16,16 @@ use typ_core::{Action, Group, KeyChord, Keymap, RenderContext};
 const EXIT: &str = "esc";
 /// The float's name while nothing is typed.
 const NAME: &str = "actions";
+/// Its name when it lists only a server's code actions.
+const FIXES_NAME: &str = "code actions";
+/// The heading over the code actions when other groups are on show too.
+const FIXES_HEADING: &str = "fixes";
 /// Between a row's description and its key, at the least.
 const KEY_GAP: usize = 2;
 
 pub struct FloatMenu {
     rows: Vec<Entry>,
+    name: &'static str,
     filter: String,
     /// Into the rows the filter shows.
     selected: usize,
@@ -27,9 +33,27 @@ pub struct FloatMenu {
     anchor: (u16, u16),
 }
 
+/// What a row does when it is chosen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pick {
+    Action(Action),
+    /// The code action at this index in the list the float was built from.
+    Fix(usize),
+}
+
 struct Entry {
-    action: Action,
+    pick: Pick,
+    label: String,
     key: String,
+}
+
+impl Entry {
+    fn heading(&self) -> &'static str {
+        match self.pick {
+            Pick::Action(action) => action.group().label(),
+            Pick::Fix(_) => FIXES_HEADING,
+        }
+    }
 }
 
 /// What a key did to a float.
@@ -39,11 +63,11 @@ pub enum Outcome {
     /// `esc`, or `enter` with nothing to run.
     Close,
     /// `enter` on a row.
-    Run(Action),
+    Run(Pick),
 }
 
 enum Line {
-    Heading(Group),
+    Heading(&'static str),
     /// Its place among the rows shown.
     Row(usize),
 }
@@ -79,19 +103,35 @@ pub fn actions_for(groups: &[Group]) -> Vec<Action> {
 impl FloatMenu {
     /// `None` when the groups hold nothing to list.
     pub fn new(groups: &[Group], keymap: &Keymap, anchor: (u16, u16)) -> Option<Self> {
-        let rows: Vec<Entry> = actions_for(groups)
-            .into_iter()
-            .map(|action| Entry {
-                action,
-                key: keymap
-                    .bindings_for(action)
-                    .first()
-                    .map(|k| k.to_string())
-                    .unwrap_or_default(),
-            })
-            .collect();
+        Self::with_fixes(&[], groups, keymap, anchor)
+    }
+
+    /// The code actions titled `fixes` first, then the groups' actions.
+    /// `None` when there is nothing to list.
+    pub fn with_fixes(
+        fixes: &[String],
+        groups: &[Group],
+        keymap: &Keymap,
+        anchor: (u16, u16),
+    ) -> Option<Self> {
+        let fixes = fixes.iter().enumerate().map(|(index, title)| Entry {
+            pick: Pick::Fix(index),
+            label: title.clone(),
+            key: String::new(),
+        });
+        let actions = actions_for(groups).into_iter().map(|action| Entry {
+            pick: Pick::Action(action),
+            label: action.description().to_string(),
+            key: keymap
+                .bindings_for(action)
+                .first()
+                .map(|k| k.to_string())
+                .unwrap_or_default(),
+        });
+        let rows: Vec<Entry> = fixes.chain(actions).collect();
         (!rows.is_empty()).then_some(FloatMenu {
             rows,
+            name: if groups.is_empty() { FIXES_NAME } else { NAME },
             filter: String::new(),
             selected: 0,
             anchor,
@@ -102,13 +142,26 @@ impl FloatMenu {
     pub fn actions(&self) -> Vec<Action> {
         self.shown()
             .into_iter()
-            .map(|i| self.rows[i].action)
+            .filter_map(|i| match self.rows[i].pick {
+                Pick::Action(action) => Some(action),
+                Pick::Fix(_) => None,
+            })
             .collect()
     }
 
-    /// The highlighted row's action.
-    pub fn selected(&self) -> Option<Action> {
-        self.actions().get(self.selected).copied()
+    /// The code actions' titles the filter leaves, in the order shown.
+    pub fn fixes(&self) -> Vec<String> {
+        self.shown()
+            .into_iter()
+            .filter(|&i| matches!(self.rows[i].pick, Pick::Fix(_)))
+            .map(|i| self.rows[i].label.clone())
+            .collect()
+    }
+
+    /// The highlighted row's pick.
+    pub fn selected(&self) -> Option<Pick> {
+        let shown = self.shown();
+        Some(self.rows[*shown.get(self.selected)?].pick)
     }
 
     /// Move the highlight, stopping at either end.
@@ -150,7 +203,7 @@ impl FloatMenu {
 
     fn shown(&self) -> Vec<usize> {
         (0..self.rows.len())
-            .filter(|&i| self.rows[i].action.description().contains(&self.filter))
+            .filter(|&i| self.rows[i].label.to_lowercase().contains(&self.filter))
             .collect()
     }
 
@@ -158,7 +211,7 @@ impl FloatMenu {
     /// one group, and the bar above it already names it.
     fn lines(&self) -> Vec<Line> {
         let shown = self.shown();
-        let group_of = |i: usize| self.rows[i].action.group();
+        let group_of = |i: usize| self.rows[i].heading();
         // Sorted by group, so two groups means two neighbours differ.
         let several = shown.windows(2).any(|w| group_of(w[0]) != group_of(w[1]));
         let mut out = Vec::new();
@@ -183,7 +236,7 @@ impl FloatMenu {
         let content = self
             .rows
             .iter()
-            .map(|r| r.action.description().chars().count() + KEY_GAP + r.key.chars().count())
+            .map(|r| r.label.chars().count() + KEY_GAP + r.key.chars().count())
             .max()
             .unwrap_or(0);
         // A border and a space either side.
@@ -233,7 +286,7 @@ impl FloatMenu {
     }
 
     /// A left press at a cell: the row there, highlighted and returned.
-    pub fn click(&mut self, body: Rect, column: u16, row: u16) -> Option<Action> {
+    pub fn click(&mut self, body: Rect, column: u16, row: u16) -> Option<Pick> {
         self.selected = self.hit(body, column, row)?;
         self.selected()
     }
@@ -242,7 +295,7 @@ impl FloatMenu {
         let lines = self.lines();
         let (area, first) = self.layout(body, &lines);
         let name = match self.filter.as_str() {
-            "" => NAME,
+            "" => self.name,
             typed => typed,
         };
         typ_core::chrome::float(area, buf, name, EXIT, ctx);
@@ -256,7 +309,7 @@ impl FloatMenu {
             match line {
                 Line::Heading(group) => {
                     let style = ground.add_modifier(Modifier::BOLD);
-                    buf.set_stringn(inner.x + 1, y, group.label(), room, style);
+                    buf.set_stringn(inner.x + 1, y, *group, room, style);
                 }
                 Line::Row(place) => {
                     let row = match *place == self.selected {
@@ -265,7 +318,7 @@ impl FloatMenu {
                     };
                     buf.set_style(Rect::new(inner.x, y, inner.width, 1), row);
                     let entry = &self.rows[shown[*place]];
-                    buf.set_stringn(inner.x + 1, y, entry.action.description(), room, row);
+                    buf.set_stringn(inner.x + 1, y, &entry.label, room, row);
                     let key_width = u16::try_from(entry.key.chars().count()).unwrap_or(0);
                     let key_x = inner.right().saturating_sub(key_width + 1).max(inner.x);
                     let key_style = row.fg(theme.status_bar_accent);

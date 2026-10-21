@@ -23,6 +23,8 @@ pub(crate) enum Drag {
     Split(crate::pane::SplitPath),
     /// The rule between the dock and the panes.
     Dock,
+    /// The bottom dock's labelled rule.
+    Bottom,
 }
 
 /// Where one pane is drawn: the regions inside its rect.
@@ -294,6 +296,9 @@ impl App {
         if self.focus == Focus::Tree {
             return self.resize_dock_with(chord.raw.code);
         }
+        if self.focus == Focus::BottomDock {
+            return self.resize_bottom_with(chord.raw.code);
+        }
         let editor = self.editor_region(self.screen);
         let id = self.panes[self.pane].id;
         let (axis, delta) = match chord.raw.code {
@@ -351,6 +356,10 @@ impl App {
             Some(Drag::Dock) => {
                 self.dock.place_rule(self.split_body(frame).0, column);
                 self.mark_dirty();
+                return true;
+            }
+            Some(Drag::Bottom) => {
+                self.drag_bottom_to(row, frame);
                 return true;
             }
             None => return false,

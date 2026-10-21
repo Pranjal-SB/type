@@ -15,6 +15,10 @@ pub const DOCK_SIZE: u16 = 30;
 const NARROW_THRESHOLD: u16 = 60;
 /// The narrowest an open dock may be dragged or nudged to, its rule included.
 pub const MIN_DOCK: u16 = 12;
+/// The bottom dock's preferred height in rows, its labelled rule included.
+pub const BOTTOM_SIZE: u16 = 10;
+/// The shortest an open bottom dock may be dragged or nudged to.
+pub const MIN_BOTTOM: u16 = 3;
 /// Under this many terminal columns a Standard layout renders as Focus, unless
 /// the user chose the layout by hand (interface §7).
 pub const ADAPT_WIDTH: u16 = 100;
@@ -59,8 +63,9 @@ impl Preset {
 
 /// One dock's state.
 ///
-/// `edge` is data for the docks to come (decision 2 of the M4 plan): only a
-/// left dock exists, and [`Dock::areas`] lays out that one.
+/// `edge` says which of the two layouts applies: [`Dock::areas`] for the
+/// left dock, [`Dock::bottom_areas`] for the bottom one. A right dock waits
+/// for its first panel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Dock {
     pub edge: Edge,
@@ -152,6 +157,85 @@ impl Dock {
     pub fn nudge_rule(&mut self, body: Rect, delta: i32) {
         let at = self.areas(body).rule.x as i32 + delta;
         self.place_rule(body, at.clamp(0, u16::MAX as i32) as u16);
+    }
+}
+
+/// Where the bottom dock and the panes above it are drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BottomAreas {
+    /// The labelled rule along the dock's top row: its tab bar, and the
+    /// rule between it and the panes.
+    pub heading: Rect,
+    /// The panel under the heading.
+    pub content: Rect,
+    /// Everything above: where the panes go.
+    pub rest: Rect,
+}
+
+impl Dock {
+    /// The bottom dock as the app starts: folded.
+    pub fn bottom() -> Self {
+        Dock {
+            edge: Edge::Bottom,
+            size: BOTTOM_SIZE,
+            open: false,
+            zoomed: false,
+        }
+    }
+
+    /// Split `area`, the panes' columns, into the panes above and the bottom
+    /// dock below. Never over half of it, as the left dock is never over half
+    /// the body.
+    ///
+    /// **Folded, it takes no row.** The left dock folds to a column with `▸`
+    /// on it; a folded bottom dock would take a row from every screen for a
+    /// panel the user has not asked for, and `ctrl+j` or the palette opens it.
+    pub fn bottom_areas(&self, area: Rect) -> BottomAreas {
+        let height = match self.open {
+            true => self.size.min(area.height / 2),
+            false => 0,
+        };
+        let rest = Rect::new(area.x, area.y, area.width, area.height - height);
+        let heading = Rect::new(area.x, rest.bottom(), area.width, height.min(1));
+        let content = Rect::new(
+            area.x,
+            heading.bottom(),
+            area.width,
+            height.saturating_sub(1),
+        );
+        BottomAreas {
+            heading,
+            content,
+            rest,
+        }
+    }
+
+    /// Put the bottom dock's rule on `row` of `area`, clamped so the dock is
+    /// at least [`MIN_BOTTOM`] rows and at most half of `area`.
+    pub fn place_bottom_rule(&mut self, area: Rect, row: u16) {
+        let high = area.height / 2;
+        if MIN_BOTTOM > high {
+            return;
+        }
+        self.size = area.bottom().saturating_sub(row).clamp(MIN_BOTTOM, high);
+    }
+
+    /// Move the bottom dock's rule `delta` rows.
+    pub fn nudge_bottom_rule(&mut self, area: Rect, delta: i32) {
+        let at = self.bottom_areas(area).heading.y as i32 + delta;
+        self.place_bottom_rule(area, at.clamp(0, u16::MAX as i32) as u16);
+    }
+}
+
+impl BottomAreas {
+    /// The bottom dock hidden: the panes take all of `area`.
+    pub fn hidden(area: Rect) -> Self {
+        let nothing = Rect::new(area.x, area.bottom(), area.width, 0);
+        BottomAreas {
+            heading: nothing,
+            content: nothing,
+            rest: area,
+        }
     }
 }
 

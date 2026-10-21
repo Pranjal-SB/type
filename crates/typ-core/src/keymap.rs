@@ -259,6 +259,9 @@ const DEFAULTS: &[(&str, Action)] = &[
     // VS Code and Zed both toggle the left dock on Ctrl+B, and a Ctrl+letter
     // is Universal tier. Nothing else here held it.
     ("ctrl+b", Action::ToggleLeftDock),
+    // VS Code's panel toggle, and interface §5's. A Ctrl+letter is Universal
+    // tier, and nothing here held it.
+    ("ctrl+j", Action::ToggleBottomDock),
     ("ctrl+g", Action::GotoLine),
     ("ctrl+f", Action::SearchOpen),
     // Ctrl+P is where every GUI editor puts "go to file", and it was the one
@@ -302,6 +305,12 @@ const DEFAULTS: &[(&str, Action)] = &[
     ("f12", Action::GotoDefinition),
     // F8 is next problem in VS Code, and an F-key is Universal tier.
     ("f8", Action::NextProblem),
+    // VS Code's quick fix. Enhanced tier (`controls.md` §1): without the
+    // kitty protocol it never arrives, so a click on `✦` and the context
+    // menu list the same actions.
+    ("ctrl+.", Action::CodeActions),
+    // F2 renames in VS Code and Zed, and an F-key is Universal tier.
+    ("f2", Action::Rename),
     // **Deliberately not a chord anyone expects**, because the one everyone
     // expects is a prefix: VS Code puts hover on `Ctrl+K Ctrl+I`. `Ctrl+K H`
     // is the door's row for it; `Alt+H` is Universal, free, and rebindable,

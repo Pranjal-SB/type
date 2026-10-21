@@ -118,7 +118,7 @@ impl App {
             match menu.key(chord) {
                 Outcome::Stay => {}
                 Outcome::Close => bar.dropdown = None,
-                Outcome::Run(action) => return self.apply_named_action(action),
+                Outcome::Run(pick) => return self.run_pick(pick),
             }
         } else {
             match chord.raw.code {
@@ -156,12 +156,12 @@ impl App {
             return Ok(true);
         }
         let (body, _) = crate::layout::split_frame(frame);
-        if let Some(action) = bar
+        if let Some(pick) = bar
             .dropdown
             .as_mut()
             .and_then(|menu| menu.click(body, event.column, event.row))
         {
-            self.apply_named_action(action)?;
+            self.run_pick(pick)?;
         }
         Ok(true)
     }

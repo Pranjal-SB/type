@@ -219,6 +219,14 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             run(app, a);
             assert!(!app.status_right().contains("zoomed"));
         },
+        // Closed, so it opens and takes the keys; again from there folds it.
+        Action::ToggleBottomDock => |app, a| {
+            run(app, a);
+            assert!(app.bottom_dock_open());
+            assert_eq!(app.focus(), Focus::BottomDock);
+            run(app, a);
+            assert!(!app.bottom_dock_open());
+        },
         Action::CycleLayout => |app, a| {
             assert!(app.dock_open());
             run(app, a);
@@ -259,11 +267,14 @@ fn exercise(action: Action) -> Option<fn(&mut App, Action)> {
             assert_eq!(app.pending_prefix(), Some("ctrl+k"));
         },
         // No server is configured, and each of these has to say so. With no
-        // list up, there is no completion to accept, and that is said too.
+        // list up, there is no completion to accept, and that is said too;
+        // nothing offered, no code actions to list.
         Action::GotoDefinition
         | Action::Hover
         | Action::RestartLanguageServers
-        | Action::AcceptCompletion => |app, a| {
+        | Action::AcceptCompletion
+        | Action::CodeActions
+        | Action::Rename => |app, a| {
             run(app, a);
             assert!(app.status().is_some(), "{} said nothing", a.name());
         },

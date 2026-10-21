@@ -43,6 +43,12 @@ pub enum TargetKind {
     BarGroup(usize),
     /// A row of the completion list, by its place among the rows it shows.
     CompletionRow(usize),
+    /// A `✦`, in the gutter or after the line: code actions are offered there.
+    CodeActionMark,
+    /// A problem in the bottom dock, by its place in the list.
+    ProblemRow(usize),
+    /// The bottom dock's labelled rule.
+    BottomHeading,
 }
 
 impl TargetKind {
@@ -56,6 +62,8 @@ impl TargetKind {
             | TargetKind::DockFolded
             | TargetKind::TreeRow(_) => 's',
             TargetKind::Segment(_) => 'b',
+            TargetKind::CodeActionMark => 'e',
+            TargetKind::ProblemRow(_) | TargetKind::BottomHeading => 'd',
             TargetKind::MenuRow(_)
             | TargetKind::FloatRow(_)
             | TargetKind::BarGroup(_)
@@ -115,6 +123,12 @@ impl App {
         }
         let mut out = self.dock_targets(frame);
         out.extend(self.pane_targets(frame));
+        out.extend(self.bottom_targets(frame));
+        out.extend(
+            self.code_action_marks(frame)
+                .into_iter()
+                .map(|mark| Target::at(mark, (mark.x, mark.y), TargetKind::CodeActionMark)),
+        );
         out.extend(self.status_targets(frame));
         out.extend(self.completion_targets(frame));
         let (_, menu_area) = self.split_body(frame);

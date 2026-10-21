@@ -65,6 +65,7 @@ fn place(app: &App) -> String {
         Focus::Tree => "dock".to_string(),
         Focus::Editor => format!("pane {}", app.current_pane() + 1),
         Focus::Status => "status".to_string(),
+        Focus::BottomDock => "bottom".to_string(),
     }
 }
 

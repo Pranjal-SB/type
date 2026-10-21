@@ -3,6 +3,52 @@
 Versions map onto milestones: `0.<milestone>.<patch milestone>`. See
 [`docs/design/architecture.md`](docs/design/architecture.md) §9.
 
+## [0.4.7] - 2026-10-22 (M4.7 Actions and problems, shell slice 6 shipped)
+
+The rest of the code intelligence surfaces from `docs/design/interface.md` §8: code actions,
+rename, and the problems list in the bottom dock.
+
+### Added
+- **One way to apply a server's edit.** A `WorkspaceEdit`, from a code action, a command or a
+  rename, is applied per file through the editor as one undo per buffer, its positions read in
+  the server's own encoding. A file that is not open opens in a background tab and stays unsaved:
+  nothing is written to disk until you save. An edit that would create, rename or delete a file is
+  refused whole, and the status bar says so.
+- **Code actions.** Asked as the caret settles, of a server that offers them, one question in
+  flight. Where some exist, `✦` marks the gutter and the end of the line. `Ctrl+.`, a click on
+  either `✦`, or the context menu (which now leads with them) lists them; choosing one applies its
+  edit as one undo, or runs its command on the server, whose own edit comes back and lands the same
+  way.
+- **Rename.** `F2` or `>rename`: the server is asked whether the symbol can be renamed (a refusal
+  says why), the status bar prompt opens on the old name, and `Enter` renames it in every file the
+  server names, unsaved. `Esc` changes nothing.
+- **The bottom dock** on `Ctrl+J`, in the left dock's three steps: open and focus, focus, fold.
+  Its labelled rule is dragged, or moved by `Ctrl+K =`, between three rows and half the panes'
+  height. Folded, it takes no row.
+- **Problems,** its first panel: every diagnostic of every open file as its line and one either
+  side, grouped by file, the files with errors first. `Enter` or a click jumps; `F8` now walks
+  the same list across files. Each problem is a warp target, `d1` the first.
+
+### Changed
+- `F8` goes on to the next file's problems instead of wrapping within the one on screen.
+- The context menu over text lists the code actions offered at the caret first, and its rows
+  include show code actions and rename.
+
+### Fixed
+- The completion list near the left edge drew over the folded dock's column; it stays inside its
+  pane.
+- Opening the context menu, or any float that takes the keys, while the completion list was up
+  left both on screen.
+
+### Performance
+- A keystroke with the bottom dock open over 200 problems, 50k-line file, release, best of five
+  over three alternating runs: 677 µs against 408 µs for the same keystroke on v0.4.6 with no
+  dock. A frame: 636 µs against 454 µs.
+
+### Not in this release
+- `codeAction/resolve`, the ASCII fallback for `✦`, a zoom for the bottom dock, the bottom dock
+  in sessions and presets, and its other tabs (references, search, terminal, output).
+
 ## [0.4.6] - 2026-10-21 (M4.6 Completion, half of shell slice 6)
 
 The completion and signature help surfaces from `docs/design/interface.md` §8 2c.
@@ -803,7 +849,8 @@ finding underneath the findings.
 - The terminal's real cursor is drawn from the focused panel, so it blinks and reshapes like
   every other terminal program's.
 
-[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.6...HEAD
+[Unreleased]: https://github.com/Pranjal-SB/type/compare/v0.4.7...HEAD
+[0.4.7]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.7
 [0.4.6]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.6
 [0.4.5]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.5
 [0.4.4]: https://github.com/Pranjal-SB/type/releases/tag/v0.4.4

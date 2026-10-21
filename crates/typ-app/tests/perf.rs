@@ -571,3 +571,93 @@ fn a_frame_with_ghost_text_stays_inside_a_frame() {
         "a frame with ghost text costs {best:?}, over the {BUDGET_US} µs frame budget"
     );
 }
+
+/// The 50k-line app with `count` problems spread through it, the bottom dock
+/// open over them and the keys back in the editor on line 0.
+fn problems_app(name: &str, count: usize) -> App {
+    let mut app = big_app(name);
+    let diagnostics = (0..count)
+        .map(|i| {
+            let line = i * 200 + 100;
+            typ_core::Diagnostic {
+                range: (
+                    typ_buffer::Position { line, col: 4 },
+                    typ_buffer::Position { line, col: 7 },
+                ),
+                severity: if i % 3 == 0 {
+                    typ_core::Severity::Error
+                } else {
+                    typ_core::Severity::Warning
+                },
+                message: format!("problem {i}"),
+                source: Some("perf".to_string()),
+            }
+        })
+        .collect();
+    app.show_problems_for_test(diagnostics);
+    app.apply_named_action(typ_core::Action::ToggleBottomDock)
+        .unwrap();
+    app.set_focus(typ_app::Focus::Editor);
+    assert!(app.bottom_dock_open());
+    assert_eq!(app.problems().len(), count);
+    let end = app.editor().buffer().line_grapheme_count(0);
+    app.editor_mut().goto(0, end);
+    app
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored --nocapture"]
+fn typing_over_the_problems_dock_stays_inside_a_keystroke() {
+    // `InsertChar` with the dock open over 200 problems: each key edits,
+    // and the frame rebuilds the list and its excerpts from the buffers.
+    let _guard = exclusive();
+    let mut app = problems_app("problems-keys", 200);
+    let mut terminal = Terminal::new(TestBackend::new(AREA.width, AREA.height)).unwrap();
+    draw(&mut app, &mut terminal); // warm
+    let key = |code| AppEvent::Input(Event::Key(KeyEvent::new(code, KeyModifiers::NONE)));
+
+    let rounds = 20u32;
+    let mut best = std::time::Duration::MAX;
+    for _ in 0..5 {
+        let start = Instant::now();
+        for _ in 0..rounds {
+            for code in [KeyCode::Char('i'), KeyCode::Backspace] {
+                step_batch(&mut app, vec![key(code)], AREA).unwrap();
+                draw(&mut app, &mut terminal);
+            }
+        }
+        best = best.min(start.elapsed() / (rounds * 2));
+    }
+
+    println!("keystroke over the problems dock, 200 problems: {best:?}");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "a keystroke over the dock costs {best:?}, over the {BUDGET_US} µs budget"
+    );
+}
+
+#[test]
+#[ignore = "wall-clock budget; run with --release --ignored --nocapture"]
+fn a_frame_with_the_problems_dock_stays_inside_a_frame() {
+    let _guard = exclusive();
+    let mut app = problems_app("problems-frame", 200);
+    let mut terminal = Terminal::new(TestBackend::new(AREA.width, AREA.height)).unwrap();
+    draw(&mut app, &mut terminal); // warm
+
+    let frames = 20;
+    let mut best = std::time::Duration::MAX;
+    for _ in 0..5 {
+        let start = Instant::now();
+        for _ in 0..frames {
+            app.mark_dirty();
+            draw(&mut app, &mut terminal);
+        }
+        best = best.min(start.elapsed() / frames);
+    }
+
+    println!("frame with the problems dock, 200 problems: {best:?}");
+    assert!(
+        best.as_micros() < BUDGET_US,
+        "a frame with the dock costs {best:?}, over the {BUDGET_US} µs frame budget"
+    );
+}

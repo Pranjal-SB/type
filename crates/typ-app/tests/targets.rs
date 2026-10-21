@@ -100,6 +100,8 @@ fn each_kind_has_its_region_letter() {
             | TargetKind::DockFolded
             | TargetKind::TreeRow(_) => 's',
             TargetKind::Segment(_) => 'b',
+            TargetKind::CodeActionMark => 'e',
+            TargetKind::ProblemRow(_) | TargetKind::BottomHeading => 'd',
             TargetKind::MenuRow(_)
             | TargetKind::FloatRow(_)
             | TargetKind::BarGroup(_)

@@ -1,6 +1,10 @@
 use std::path::Path;
 
 mod background;
+/// The bottom dock and the problems in it.
+mod bottom;
+/// Code actions: asking, the `✦` marks and choosing one.
+mod code_actions;
 mod complete;
 mod complete_list;
 /// The context menu.
@@ -15,6 +19,8 @@ mod live;
 mod menu_bar;
 pub(crate) mod panes;
 mod picker;
+/// Rename: `f2`, its prompt, and the server's answer.
+mod rename;
 mod render;
 /// Search, replace and goto-line. A child module rather than a sibling so it
 /// reaches `App`'s private fields without any of them widening to `pub(crate)`:
@@ -31,6 +37,8 @@ mod tabs;
 pub mod targets;
 /// Warp labels over the targets.
 mod warp;
+/// A server's `WorkspaceEdit`, applied through the editor.
+mod workspace_edit;
 
 use anyhow::Result;
 use typ_buffer::SearchQuery;
@@ -53,12 +61,18 @@ pub enum Focus {
     /// The status bar, a segment at a time (interface §4). `App.pane` still
     /// names the pane its segments describe.
     Status,
+    /// The bottom dock's panel: problems.
+    BottomDock,
 }
 
 pub struct App {
     tree: TreePanel,
     /// Where the tree is, and in what posture.
     dock: crate::dock::Dock,
+    /// The bottom dock: folded or open, and how tall.
+    bottom: crate::dock::Dock,
+    /// The bottom dock's panel, problems, built by the registry as a view.
+    bottom_panel: Box<dyn Panel>,
     /// The layout preset in force, as the `▣` segment names it.
     preset: crate::dock::Preset,
     /// `adapt` from `config.toml`: a Standard layout folds on a narrow screen.
@@ -228,6 +242,10 @@ pub struct App {
     completing: complete::Completing,
     /// Signature help, and whether a key has asked for it.
     signing: signature::Signing,
+    /// Code actions offered at the caret, and what was last asked.
+    fixing: code_actions::Fixing,
+    /// Where a rename was started and the name it started from.
+    renaming: Option<rename::Renaming>,
 }
 
 /// The workspace watch, from the render thread's side.
@@ -483,6 +501,10 @@ fn capitalised(word: &str) -> String {
 
 impl App {
     pub fn new(root: &Path) -> Result<Self> {
+        let mut registry = Registry::with_builtins();
+        registry.register_view(crate::settings::SETTINGS, crate::settings::open);
+        registry.register_view(crate::keybindings::KEYBINDINGS, crate::keybindings::open);
+        registry.register_view(crate::problems::PROBLEMS, crate::problems::open);
         Ok(Self {
             tree: TreePanel::new(root)?,
             dock: crate::dock::Dock::left(),
@@ -505,12 +527,11 @@ impl App {
             workspace: None,
             watches_started: 0,
             close_pane_pending: None,
-            registry: {
-                let mut registry = Registry::with_builtins();
-                registry.register_view(crate::settings::SETTINGS, crate::settings::open);
-                registry.register_view(crate::keybindings::KEYBINDINGS, crate::keybindings::open);
-                registry
-            },
+            bottom: crate::dock::Dock::bottom(),
+            bottom_panel: registry
+                .view(crate::problems::PROBLEMS)
+                .unwrap_or(crate::problems::open)(root),
+            registry,
             keymap: Keymap::default_bindings(),
             theme: ThemeColors::default(),
             focus: Focus::Tree,
@@ -542,6 +563,8 @@ impl App {
             hover: None,
             completing: complete::Completing::default(),
             signing: signature::Signing::default(),
+            fixing: code_actions::Fixing::default(),
+            renaming: None,
             menu: None,
             teaching: None,
             warp: None,
@@ -788,6 +811,7 @@ impl App {
             Focus::Tree => self.tree.name(),
             Focus::Editor => self.panes[self.pane].shown().panel().name(),
             Focus::Status => "status bar",
+            Focus::BottomDock => self.bottom_panel.name(),
         }
     }
 
@@ -898,6 +922,7 @@ impl App {
             // The bar has no panel of its own; `dispatch` keeps keys from
             // reaching the one behind it.
             Focus::Editor | Focus::Status => self.panes[self.pane].shown_mut().panel_mut(),
+            Focus::BottomDock => self.bottom_panel.as_mut(),
         }
     }
 

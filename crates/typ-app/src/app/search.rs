@@ -33,6 +33,7 @@ impl App {
             AskReplacement(String),
             Replace { needle: String, replacement: String },
             Goto(String),
+            Rename(String),
         }
 
         // A chord is never text, in the prompt exactly as in the buffer —
@@ -76,6 +77,7 @@ impl App {
                         replacement: input,
                     },
                     PromptKind::GotoLine => Outcome::Goto(input),
+                    PromptKind::Rename => Outcome::Rename(input),
                 }
             }
             _ => Outcome::Stay,
@@ -84,6 +86,10 @@ impl App {
         match outcome {
             Outcome::Stay => {}
             Outcome::Close => self.prompt = None,
+            Outcome::Rename(name) => {
+                self.prompt = None;
+                self.rename_to(name);
+            }
             Outcome::Search(needle) => {
                 self.prompt = None;
                 self.run_search(needle);

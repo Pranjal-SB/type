@@ -27,13 +27,16 @@ use typ_core::Diagnostic;
 use typ_lsp::{Client, Encoding, Incoming, LspEvent, ServerId, SpawnError};
 
 pub mod config;
+mod edit;
 mod progress;
 mod reply;
 mod requests;
 
 pub use config::ServerConfig;
+pub(crate) use edit::{FileEdit, workspace_edit};
 pub(crate) use reply::{
-    completion_items, definition_target, hover_text, signature_help, to_diagnostic,
+    CodeAction, code_actions, completion_items, definition_target, hover_text, signature_help,
+    to_diagnostic,
 };
 pub(crate) use requests::{Ask, CONTENT_MODIFIED, MAX_RETRIES, NoAnswer, Pending};
 
@@ -409,20 +412,23 @@ impl Lsp {
         Some(self.configs.get(server.config)?.language_id.clone())
     }
 
+    /// What a document's server said about one capability, if it is running
+    /// and said anything.
+    pub(crate) fn capability(&self, path: &Path, capability: &str) -> Option<&serde_json::Value> {
+        let doc = self.docs.get(path)?;
+        self.servers
+            .get(doc.server.0 as usize)?
+            .client
+            .as_ref()?
+            .capabilities()?
+            .get(capability)
+    }
+
     /// The characters a document's server asks to be asked on, as a
     /// capability's `triggerCharacters` and `retriggerCharacters` name them.
     /// Empty without a server.
     pub(crate) fn triggers(&self, path: &Path, capability: &str) -> Vec<char> {
-        let Some(doc) = self.docs.get(path) else {
-            return Vec::new();
-        };
-        let Some(provider) = self
-            .servers
-            .get(doc.server.0 as usize)
-            .and_then(|s| s.client.as_ref())
-            .and_then(|c| c.capabilities())
-            .and_then(|caps| caps.get(capability))
-        else {
+        let Some(provider) = self.capability(path, capability) else {
             return Vec::new();
         };
         ["triggerCharacters", "retriggerCharacters"]
@@ -494,6 +500,19 @@ impl Lsp {
         if let Some(doc) = self.docs.get_mut(path) {
             doc.pushed = diagnostics;
         }
+    }
+
+    /// Diagnostics for `path` as though a server had published them, with no
+    /// server: the fixture of the bottom dock's budgets.
+    pub(crate) fn push_for_test(&mut self, path: &Path, diagnostics: Vec<Diagnostic>) {
+        let doc = self.docs.entry(path.to_path_buf()).or_insert(Doc {
+            server: ServerId(u32::MAX),
+            uri: String::new(),
+            version: 0,
+            synced: None,
+            pushed: Vec::new(),
+        });
+        doc.pushed = diagnostics;
     }
 
     /// What is known about a document, for the frame that draws it.
@@ -683,6 +702,16 @@ impl Lsp {
                     // The spec requires a response to every request, so an
                     // unanswered one sits in the server's outgoing queue for
                     // the life of the session, one per progress token.
+                    // The app applies it and answers: the edit goes through
+                    // the same path a code action's own edit does.
+                    "workspace/applyEdit" => Some((
+                        id,
+                        LspEvent::ServerRequest {
+                            id: req,
+                            method,
+                            params,
+                        },
+                    )),
                     "window/workDoneProgress/create" => {
                         if let Some(client) = self.client(id) {
                             client.respond(req, serde_json::Value::Null);
@@ -708,6 +737,32 @@ impl Lsp {
                 }
             }
             other => Some((id, other)),
+        }
+    }
+
+    /// Answer a request a server sent.
+    pub(crate) fn respond(
+        &mut self,
+        id: ServerId,
+        request: typ_lsp::RequestId,
+        result: serde_json::Value,
+    ) {
+        if let Some(client) = self.client(id) {
+            client.respond(request, result);
+        }
+    }
+
+    /// Run a code action's command on the server that offered it. Nothing
+    /// waits for the answer: what the command does comes back as a
+    /// `workspace/applyEdit` of its own.
+    pub(crate) fn execute_command(&mut self, id: ServerId, command: &serde_json::Value) {
+        let params = serde_json::json!({
+            "command": command.get("command").cloned().unwrap_or_default(),
+            "arguments": command.get("arguments").cloned().unwrap_or(serde_json::json!([])),
+        });
+        if let Some(client) = self.client(id) {
+            client.request("workspace/executeCommand", params);
+            self.tally("workspace/executeCommand", true);
         }
     }
 
